@@ -431,6 +431,60 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun nonClipboardObservationCanEmitModelPromptContinuation() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "将打开系统 Wi-Fi 设置页。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val planned = runtime.runOnce(
+            input = "打开 Wi-Fi 设置后继续执行建议",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        require(planned.plan is AgentPlan.UseTool)
+        runtime.confirmToolRequest(planned.run.id, planned.plan.request.id)
+
+        val observed = runtime.observeToolResult(
+            runId = planned.run.id,
+            result = ToolResult(
+                requestId = planned.plan.request.id,
+                status = ToolStatus.Succeeded,
+                summary = "已打开 Wi-Fi 设置",
+                data = mapOf(
+                    "toolName" to MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                    "modelPrompt" to "请根据该动作结果给出下一条建议。",
+                ),
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.GeneratingAnswer, observed.run.state)
+        require(observed.decision is AgentObservationDecision.ContinueWithModel)
+        assertEquals(false, observed.decision.requiresLocalModel)
+        assertTrue(observed.continuationPromptForModel.orEmpty().contains("请根据该动作结果给出下一条建议。"))
+        assertTrue(observed.continuationPromptForModel.orEmpty().contains("打开 Wi-Fi 设置后继续执行建议"))
+        assertEquals(AgentObservationDecision.ContinueWithModel(false, "已打开 Wi-Fi 设置"), observed.decision)
+    }
+
+    @Test
     fun clipboardSummarySharePlansShareAfterLocalModelResult() {
         val auditSink = InMemoryToolAuditSink()
         val actionRuntime = RecordingActionRuntime(

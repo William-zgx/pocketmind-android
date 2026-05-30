@@ -27,6 +27,7 @@ import com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestrator
 import com.bytedance.zgx.pocketmind.orchestration.RoomAgentTraceStore
 import com.bytedance.zgx.pocketmind.runtime.OkHttpRemoteChatRuntime
 import com.bytedance.zgx.pocketmind.runtime.RealLiteRtRuntime
+import com.bytedance.zgx.pocketmind.tool.ValidatingToolExecutor
 import com.bytedance.zgx.pocketmind.tool.RoutingToolExecutor
 import com.bytedance.zgx.pocketmind.tool.ToolExecutor
 
@@ -78,12 +79,14 @@ class PocketMindAppContainer(context: Context) {
         backgroundTaskSchedulerInternal = AndroidBackgroundTaskScheduler(appContext, scheduledTaskRepository)
         reminderNotificationHelper = ReminderNotificationHelper(appContext)
         actionPlanningRuntime = HybridActionPlanningRuntime(appContext.cacheDir)
-        actionExecutor = RoutingToolExecutor(
-            calendarAvailabilityProvider = AndroidCalendarAvailabilityProvider(appContext),
-            delegate = ActionExecutor(
-                context = appContext,
-                backgroundTaskScheduler = backgroundTaskSchedulerInternal,
-                canPostReminderNotifications = reminderNotificationHelper::canPostNotifications,
+        actionExecutor = ValidatingToolExecutor(
+            delegate = RoutingToolExecutor(
+                calendarAvailabilityProvider = AndroidCalendarAvailabilityProvider(appContext),
+                delegate = ActionExecutor(
+                    context = appContext,
+                    backgroundTaskScheduler = backgroundTaskSchedulerInternal,
+                    canPostReminderNotifications = reminderNotificationHelper::canPostNotifications,
+                ),
             ),
         )
         assistantOrchestrator = AssistantOrchestrator(

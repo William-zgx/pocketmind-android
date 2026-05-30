@@ -69,6 +69,8 @@ Current status:
 - Confirmed clipboard observations can now create a follow-up model prompt so
   the assistant can answer from the just-read tool result instead of stopping at
   a generic "tool succeeded" message.
+- Non-clipboard tools can also request a model continuation via
+  `ToolResult.data["modelPrompt"]`, enabling a generic tool-to-model handoff.
 - `clipboard_summary_share_skill` now has a constrained app-level continuation:
   after the confirmed clipboard read and local model summary, the loop binds the
   model output into a `share_text` request and returns to

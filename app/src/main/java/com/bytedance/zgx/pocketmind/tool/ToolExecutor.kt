@@ -29,6 +29,24 @@ class RoutingToolExecutor(
         }
 }
 
+class ValidatingToolExecutor(
+    private val delegate: ToolExecutor,
+    private val registry: ToolRegistry = ToolRegistry(),
+) : ToolExecutor {
+    override fun execute(request: ToolRequest): ToolResult =
+        registry.validate(request)
+            ?: runCatching {
+                delegate.execute(request)
+            }.getOrElse { throwable ->
+                request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "Tool execution failed before completion: ${throwable.cleanMessage()}",
+                    retryable = true,
+                    data = request.toolExecutionContext(),
+                )
+            }.withToolExecutionContext(request.toolName)
+}
+
 class CalendarAvailabilityToolExecutor(
     private val provider: CalendarAvailabilityProvider,
 ) : ToolExecutor {
@@ -114,3 +132,13 @@ class CalendarAvailabilityToolExecutor(
         return blocksArray.toString()
     }
 }
+
+private fun ToolRequest.toolExecutionContext(): Map<String, String> =
+    mapOf("toolName" to toolName)
+
+private fun ToolResult.withToolExecutionContext(toolName: String): ToolResult {
+    return if (data["toolName"] == toolName) this else copy(data = data + ("toolName" to toolName))
+}
+
+private fun Throwable.cleanMessage(): String =
+    message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName

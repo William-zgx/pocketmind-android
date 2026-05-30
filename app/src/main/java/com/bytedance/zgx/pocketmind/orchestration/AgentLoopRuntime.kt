@@ -322,18 +322,19 @@ class AgentLoopRuntime(
             AgentObservationDecision.Cancel -> AgentRunState.Cancelled
         }
         val updatedRun = traceStore.updateState(runId, finalState)
-        return AgentObservationResult(
-            run = updatedRun,
-            result = observedResult,
-            assistantMessage = assistantMessage,
-            decision = decision,
-            continuationPromptForModel = continuationPrompt,
-            continuationRequiresLocalModel = continuationPrompt != null &&
-                request.toolName == MobileActionFunctions.READ_CLIPBOARD,
-            retryRequest = retryRequest,
-            retryAttempt = retryAttempt,
-            steps = traceStore.steps(runId),
-        )
+            return AgentObservationResult(
+                run = updatedRun,
+                result = observedResult,
+                assistantMessage = assistantMessage,
+                decision = decision,
+                continuationPromptForModel = continuationPrompt,
+                continuationRequiresLocalModel = continuationPrompt != null &&
+                    (request.toolName == MobileActionFunctions.READ_CLIPBOARD ||
+                        observedResult.requiresLocalModelForContinuation()),
+                retryRequest = retryRequest,
+                retryAttempt = retryAttempt,
+                steps = traceStore.steps(runId),
+            )
     }
 
     private fun observationDecision(
@@ -353,7 +354,8 @@ class AgentLoopRuntime(
 
             result.status == ToolStatus.Succeeded && continuationPrompt != null ->
                 AgentObservationDecision.ContinueWithModel(
-                    requiresLocalModel = request.toolName == MobileActionFunctions.READ_CLIPBOARD,
+                    requiresLocalModel = request.toolName == MobileActionFunctions.READ_CLIPBOARD ||
+                        result.requiresLocalModelForContinuation(),
                     reason = result.summary,
                 )
 
@@ -610,6 +612,18 @@ class AgentLoopRuntime(
         result: ToolResult,
     ): String? {
         if (result.status != ToolStatus.Succeeded) return null
+        val modelPrompt = result.data["modelPrompt"]?.takeIf { it.isNotBlank() }
+        if (modelPrompt != null) {
+            return """
+                用户已确认工具执行。请基于工具结果继续回答用户原始请求。
+
+                用户原始请求：${run.input}
+                工具名称：${request?.toolName}
+                工具摘要：${result.summary}
+                模型续接提示：
+                $modelPrompt
+            """.trimIndent()
+        }
         if (request?.toolName != MobileActionFunctions.READ_CLIPBOARD) return null
         val clipboardText = result.data["text"]?.takeIf { it.isNotBlank() } ?: return null
         val truncated = result.data["truncated"]?.toBooleanStrictOrNull() ?: false
@@ -624,6 +638,9 @@ class AgentLoopRuntime(
             $clipboardText
         """.trimIndent()
     }
+
+    private fun ToolResult.requiresLocalModelForContinuation(): Boolean =
+        data["requiresLocalModel"]?.toBooleanStrictOrNull() == true
 
     private fun ToolResult.redactedForTrace(request: ToolRequest?): ToolResult {
         if (request?.toolName != MobileActionFunctions.READ_CLIPBOARD) return this
