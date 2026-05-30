@@ -76,6 +76,8 @@ Current status:
   after the confirmed clipboard read and local model summary, the loop binds the
   model output into a `share_text` request and returns to
   `AwaitingUserConfirmation`. It does not execute the share step directly.
+- Skill-driven continuation now also supports mixed tool/model step chains and
+  enforces a bounded step budget across explicit replans and skill continuations.
 - Retryable tool failures now schedule one bounded retry on the already
   confirmed request, record a `ToolRetryScheduled` trace/audit event, and only
   fail the run after the retry budget is exhausted.
@@ -95,9 +97,8 @@ Current status:
   request id, so stale request ids from earlier steps cannot advance the run.
 - Implemented trace steps for skill planning, user confirmation, tool
   observation, assistant response, rejection, cancellation, and failure.
-- General model-driven next-step planning, generalized multi-step skill UI
-  orchestration beyond the clipboard summary share flow, and persisted run
-  recovery are still pending.
+- General model-driven next-step planning, generalized skill continuation orchestration,
+  and persisted run recovery are now implemented with bounded safety checks.
 
 Tests:
 
