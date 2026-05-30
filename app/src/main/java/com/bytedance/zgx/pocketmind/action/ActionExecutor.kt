@@ -24,6 +24,7 @@ class ActionExecutor(
     private val canPostReminderNotifications: () -> Boolean = { true },
     private val clipboardTextProvider: (() -> String?)? = null,
     private val activityStarter: ((Intent) -> Boolean)? = null,
+    private val deepLinkParser: (String) -> Uri? = { runCatching { Uri.parse(it) }.getOrNull() },
 ) : ToolExecutor {
     fun executeConfirmed(draft: ActionDraft): Boolean {
         val request = ToolRequest(
@@ -236,6 +237,9 @@ class ActionExecutor(
             MobileActionFunctions.SHARE_TEXT ->
                 listOf(shareTextIntent(request))
 
+            MobileActionFunctions.OPEN_DEEP_LINK ->
+                listOf(openDeepLinkIntent(request))
+
             else -> null
         }
 
@@ -268,6 +272,7 @@ class ActionExecutor(
             MobileActionFunctions.READ_CLIPBOARD -> "已读取剪贴板"
             MobileActionFunctions.SHARE_TEXT -> "已打开系统分享面板"
             MobileActionFunctions.CANCEL_REMINDER -> "提醒已取消"
+            MobileActionFunctions.OPEN_DEEP_LINK -> "已打开外部链接"
             else -> "工具已执行"
         }
 
@@ -286,6 +291,12 @@ class ActionExecutor(
             sendIntent,
             request.arguments["title"].orEmpty().ifBlank { "分享文本" },
         )
+    }
+
+    private fun openDeepLinkIntent(request: ToolRequest): Intent {
+        val uriString = request.arguments["uri"].orEmpty()
+        val uri = deepLinkParser(uriString)
+        return uri?.let { Intent(Intent.ACTION_VIEW, it) } ?: Intent(Intent.ACTION_VIEW)
     }
 
     private fun startActivity(intent: Intent): Boolean {

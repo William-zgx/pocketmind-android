@@ -285,6 +285,21 @@ private val shareTextSchemaJson = """
     }
 """.trimIndent()
 
+private val openDeepLinkSchemaJson = """
+    {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(https?|mailto|tel|sms|smsto|geo):.+"
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
 private val calendarAvailabilitySchemaJson = """
     {
       "type": "object",
@@ -423,6 +438,16 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
                 ToolPermission.StartsExternalActivity,
                 ToolPermission.SendsTextToExternalApp,
             ),
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.OPEN_DEEP_LINK,
+            title = "打开深链",
+            description = "打开外部链接或深度链接，用户可在跳转后的应用继续操作。",
+            inputSchemaJson = openDeepLinkSchemaJson,
+            capability = ToolCapability.ExternalNavigation,
+            permissions = setOf(ToolPermission.StartsExternalActivity),
         ),
     ),
     ToolDefinition(

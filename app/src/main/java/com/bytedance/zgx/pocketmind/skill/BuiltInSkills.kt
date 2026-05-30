@@ -15,6 +15,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         MobileActionFunctions.WEB_SEARCH to INFORMATION_LOOKUP_SKILL,
         MobileActionFunctions.OPEN_WIFI_SETTINGS to DEVICE_SETTINGS_SKILL,
         MobileActionFunctions.OPEN_FLASHLIGHT_SETTINGS to DEVICE_SETTINGS_SKILL,
+        MobileActionFunctions.OPEN_DEEP_LINK to DEEP_LINK_NAVIGATION_SKILL,
         MobileActionFunctions.SCHEDULE_REMINDER to REMINDER_SKILL,
         MobileActionFunctions.CANCEL_REMINDER to CANCEL_REMINDER_SKILL,
         MobileActionFunctions.READ_CLIPBOARD to CLIPBOARD_CONTEXT_SKILL,
@@ -121,6 +122,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         const val CLIPBOARD_CONTEXT_SKILL = "clipboard_context_skill"
         const val SHARE_TEXT_SKILL = "share_text_skill"
         const val CLIPBOARD_SUMMARY_SHARE_SKILL = "clipboard_summary_share_skill"
+        const val DEEP_LINK_NAVIGATION_SKILL = "deep_link_navigation_skill"
     }
 }
 
@@ -254,5 +256,15 @@ private val builtInSkillManifests = listOf(
         ),
         inputSchemaJson = simpleTextInputSchema,
         riskLevel = RiskLevel.HighExternalSend,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL,
+        version = 1,
+        title = "深链跳转",
+        description = "将用户请求转化为外部链接或深度链接跳转工具调用。",
+        triggerExamples = listOf("打开 https://example.com", "打开 myapp://example"),
+        requiredTools = listOf(MobileActionFunctions.OPEN_DEEP_LINK),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.MediumDraftOrNavigation,
     ),
 )

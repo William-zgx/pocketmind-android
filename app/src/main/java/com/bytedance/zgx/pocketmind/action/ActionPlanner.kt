@@ -39,6 +39,9 @@ class MobileActionPlanner : ActionPlanner {
             "取消",
             "取消提醒",
             "撤销",
+            "链接",
+            "网址",
+            "网页",
         ).any { it in normalized } || isWebSearchRequest(input)
     }
 
@@ -67,6 +70,9 @@ class MobileActionPlanner : ActionPlanner {
 
             "邮件" in input || "email" in normalized || "mail" in normalized ->
                 MobileActionFunctions.COMPOSE_EMAIL.toDraft(mapOf("body" to cleanedObject(input)))
+
+            isOpenDeepLinkRequest(input) ->
+                MobileActionFunctions.OPEN_DEEP_LINK.toDraft(mapOf("uri" to extractUri(input)))
 
             isReminderRequest(input) ->
                 MobileActionFunctions.SCHEDULE_REMINDER.toDraft(reminderParameters(input))
@@ -122,6 +128,7 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.SHARE_TEXT -> "系统分享"
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY -> "查询日历忙闲"
             MobileActionFunctions.CANCEL_REMINDER -> "取消提醒"
+            MobileActionFunctions.OPEN_DEEP_LINK -> "打开深链"
             else -> "动作草稿"
         }
 
@@ -142,6 +149,8 @@ class MobileActionPlanner : ActionPlanner {
                 "将只读查询本机日历忙闲：${parameters["start"].orEmpty()} 到 ${parameters["end"].orEmpty()}"
             MobileActionFunctions.CANCEL_REMINDER ->
                 "将取消提醒任务：${parameters["taskId"].orEmpty()}"
+            MobileActionFunctions.OPEN_DEEP_LINK ->
+                "将打开深度链接：${parameters["uri"].orEmpty()}"
             else -> "将打开系统页面完成这个动作。"
         }
 
@@ -243,6 +252,18 @@ class MobileActionPlanner : ActionPlanner {
             TASK_ID_PATTERN.containsMatchIn(input)
     }
 
+    private fun isOpenDeepLinkRequest(input: String): Boolean {
+        return DEEP_LINK_PATTERN.containsMatchIn(input)
+    }
+
+    private fun extractUri(input: String): String {
+        val directMatch = DEEP_LINK_PATTERN.find(input)?.value
+        if (directMatch != null) {
+            return directMatch.trim().trimEnd(*TRAILING_URI_PUNCTUATION.toCharArray())
+        }
+        return cleanedObject(input)
+    }
+
     private fun cancelReminderParameters(input: String): Map<String, String> {
         val taskId = TASK_ID_PATTERN.find(input)?.value.orEmpty()
         return mapOf("taskId" to taskId)
@@ -274,5 +295,7 @@ class MobileActionPlanner : ActionPlanner {
         val ISO_OFFSET_DATE_TIME_PATTERN =
             Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})""")
         val TASK_ID_PATTERN = Regex("task-[A-Za-z0-9_-]+")
+        val DEEP_LINK_PATTERN = Regex("""\b(?:https?|mailto|tel|sms|smsto|geo):\S+""", RegexOption.IGNORE_CASE)
+        val TRAILING_URI_PUNCTUATION = ".,;:!?)]}。！）；】"
     }
 }

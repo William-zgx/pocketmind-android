@@ -33,7 +33,8 @@ Current status:
   checks.
 - Current tools cover Wi-Fi settings, flashlight settings, map search, web
   search, email draft, calendar draft, contact draft, local reminders,
-  confirmed clipboard text reads, and outbound system sharing for text.
+  confirmed clipboard text reads, outbound system sharing for text, and
+  external deep-link/open URL navigation.
 - Tools that may require runtime permissions declare that requirement in
   `ToolSpec`. The reminder confirmation path requests notification permission
   before execution when Android requires it.
@@ -130,7 +131,7 @@ Current status:
   `SkillRuntime`.
 - Implemented built-in manifests for email drafts, calendar drafts, map search,
   information lookup, device settings, background reminders, clipboard context,
-  and system text sharing.
+  system text sharing, and external deep-link navigation.
 - Implemented a minimal declarative composition model for ordered skill steps:
   tool steps can declare stable ids, dependencies, and argument bindings; model
   transform steps can consume prior tool outputs and expose named outputs.
@@ -140,6 +141,8 @@ Current status:
 - This composite skill is now wired into the app loop for one conservative
   flow: read clipboard, summarize locally, request explicit confirmation for
   the share sheet. Other composite skills still need their own UI orchestration.
+- Added `deep_link_navigation_skill` to map deep-link tool calls into a single-step
+  skill with external-navigation capability.
 - Added `SkillRunExecutor` as the first executable multi-step skill runner. It
   validates the plan, resolves step output bindings, enforces a step limit, and
   separates private binding outputs from the public result/trace.
@@ -232,8 +235,10 @@ Current status:
 - Implemented outbound `share_text` as a confirmed tool that opens Android's
   system share panel. Success means the chooser was opened; the app cannot know
   whether the user completed sharing in the destination app.
-- Deep links, app-specific intents, broad permission flows, and
-  result-confirmation callbacks are pending.
+- Deep links are now implemented via the new `open_deep_link` tool and can route
+  to web URLs and supported URI schemes as a confirmed navigation action.
+- App-specific intent mediation, broader permission flows, and
+  result-confirmation callbacks are still pending.
 
 ## Safety And Audit
 

@@ -30,6 +30,7 @@ object MobileActionFunctions {
     const val SCHEDULE_REMINDER = "schedule_reminder"
     const val READ_CLIPBOARD = "read_clipboard"
     const val SHARE_TEXT = "share_text"
+    const val OPEN_DEEP_LINK = "open_deep_link"
     const val QUERY_CALENDAR_AVAILABILITY = "query_calendar_availability"
     const val CANCEL_REMINDER = "cancel_reminder"
 
@@ -44,6 +45,7 @@ object MobileActionFunctions {
         SCHEDULE_REMINDER,
         READ_CLIPBOARD,
         SHARE_TEXT,
+        OPEN_DEEP_LINK,
         QUERY_CALENDAR_AVAILABILITY,
         CANCEL_REMINDER,
     )

@@ -1,5 +1,7 @@
 package com.bytedance.zgx.pocketmind.action
 
+import android.content.Intent
+import android.net.Uri
 import com.bytedance.zgx.pocketmind.background.BackgroundTaskScheduler
 import com.bytedance.zgx.pocketmind.background.ReminderScheduleRequest
 import com.bytedance.zgx.pocketmind.background.ScheduledTask
@@ -9,6 +11,7 @@ import com.bytedance.zgx.pocketmind.tool.ToolErrorCode
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import com.bytedance.zgx.pocketmind.tool.ToolStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -129,6 +132,38 @@ class ActionExecutorTest {
         assertEquals(ToolStatus.Failed, result.status)
         assertEquals(ToolErrorCode.ExecutionFailed, result.error?.code)
         assertTrue(result.summary.contains("cancel failed"))
+    }
+
+    @Test
+    fun buildsDeepLinkIntentWithCustomParser() {
+        var parsed = false
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = RecordingBackgroundTaskScheduler(),
+            canPostReminderNotifications = { true },
+            deepLinkParser = { uri ->
+                parsed = true
+                Uri.EMPTY
+            },
+            activityStarter = { intent ->
+                fail("deep link should not execute Activity directly in this unit test")
+                false
+            },
+        )
+
+        val request = ToolRequest(
+            id = "request-deeplink",
+            toolName = MobileActionFunctions.OPEN_DEEP_LINK,
+            arguments = mapOf("uri" to "https://example.com/path?query=1"),
+            reason = "test",
+        )
+        val openDeepLinkIntentMethod = ActionExecutor::class.java.getDeclaredMethod(
+            "openDeepLinkIntent",
+            ToolRequest::class.java,
+        ).apply { isAccessible = true }
+        val deepLinkIntent = openDeepLinkIntentMethod.invoke(executor, request) as Intent
+        assertEquals(Intent::class.java, deepLinkIntent.javaClass)
+        assertTrue(parsed)
     }
 
     @Test

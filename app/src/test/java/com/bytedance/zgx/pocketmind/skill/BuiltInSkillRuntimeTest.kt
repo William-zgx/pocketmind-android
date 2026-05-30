@@ -25,6 +25,7 @@ class BuiltInSkillRuntimeTest {
         assertTrue(BuiltInSkillRuntime.CLIPBOARD_CONTEXT_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.SHARE_TEXT_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.CLIPBOARD_SUMMARY_SHARE_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL in manifests)
         assertTrue(manifests.values.all { it.version >= 1 })
         assertTrue(manifests.values.all { it.inputSchemaJson.contains("additionalProperties") })
     }
@@ -160,6 +161,28 @@ class BuiltInSkillRuntimeTest {
         requireNotNull(plan)
         assertEquals(BuiltInSkillRuntime.SHARE_TEXT_SKILL, plan.request.skillId)
         assertEquals(listOf(MobileActionFunctions.SHARE_TEXT), plan.manifest.requiredTools)
+    }
+
+    @Test
+    fun plansDeepLinkAsNavigationToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_DEEP_LINK,
+            title = "打开深链",
+            summary = "将打开外部链接",
+            parameters = mapOf("uri" to "https://example.com"),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("打开 https://example.com", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.OPEN_DEEP_LINK), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
     }
 
     @Test

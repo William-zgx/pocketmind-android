@@ -47,6 +47,18 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun parsesOpenDeepLinkCallOutput() {
+        val draft = planner.parseModelOutput(
+            """call:open_deep_link{"uri":"https://example.com/help"}""",
+        )
+
+        requireNotNull(draft)
+        assertEquals(MobileActionFunctions.OPEN_DEEP_LINK, draft.functionName)
+        assertEquals("https://example.com/help", draft.parameters["uri"])
+        assertTrue(draft.summary.contains("深度链接"))
+    }
+
+    @Test
     fun rejectsUnsupportedFunctionCalls() {
         assertNull(planner.parseModelOutput("""call:delete_contact{"name":"A"}"""))
     }
@@ -108,6 +120,15 @@ class ActionPlannerTest {
         assertEquals(ActionPlanKind.Draft, plan.kind)
         assertEquals(MobileActionFunctions.SHARE_TEXT, plan.draft?.functionName)
         assertEquals("明天十点开会", plan.draft?.parameters?.get("text"))
+    }
+
+    @Test
+    fun infersOpenDeepLinkDraft() {
+        val plan = planner.plan("打开 https://example.com/path")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.OPEN_DEEP_LINK, plan.draft?.functionName)
+        assertEquals("https://example.com/path", plan.draft?.parameters?.get("uri"))
     }
 
     @Test

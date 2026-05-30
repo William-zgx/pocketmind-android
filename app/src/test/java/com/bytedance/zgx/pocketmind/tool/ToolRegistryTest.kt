@@ -71,6 +71,13 @@ class ToolRegistryTest {
         assertTrue(ToolPermission.StartsExternalActivity in shareSpec.permissions)
         assertTrue(ToolPermission.SendsTextToExternalApp in shareSpec.permissions)
 
+        val deepLinkSpec = registry.specFor(MobileActionFunctions.OPEN_DEEP_LINK)
+        assertNotNull(deepLinkSpec)
+        requireNotNull(deepLinkSpec)
+        assertEquals(ToolCapability.ExternalNavigation, deepLinkSpec.capability)
+        assertTrue(ToolPermission.StartsExternalActivity in deepLinkSpec.permissions)
+        assertTrue(deepLinkSpec.inputSchemaJson.contains("\"uri\""))
+
         val calendarAvailabilitySpec = registry.specFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY)
         assertNotNull(calendarAvailabilitySpec)
         requireNotNull(calendarAvailabilitySpec)
@@ -173,6 +180,7 @@ class ToolRegistryTest {
             MobileActionFunctions.SCHEDULE_REMINDER to "title",
             MobileActionFunctions.CANCEL_REMINDER to "taskId",
             MobileActionFunctions.SHARE_TEXT to "text",
+            MobileActionFunctions.OPEN_DEEP_LINK to "uri",
         )
 
         requiredArgumentsByTool.forEach { (toolName, requiredArgument) ->
