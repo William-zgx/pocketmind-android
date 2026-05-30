@@ -62,6 +62,7 @@ class PocketMindViewModel(
     private val memoryRepository: MemoryIndex,
     private val actionExecutor: ToolExecutor,
     private val assistantOrchestrator: AssistantRouter,
+    private val canPostNotificationsProvider: () -> Boolean,
     private val isArm64DeviceProvider: () -> Boolean,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -1759,6 +1760,7 @@ class PocketMindViewModel(
             isArm64Supported = isArm64Supported,
             inferenceMode = inferenceMode.name,
             installedCapabilities = installedCapabilities,
+            canPostNotifications = canPostNotificationsProvider(),
             memoryEnabled = memoryEnabled,
             availableStorageBytes = availableModelStorageBytes,
             activeSessionId = activeSessionId,

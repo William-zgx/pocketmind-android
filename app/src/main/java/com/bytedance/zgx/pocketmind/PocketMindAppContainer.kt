@@ -110,6 +110,7 @@ class PocketMindAppContainer(context: Context) {
             memoryRepository = memoryRepository,
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantOrchestrator,
+            canPostNotificationsProvider = reminderNotificationHelper::canPostNotifications,
             isArm64DeviceProvider = {
                 Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" }
             },
@@ -131,6 +132,7 @@ private class PocketMindViewModelFactory(
     private val memoryRepository: MemoryRepository,
     private val actionExecutor: ToolExecutor,
     private val assistantOrchestrator: AssistantOrchestrator,
+    private val canPostNotificationsProvider: () -> Boolean,
     private val isArm64DeviceProvider: () -> Boolean,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -150,6 +152,7 @@ private class PocketMindViewModelFactory(
             memoryRepository = memoryRepository,
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantOrchestrator,
+            canPostNotificationsProvider = canPostNotificationsProvider,
             isArm64DeviceProvider = isArm64DeviceProvider,
         ) as T
     }

@@ -494,6 +494,7 @@ class PocketMindViewModelTest {
             memoryRepository = MemoryRepository(),
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantRouter,
+            canPostNotificationsProvider = { true },
             isArm64DeviceProvider = { true },
             ioDispatcher = dispatcher,
         )

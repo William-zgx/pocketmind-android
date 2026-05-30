@@ -182,6 +182,9 @@ Current status:
   presence, and pending confirmation state.
 - The Agent loop records this context in trace and may include it in the model
   prompt behind an instruction to use it only when relevant.
+- Device context now also carries notification-posting capability from Android's
+  runtime notification policy so reminder and notification-heavy flows can avoid
+  claiming success when user notification delivery is unavailable.
 - Implemented a confirmed `read_clipboard` tool for current foreground text
   clipboard access. Raw text is used only to build the immediate in-memory
   continuation prompt after user confirmation; trace steps, audit events, and

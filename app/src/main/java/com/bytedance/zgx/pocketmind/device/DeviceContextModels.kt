@@ -6,6 +6,7 @@ data class DeviceContextSnapshot(
     val isArm64Supported: Boolean,
     val inferenceMode: String,
     val installedCapabilities: Set<ModelCapability>,
+    val canPostNotifications: Boolean,
     val memoryEnabled: Boolean,
     val availableStorageBytes: Long,
     val activeSessionId: String?,
@@ -26,6 +27,7 @@ data class DeviceContextSnapshot(
             - CPU/ABI supports local arm64 model: $isArm64Supported
             - Inference mode: $inferenceMode
             - Installed capabilities: $capabilities
+            - Notification channel availability: $canPostNotifications
             - Local memory enabled: $memoryEnabled
             - Approximate available model storage: $storageText
             - Active session exists: ${activeSessionId != null}

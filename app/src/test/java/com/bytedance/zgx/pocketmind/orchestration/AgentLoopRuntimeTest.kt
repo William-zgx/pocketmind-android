@@ -199,6 +199,7 @@ class AgentLoopRuntimeTest {
             isArm64Supported = true,
             inferenceMode = "Remote",
             installedCapabilities = setOf(ModelCapability.Chat),
+            canPostNotifications = false,
             memoryEnabled = true,
             availableStorageBytes = 512L * 1024L * 1024L,
             activeSessionId = "session-1",
