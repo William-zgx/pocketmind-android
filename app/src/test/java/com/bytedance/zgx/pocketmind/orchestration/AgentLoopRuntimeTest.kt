@@ -10,6 +10,9 @@ import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import com.bytedance.zgx.pocketmind.audit.InMemoryToolAuditSink
 import com.bytedance.zgx.pocketmind.audit.ToolAuditEventType
 import com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot
+import com.bytedance.zgx.pocketmind.data.AgentRunEntity
+import com.bytedance.zgx.pocketmind.data.AgentStepEntity
+import com.bytedance.zgx.pocketmind.data.AgentTraceDao
 import com.bytedance.zgx.pocketmind.memory.MemoryRepository
 import com.bytedance.zgx.pocketmind.safety.SafetyOutcome
 import com.bytedance.zgx.pocketmind.skill.BuiltInSkillRuntime
@@ -53,6 +56,135 @@ class AgentLoopRuntimeTest {
         assertTrue(result.steps.any { step ->
             step is AgentStep.ModelPlanned && step.plan is AgentPlan.Answer
         })
+    }
+
+    @Test
+    fun recoverLatestRunReturnsAwaitingConfirmationRequestWhenRecoverable() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "将打开系统 Wi-Fi 设置页。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val planned = runtime.runOnce(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+
+        val recovery = runtime.recoverLatestRun()
+
+        requireNotNull(recovery)
+        assertEquals(AgentRunState.AwaitingUserConfirmation, recovery.run.state)
+        assertEquals(planned.run.id, recovery.run.id)
+        requireNotNull(recovery.pendingTool)
+        assertEquals(planned.run.id, recovery.run.id)
+        assertEquals(MobileActionFunctions.OPEN_WIFI_SETTINGS, recovery.pendingTool.request.toolName)
+        assertTrue(recovery.pendingTool.hasFullArguments)
+    }
+
+    @Test
+    fun recoverLatestRunMarksExecutingRunAsFailed() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "将打开系统 Wi-Fi 设置页。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val planned = runtime.runOnce(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        runtime.confirmToolRequest(
+            runId = planned.run.id,
+            requestId = requireNotNull(planned.plan as? AgentPlan.UseTool).request.id,
+        )
+
+        val recovery = runtime.recoverLatestRun()
+
+        requireNotNull(recovery)
+        assertEquals(AgentRunState.Failed, recovery.run.state)
+        assertEquals(planned.run.id, recovery.run.id)
+        assertEquals(null, recovery.pendingTool)
+    }
+
+    @Test
+    fun recoverLatestRunMarksAwaitingConfirmationWithLostArgumentsAsFailedForRoomStore() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.WEB_SEARCH,
+                        title = "Web 搜索",
+                        summary = "将在浏览器中搜索：Kotlin",
+                        parameters = mapOf("query" to "Kotlin"),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val dao = FakeAgentTraceDao()
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = RoomAgentTraceStore(
+                traceDao = dao,
+                clockMillis = { 1_000L },
+                runIdFactory = { "run-1" },
+            ),
+        )
+
+        val planned = runtime.runOnce(
+            input = "搜索 Kotlin",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+
+        val recovery = runtime.recoverLatestRun()
+
+        requireNotNull(recovery)
+        assertEquals(AgentRunState.Failed, recovery.run.state)
+        assertEquals(planned.run.id, recovery.run.id)
+        assertEquals(null, recovery.pendingTool)
     }
 
     @Test
@@ -1109,6 +1241,53 @@ class AgentLoopRuntimeTest {
             step is AgentStep.ToolRejected &&
                 step.result.status == ToolStatus.Rejected
         })
+    }
+
+    private class FakeAgentTraceDao : AgentTraceDao {
+        private val runs = linkedMapOf<String, AgentRunEntity>()
+        private val steps = mutableListOf<AgentStepEntity>()
+
+        override fun run(runId: String): AgentRunEntity? =
+            runs[runId]
+
+        override fun recentRuns(limit: Int): List<AgentRunEntity> =
+            runs.values
+                .sortedByDescending { it.updatedAtMillis }
+                .take(limit)
+
+        override fun upsertRun(run: AgentRunEntity) {
+            runs[run.id] = run
+        }
+
+        override fun updateRunState(runId: String, state: String, updatedAtMillis: Long): Int {
+            val run = runs[runId] ?: return 0
+            runs[runId] = run.copy(state = state, updatedAtMillis = updatedAtMillis)
+            return 1
+        }
+
+        override fun touchRun(runId: String, updatedAtMillis: Long): Int {
+            val run = runs[runId] ?: return 0
+            runs[runId] = run.copy(updatedAtMillis = updatedAtMillis)
+            return 1
+        }
+
+        override fun nextStepPosition(runId: String): Int =
+            steps
+                .filter { step -> step.runId == runId }
+                .maxOfOrNull { it.position + 1 }
+                ?: 0
+
+        override fun insertStep(step: AgentStepEntity) {
+            steps.removeAll { existing ->
+                existing.runId == step.runId && existing.position == step.position
+            }
+            steps += step
+        }
+
+        override fun steps(runId: String): List<AgentStepEntity> =
+            steps
+                .filter { step -> step.runId == runId }
+                .sortedBy { step -> step.position }
     }
 
     private class RecordingActionRuntime(

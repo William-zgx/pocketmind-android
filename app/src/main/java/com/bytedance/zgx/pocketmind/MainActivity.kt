@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
+import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
 import com.bytedance.zgx.pocketmind.multimodal.ShareIntentReader
 import com.bytedance.zgx.pocketmind.ui.PocketMindScreen
 import com.bytedance.zgx.pocketmind.ui.theme.PocketMindTheme
@@ -43,6 +44,9 @@ class MainActivity : ComponentActivity() {
         viewModel.restoreStartupState(
             skipModelRuntimeWork = skipStartupModelRuntimeWork,
         )
+        if (!skipStartupModelRuntimeWork) {
+            ensureBackgroundTaskServices()
+        }
         handleSharedIntent(intent)
 
         setContent {
@@ -95,6 +99,15 @@ class MainActivity : ComponentActivity() {
 
     private fun handleSharedIntent(intent: Intent?) {
         ShareIntentReader(this).read(intent)?.let(viewModel::ingestSharedInput)
+    }
+
+    private fun ensureBackgroundTaskServices() {
+        appContainer.backgroundTaskScheduler.setPeriodicCheck(PeriodicCheckScheduleRequest()).onFailure {
+            // Intentionally non-blocking: keep UI responsive if background scheduling fails.
+        }
+        appContainer.backgroundTaskScheduler.rescheduleScheduledReminders().onFailure {
+            // Intentionally non-blocking: keep startup deterministic even if reminder resync fails.
+        }
     }
 
     private fun confirmAgentConfirmationWithPermissions(confirmation: PendingAgentConfirmation) {

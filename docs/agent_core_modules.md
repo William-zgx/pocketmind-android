@@ -337,8 +337,10 @@ Current status:
 - Reminder confirmation requests notification permission before execution on
   Android versions that require it. If permission is still unavailable,
   execution fails with a structured `PermissionDenied` tool result.
-- Periodic check policies, WorkManager-backed recurring jobs, runtime
-  task review UI are pending.
+- Periodic check policies和 WorkManager 周期任务已接入应用启动：
+  启动时会补齐未生效提醒并确保周期检查任务处于运行状态（去重更新）。
+- 周期检查 Worker 仅执行本地扫描与告警，不联网、不触发模型、不发外部 intent。
+- 运行时任务面板与周期检查限流策略仍在优化中。
 
 Tests:
 

@@ -115,6 +115,28 @@ class AgentLoopRuntime(
         )
     }
 
+    fun recoverLatestRun(): AgentRunRecovery? {
+        val latestRun = traceStore.latestNonFinalRun() ?: return null
+        return when (latestRun.state) {
+            AgentRunState.AwaitingUserConfirmation -> {
+                val pendingTool = traceStore.latestPendingToolRequest(latestRun.id)
+                if (pendingTool == null || !pendingTool.hasFullArguments) {
+                    AgentRunRecovery(
+                        run = traceStore.updateState(latestRun.id, AgentRunState.Failed),
+                        pendingTool = null,
+                    )
+                } else {
+                    AgentRunRecovery(latestRun, pendingTool)
+                }
+            }
+
+            else -> AgentRunRecovery(
+                run = traceStore.updateState(latestRun.id, AgentRunState.Failed),
+                pendingTool = null,
+            )
+        }
+    }
+
     fun confirmToolRequest(runId: String, requestId: String): AgentRun? {
         val run = traceStore.run(runId) ?: return null
         if (run.state != AgentRunState.AwaitingUserConfirmation) return run

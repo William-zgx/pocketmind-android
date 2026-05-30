@@ -32,6 +32,18 @@ data class AgentRun(
     val updatedAtMillis: Long,
 )
 
+data class RecoverableToolRequest(
+    val request: ToolRequest,
+    val draftTitle: String,
+    val draftSummary: String,
+    val hasFullArguments: Boolean,
+)
+
+data class AgentRunRecovery(
+    val run: AgentRun,
+    val pendingTool: RecoverableToolRequest? = null,
+)
+
 data class AgentContext(
     val memoryHits: List<MemoryHit>,
     val deviceContext: DeviceContextSnapshot? = null,

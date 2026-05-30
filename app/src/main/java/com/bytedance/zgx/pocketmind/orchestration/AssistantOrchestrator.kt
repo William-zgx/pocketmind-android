@@ -37,6 +37,8 @@ sealed class AssistantRoute {
 }
 
 interface AssistantRouter : AutoCloseable {
+    fun recoverLatestRun(): AgentRunRecovery?
+
     fun route(
         input: String,
         installedCapabilities: Set<ModelCapability>,
@@ -83,6 +85,9 @@ class AssistantOrchestrator(
             actionModelPath = actionModelPath,
             deviceContext = deviceContext,
         ).toAssistantRoute()
+
+    override fun recoverLatestRun(): AgentRunRecovery? =
+        agentLoopRuntime.recoverLatestRun()
 
     override fun confirmToolRequest(runId: String, requestId: String): AgentRun? =
         agentLoopRuntime.confirmToolRequest(runId, requestId)

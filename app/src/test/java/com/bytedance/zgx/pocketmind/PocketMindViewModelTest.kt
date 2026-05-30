@@ -20,8 +20,10 @@ import com.bytedance.zgx.pocketmind.multimodal.SharedInput
 import com.bytedance.zgx.pocketmind.orchestration.AgentModelObservationResult
 import com.bytedance.zgx.pocketmind.orchestration.AgentObservationDecision
 import com.bytedance.zgx.pocketmind.orchestration.AgentObservationResult
+import com.bytedance.zgx.pocketmind.orchestration.AgentRunRecovery
 import com.bytedance.zgx.pocketmind.orchestration.AgentPlan
 import com.bytedance.zgx.pocketmind.orchestration.AgentRun
+import com.bytedance.zgx.pocketmind.orchestration.RecoverableToolRequest
 import com.bytedance.zgx.pocketmind.orchestration.AgentRunState
 import com.bytedance.zgx.pocketmind.orchestration.AssistantRoute
 import com.bytedance.zgx.pocketmind.orchestration.AssistantRouter
@@ -282,6 +284,69 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun restoreStartupStateRehydratesPendingToolConfirmation() = runTest(dispatcher) {
+        val request = ToolRequest(
+            id = "restore-request",
+            toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            arguments = emptyMap(),
+            reason = "恢复一次 Wi-Fi 设置请求",
+        )
+        val assistantRouter = FakeAssistantRouter(
+            recoveredRun = AgentRunRecovery(
+                run = AgentRun(
+                    id = "run-recover",
+                    input = "恢复测试",
+                    state = AgentRunState.AwaitingUserConfirmation,
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 2L,
+                ),
+                pendingTool = RecoverableToolRequest(
+                    request = request,
+                    draftTitle = "恢复 Wi-Fi 设置",
+                    draftSummary = "恢复一次 Wi-Fi 设置请求",
+                    hasFullArguments = true,
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        val pending = viewModel.uiState.value.pendingConfirmation
+        assertEquals(request.id, pending?.toolRequest?.id)
+        assertEquals(MobileActionFunctions.OPEN_WIFI_SETTINGS, pending?.draft?.functionName)
+        assertEquals("检测到未完成动作，请继续确认", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun restoreStartupStateMarksFailedWhenPendingToolIsNotRecoverable() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter(
+            recoveredRun = AgentRunRecovery(
+                run = AgentRun(
+                    id = "run-recover",
+                    input = "恢复搜索测试",
+                    state = AgentRunState.Failed,
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 2L,
+                ),
+                pendingTool = null,
+            ),
+        )
+        val viewModel = createViewModel(
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.pendingConfirmation)
+        assertEquals("上次未完成流程已终止", viewModel.uiState.value.statusText)
+    }
+
+    @Test
     fun duplicatePendingConfirmationExecutesOnlyOnce() = runTest(dispatcher) {
         val request = ToolRequest(toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS)
         val executor = RecordingToolExecutor()
@@ -436,6 +501,7 @@ class PocketMindViewModelTest {
         private val cancelObservation: AgentObservationResult? = null,
         private val toolObservation: AgentObservationResult? = null,
         private val modelObservation: AgentModelObservationResult? = null,
+        private val recoveredRun: AgentRunRecovery? = null,
     ) : AssistantRouter {
         var routeCallCount: Int = 0
             private set
@@ -468,6 +534,8 @@ class PocketMindViewModelTest {
         override fun observeToolResult(runId: String, result: ToolResult): AgentObservationResult? = toolObservation
 
         override fun observeModelResult(runId: String, text: String): AgentModelObservationResult? = modelObservation
+
+        override fun recoverLatestRun(): AgentRunRecovery? = recoveredRun
 
         override fun close() = Unit
     }

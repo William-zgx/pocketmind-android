@@ -92,39 +92,44 @@ class PocketMindViewModel(
                     it.copy(statusText = "已找到模型，点击加载模型")
                 }
             }
-            return
-        }
-
-        val pendingDownloadId = modelRepository.pendingDownloadId()
-        val pendingDownloadSource = modelRepository.loadPendingDownloadSource()
-        if (pendingDownloadId > 0L) {
-            val source = pendingDownloadSource ?: ModelDownloadSource.recommended(modelRepository.selectedRecommendedModel())
-            source.modelId?.let {
-                updateModelState(modelRepository.selectRecommendedModel(it).state)
-            }
-            val target = modelRepository.downloadedModelFile(source.fileName)
-            if (target == null) {
-                modelRepository.clearPendingDownload()
+        } else {
+            val pendingDownloadId = modelRepository.pendingDownloadId()
+            val pendingDownloadSource = modelRepository.loadPendingDownloadSource()
+            if (pendingDownloadId > 0L) {
+                val source = pendingDownloadSource ?: ModelDownloadSource.recommended(modelRepository.selectedRecommendedModel())
+                source.modelId?.let {
+                    updateModelState(modelRepository.selectRecommendedModel(it).state)
+                }
+                val target = modelRepository.downloadedModelFile(source.fileName)
+                if (target == null) {
+                    modelRepository.clearPendingDownload()
+                    _uiState.update {
+                        it.copy(statusText = "下载目录不可用，请导入已有模型")
+                    }
+                } else {
+                    monitorDownload(pendingDownloadId, target, source)
+                }
+            } else if (_uiState.value.inferenceMode == InferenceMode.Remote) {
+                updateRemoteReadiness("远程模型")
+            } else if (!isArm64Device()) {
                 _uiState.update {
-                    it.copy(statusText = "下载目录不可用，请导入已有模型")
+                    it.copy(statusText = "当前设备不是 64 位 ARM，无法运行此模型")
                 }
             } else {
-                monitorDownload(pendingDownloadId, target, source)
-            }
-        } else if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            updateRemoteReadiness("远程模型")
-        } else if (!isArm64Device()) {
-            _uiState.update {
-                it.copy(statusText = "当前设备不是 64 位 ARM，无法运行此模型")
-            }
-        } else {
-            val activePath = modelRepository.currentState().activeModelPath
-            if (activePath != null) {
-                _uiState.update {
-                    it.copy(statusText = "已找到模型，正在加载")
+                val activePath = modelRepository.currentState().activeModelPath
+                if (activePath != null) {
+                    _uiState.update {
+                        it.copy(statusText = "已找到模型，正在加载")
+                    }
+                    loadModel()
                 }
-                loadModel()
             }
+        }
+
+        restorePendingAgentRun()
+
+        if (skipModelRuntimeWork) {
+            return
         }
     }
 
@@ -1585,6 +1590,49 @@ class PocketMindViewModel(
                     _uiState.update { it.copy(statusText = "旧模型校验失败，请重新下载或重新导入") }
                 }
             }
+        }
+    }
+
+    private fun restorePendingAgentRun() {
+        val recovery = runCatching { assistantOrchestrator.recoverLatestRun() }.getOrNull() ?: return
+        if (recovery.pendingTool == null) {
+            if (recovery.run.state == AgentRunState.Failed) {
+                _uiState.update {
+                    it.copy(
+                        pendingConfirmation = null,
+                        isBusy = false,
+                        isGenerating = false,
+                        statusText = "上次未完成流程已终止",
+                    )
+                }
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isBusy = false,
+                isGenerating = false,
+                pendingConfirmation = PendingAgentConfirmation(
+                    runId = recovery.run.id,
+                    draft = ActionDraft(
+                        functionName = recovery.pendingTool.request.toolName,
+                        title = recovery.pendingTool.draftTitle.ifBlank {
+                            recovery.pendingTool.request.toolName
+                        },
+                        summary = recovery.pendingTool.draftSummary.ifBlank {
+                            "待确认操作：${recovery.pendingTool.request.toolName}"
+                        },
+                        parameters = recovery.pendingTool.request.arguments,
+                        requiresConfirmation = true,
+                    ),
+                    toolRequest = recovery.pendingTool.request,
+                    skillId = null,
+                    plannedByModel = false,
+                    fallbackReason = null,
+                ),
+                statusText = "检测到未完成动作，请继续确认",
+            )
         }
     }
 

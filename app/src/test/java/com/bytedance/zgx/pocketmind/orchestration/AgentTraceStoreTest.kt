@@ -7,6 +7,7 @@ import com.bytedance.zgx.pocketmind.data.AgentTraceDao
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,7 +65,15 @@ class AgentTraceStoreTest {
 
         val restartedStore = RoomAgentTraceStore(traceDao = dao)
         assertEquals(AgentRunState.Planning, restartedStore.run(run.id)?.state)
-        assertEquals(emptyList<AgentStep>(), restartedStore.steps(run.id))
+        val restoredStep = restartedStore.steps(run.id).singleOrNull()
+        assertNotNull(restoredStep)
+        assertEquals(
+            AgentStep.ToolRequested(
+                request = request.copy(arguments = mapOf("text" to "")),
+                draft = draft.copy(parameters = mapOf("text" to "")),
+            ),
+            restoredStep,
+        )
         assertEquals(listOf(persistedStep), restartedStore.stepSummaries(run.id))
     }
 
@@ -74,6 +83,9 @@ class AgentTraceStoreTest {
 
         override fun run(runId: String): AgentRunEntity? =
             runs[runId]
+
+        override fun recentRuns(limit: Int): List<AgentRunEntity> =
+            runs.values.sortedByDescending { it.updatedAtMillis }.take(limit)
 
         override fun upsertRun(run: AgentRunEntity) {
             runs[run.id] = run

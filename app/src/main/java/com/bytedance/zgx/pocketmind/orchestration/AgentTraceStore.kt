@@ -3,6 +3,9 @@ package com.bytedance.zgx.pocketmind.orchestration
 import com.bytedance.zgx.pocketmind.data.AgentRunEntity
 import com.bytedance.zgx.pocketmind.data.AgentStepEntity
 import com.bytedance.zgx.pocketmind.data.AgentTraceDao
+import com.bytedance.zgx.pocketmind.action.ActionDraft
+import com.bytedance.zgx.pocketmind.tool.ToolRequest
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicLong
 import java.util.UUID
@@ -19,10 +22,12 @@ data class AgentTraceStepSummary(
 interface AgentTraceStore {
     fun createRun(input: String): AgentRun
     fun run(runId: String): AgentRun?
+    fun latestNonFinalRun(): AgentRun?
     fun updateState(runId: String, state: AgentRunState): AgentRun
     fun appendStep(runId: String, step: AgentStep)
     fun steps(runId: String): List<AgentStep>
     fun stepSummaries(runId: String): List<AgentTraceStepSummary>
+    fun latestPendingToolRequest(runId: String): RecoverableToolRequest?
 }
 
 class InMemoryAgentTraceStore(
@@ -51,6 +56,11 @@ class InMemoryAgentTraceStore(
     override fun run(runId: String): AgentRun? =
         runs[runId]
 
+    override fun latestNonFinalRun(): AgentRun? =
+        runs.values
+            .filter { it.state !in FINAL_AGENT_RUN_STATES }
+            .maxByOrNull { it.updatedAtMillis }
+
     override fun updateState(runId: String, state: AgentRunState): AgentRun {
         val existing = runs.getValue(runId)
         val updated = existing.copy(
@@ -75,6 +85,24 @@ class InMemoryAgentTraceStore(
 
     override fun steps(runId: String): List<AgentStep> =
         runSteps[runId].orEmpty().toList()
+
+    override fun latestPendingToolRequest(runId: String): RecoverableToolRequest? {
+        val allSteps = steps(runId)
+        val confirmationRequestId = allSteps
+            .asReversed()
+            .mapNotNull { step -> (step as? AgentStep.UserConfirmationRequested)?.request?.id }
+            .firstOrNull() ?: return null
+        val requestStep = allSteps
+            .asReversed()
+            .mapNotNull { step -> step as? AgentStep.ToolRequested }
+            .firstOrNull { step -> step.request.id == confirmationRequestId } ?: return null
+        return RecoverableToolRequest(
+            request = requestStep.request,
+            draftTitle = requestStep.draft.title.ifBlank { requestStep.request.toolName },
+            draftSummary = requestStep.draft.summary,
+            hasFullArguments = true,
+        )
+    }
 
     override fun stepSummaries(runId: String): List<AgentTraceStepSummary> =
         runStepSummaries[runId].orEmpty().toList()
@@ -104,6 +132,14 @@ class RoomAgentTraceStore(
     override fun run(runId: String): AgentRun? =
         traceDao.run(runId)?.toDomain()
 
+    override fun latestNonFinalRun(): AgentRun? =
+        traceDao.recentRuns(10)
+            .mapNotNull { runEntity ->
+                runCatching { runEntity.toDomain() }
+                    .getOrNull()
+            }
+            .firstOrNull { it.state !in FINAL_AGENT_RUN_STATES }
+
     override fun updateState(runId: String, state: AgentRunState): AgentRun {
         val now = clockMillis()
         val updatedRows = traceDao.updateRunState(runId, state.name, now)
@@ -122,10 +158,26 @@ class RoomAgentTraceStore(
     }
 
     override fun steps(runId: String): List<AgentStep> =
-        liveSteps[runId].orEmpty().toList()
+        liveSteps[runId]?.toList() ?: traceDao.steps(runId).mapNotNull { entity ->
+            entity.toSummary().toRecoveredStep()
+        }
 
     override fun stepSummaries(runId: String): List<AgentTraceStepSummary> =
         traceDao.steps(runId).map { entity -> entity.toSummary() }
+
+    override fun latestPendingToolRequest(runId: String): RecoverableToolRequest? {
+        val confirmationRequestId = stepSummaries(runId)
+            .asReversed()
+            .mapNotNull { it.toPendingToolRequestId() }
+            .firstOrNull() ?: return null
+        return stepSummaries(runId).firstOrNull { summary ->
+            summary.requestId() == confirmationRequestId
+        }?.toRecoverableToolRequest()
+    }
+
+private fun AgentTraceStepSummary.requestId(): String =
+    runCatching { JSONObject(json).optString("requestId") }
+            .getOrDefault("")
 }
 
 private fun AgentRun.toEntity(): AgentRunEntity =
@@ -173,6 +225,87 @@ private fun AgentStep.toTraceStepSummary(
         createdAtMillis = createdAtMillis,
     )
 }
+
+private fun AgentTraceStepSummary.toPendingToolRequestId(): String? {
+    if (type != "UserConfirmationRequested") return null
+    return runCatching {
+        JSONObject(json).optString("requestId")
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+}
+
+private fun AgentTraceStepSummary.toRecoverableToolRequest(): RecoverableToolRequest? {
+    if (type != "ToolRequested") return null
+    val summary = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    val requestId = summary.optString("requestId")
+    if (requestId.isBlank()) return null
+    val toolName = summary.optString("toolName").ifBlank { "unknown_tool" }
+    val reason = summary.optString("reason")
+    val draftTitle = summary.optString("draftTitle").ifBlank { toolName }
+    val argumentKeys = summary
+        .optJSONArray("argumentKeys")
+        ?.run {
+            (0 until length()).mapNotNull { index -> getString(index).takeIf { it.isNotBlank() } }
+        } ?: emptyList()
+    return RecoverableToolRequest(
+        request = ToolRequest(
+            id = requestId,
+            toolName = toolName,
+            arguments = if (argumentKeys.isEmpty()) emptyMap() else argumentKeys.associateWith { "" },
+            reason = reason,
+        ),
+        draftTitle = draftTitle,
+        draftSummary = reason,
+        hasFullArguments = argumentKeys.isEmpty(),
+    )
+}
+
+private fun AgentTraceStepSummary.toRecoveredStep(): AgentStep? {
+    val type = type
+    val summary = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    return when (type) {
+        "ContextLoaded" -> AgentStep.ContextLoaded(
+            memoryHits = emptyList(),
+            deviceContext = null,
+        )
+        "ModelPlanned" -> null
+        "ToolRequested" -> {
+            val requestId = summary.optString("requestId")
+            val toolName = summary.optString("toolName")
+            val argumentKeys = summary.optJSONArray("argumentKeys")?.toStringList() ?: emptyList()
+            val reason = summary.optString("reason")
+            AgentStep.ToolRequested(
+                request = ToolRequest(
+                    id = requestId,
+                    toolName = toolName,
+                    arguments = argumentKeys.associateWith { "" },
+                    reason = reason,
+                ),
+                draft = ActionDraft(
+                    functionName = toolName,
+                    title = summary.optString("draftTitle").ifBlank { toolName },
+                    summary = reason.ifBlank { "工具请求" },
+                    parameters = argumentKeys.associateWith { "" },
+                    requiresConfirmation = true,
+                ),
+            )
+        }
+        "SkillPlanned", "SafetyChecked", "UserConfirmationRequested", "UserConfirmed", "UserRejected" -> null
+        "ObservationDecided", "AssistantResponded", "ToolObserved", "ToolRetryScheduled", "ToolRejected" -> null
+        "Failed" -> null
+        else -> null
+    }
+}
+
+private fun JSONArray.toStringList(): List<String> =
+    (0 until length()).mapNotNull { index ->
+        optString(index).takeIf { it.isNotBlank() }
+    }
+
+private val FINAL_AGENT_RUN_STATES: Set<AgentRunState> = setOf(
+    AgentRunState.Completed,
+    AgentRunState.Cancelled,
+    AgentRunState.Failed,
+)
 
 private fun AgentStepEntity.toSummary(): AgentTraceStepSummary =
     AgentTraceStepSummary(
