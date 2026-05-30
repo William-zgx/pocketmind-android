@@ -254,6 +254,20 @@ private val reminderSchemaJson = """
     }
 """.trimIndent()
 
+private val cancelReminderSchemaJson = """
+    {
+      "type": "object",
+      "required": ["taskId"],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
 private val shareTextSchemaJson = """
     {
       "type": "object",
@@ -424,6 +438,18 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
                 ToolPermission.RequiresAndroidRuntimePermission,
             ),
             riskLevel = RiskLevel.LowReadOnly,
+            confirmationPolicy = ConfirmationPolicy.Required,
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.CANCEL_REMINDER,
+            title = "取消提醒",
+            description = "在已安排的提醒列表中取消指定提醒任务，不再触发该提醒。",
+            inputSchemaJson = cancelReminderSchemaJson,
+            capability = ToolCapability.BackgroundTask,
+            permissions = setOf(ToolPermission.RequiresAndroidRuntimePermission),
+            riskLevel = RiskLevel.MediumDraftOrNavigation,
             confirmationPolicy = ConfirmationPolicy.Required,
         ),
     ),

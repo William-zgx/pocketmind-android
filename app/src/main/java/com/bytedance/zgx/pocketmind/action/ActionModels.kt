@@ -31,6 +31,7 @@ object MobileActionFunctions {
     const val READ_CLIPBOARD = "read_clipboard"
     const val SHARE_TEXT = "share_text"
     const val QUERY_CALENDAR_AVAILABILITY = "query_calendar_availability"
+    const val CANCEL_REMINDER = "cancel_reminder"
 
     val supported: Set<String> = setOf(
         OPEN_WIFI_SETTINGS,
@@ -44,5 +45,6 @@ object MobileActionFunctions {
         READ_CLIPBOARD,
         SHARE_TEXT,
         QUERY_CALENDAR_AVAILABILITY,
+        CANCEL_REMINDER,
     )
 }

@@ -16,6 +16,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         MobileActionFunctions.OPEN_WIFI_SETTINGS to DEVICE_SETTINGS_SKILL,
         MobileActionFunctions.OPEN_FLASHLIGHT_SETTINGS to DEVICE_SETTINGS_SKILL,
         MobileActionFunctions.SCHEDULE_REMINDER to REMINDER_SKILL,
+        MobileActionFunctions.CANCEL_REMINDER to CANCEL_REMINDER_SKILL,
         MobileActionFunctions.READ_CLIPBOARD to CLIPBOARD_CONTEXT_SKILL,
         MobileActionFunctions.SHARE_TEXT to SHARE_TEXT_SKILL,
     )
@@ -116,6 +117,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         const val INFORMATION_LOOKUP_SKILL = "information_lookup_skill"
         const val DEVICE_SETTINGS_SKILL = "device_settings_skill"
         const val REMINDER_SKILL = "reminder_skill"
+        const val CANCEL_REMINDER_SKILL = "cancel_reminder_skill"
         const val CLIPBOARD_CONTEXT_SKILL = "clipboard_context_skill"
         const val SHARE_TEXT_SKILL = "share_text_skill"
         const val CLIPBOARD_SUMMARY_SHARE_SKILL = "clipboard_summary_share_skill"
@@ -207,6 +209,16 @@ private val builtInSkillManifests = listOf(
         description = "把自然语言提醒请求整理成本地后台提醒工具调用。",
         triggerExamples = listOf("提醒我 10 分钟后喝水", "remind me in 1 hour"),
         requiredTools = listOf(MobileActionFunctions.SCHEDULE_REMINDER),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.MediumDraftOrNavigation,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.CANCEL_REMINDER_SKILL,
+        version = 1,
+        title = "取消提醒",
+        description = "根据任务 id 取消已安排的提醒，避免后续触发。",
+        triggerExamples = listOf("取消提醒 task-abc123", "撤销提醒 task-xyz-1"),
+        requiredTools = listOf(MobileActionFunctions.CANCEL_REMINDER),
         inputSchemaJson = simpleTextInputSchema,
         riskLevel = RiskLevel.MediumDraftOrNavigation,
     ),

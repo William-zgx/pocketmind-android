@@ -21,6 +21,7 @@ class BuiltInSkillRuntimeTest {
         assertTrue(BuiltInSkillRuntime.INFORMATION_LOOKUP_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.DEVICE_SETTINGS_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.REMINDER_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.CANCEL_REMINDER_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.CLIPBOARD_CONTEXT_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.SHARE_TEXT_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.CLIPBOARD_SUMMARY_SHARE_SKILL in manifests)
@@ -77,6 +78,28 @@ class BuiltInSkillRuntimeTest {
         requireNotNull(plan)
         assertEquals(BuiltInSkillRuntime.REMINDER_SKILL, plan.request.skillId)
         assertEquals(listOf(MobileActionFunctions.SCHEDULE_REMINDER), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
+    fun plansCancelReminderAsBackgroundToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.CANCEL_REMINDER,
+            title = "取消提醒",
+            summary = "将取消已安排提醒：task-abc123",
+            parameters = mapOf("taskId" to "task-abc123"),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("取消提醒 task-abc123", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.CANCEL_REMINDER_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.CANCEL_REMINDER), plan.manifest.requiredTools)
         assertEquals(1, plan.steps.size)
     }
 

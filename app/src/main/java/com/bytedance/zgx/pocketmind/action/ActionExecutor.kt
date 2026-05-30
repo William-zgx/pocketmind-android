@@ -38,6 +38,9 @@ class ActionExecutor(
         if (request.toolName == MobileActionFunctions.SCHEDULE_REMINDER) {
             return scheduleReminder(request)
         }
+        if (request.toolName == MobileActionFunctions.CANCEL_REMINDER) {
+            return cancelReminder(request)
+        }
         if (request.toolName == MobileActionFunctions.READ_CLIPBOARD) {
             return readClipboard(request)
         }
@@ -141,6 +144,39 @@ class ActionExecutor(
         )
     }
 
+    private fun cancelReminder(request: ToolRequest): ToolResult {
+        val scheduler = backgroundTaskScheduler
+            ?: return request.failed(
+                code = ToolErrorCode.ExecutionFailed,
+                summary = "后台任务调度器不可用",
+                retryable = true,
+            )
+        val taskId = request.arguments["taskId"].orEmpty()
+        if (taskId.isBlank()) {
+            return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "取消提醒时必须提供 taskId",
+                retryable = false,
+            )
+        }
+        return scheduler.cancel(taskId).fold(
+            onSuccess = {
+                request.succeeded(
+                    summary = "已取消提醒任务",
+                    data = mapOf("toolName" to request.toolName, "taskId" to taskId),
+                )
+            },
+            onFailure = { throwable ->
+                request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "取消提醒失败：${throwable.cleanMessage()}",
+                    retryable = true,
+                    data = mapOf("toolName" to request.toolName, "taskId" to taskId),
+                )
+            },
+        )
+    }
+
     private fun intentsFor(request: ToolRequest): List<Intent>? =
         when (request.toolName) {
             MobileActionFunctions.OPEN_WIFI_SETTINGS ->
@@ -194,6 +230,9 @@ class ActionExecutor(
             MobileActionFunctions.READ_CLIPBOARD ->
                 null
 
+            MobileActionFunctions.CANCEL_REMINDER ->
+                null
+
             MobileActionFunctions.SHARE_TEXT ->
                 listOf(shareTextIntent(request))
 
@@ -228,6 +267,7 @@ class ActionExecutor(
             MobileActionFunctions.SCHEDULE_REMINDER -> "已安排后台提醒"
             MobileActionFunctions.READ_CLIPBOARD -> "已读取剪贴板"
             MobileActionFunctions.SHARE_TEXT -> "已打开系统分享面板"
+            MobileActionFunctions.CANCEL_REMINDER -> "提醒已取消"
             else -> "工具已执行"
         }
 

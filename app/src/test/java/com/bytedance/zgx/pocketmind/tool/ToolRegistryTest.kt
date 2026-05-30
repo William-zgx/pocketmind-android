@@ -82,6 +82,15 @@ class ToolRegistryTest {
         assertTrue(calendarAvailabilitySpec.inputSchemaJson.contains("\"start\""))
         assertTrue(calendarAvailabilitySpec.inputSchemaJson.contains("\"end\""))
         assertTrue(calendarAvailabilitySpec.inputSchemaJson.contains("31 days"))
+
+        val cancelReminderSpec = registry.specFor(MobileActionFunctions.CANCEL_REMINDER)
+        assertNotNull(cancelReminderSpec)
+        requireNotNull(cancelReminderSpec)
+        assertEquals(ToolCapability.BackgroundTask, cancelReminderSpec.capability)
+        assertEquals(RiskLevel.MediumDraftOrNavigation, cancelReminderSpec.riskLevel)
+        assertEquals(ConfirmationPolicy.Required, cancelReminderSpec.confirmationPolicy)
+        assertTrue(ToolPermission.RequiresAndroidRuntimePermission in cancelReminderSpec.permissions)
+        assertTrue(cancelReminderSpec.inputSchemaJson.contains("taskId"))
     }
 
     @Test
@@ -162,6 +171,7 @@ class ToolRegistryTest {
             MobileActionFunctions.SEARCH_MAPS to "query",
             MobileActionFunctions.WEB_SEARCH to "query",
             MobileActionFunctions.SCHEDULE_REMINDER to "title",
+            MobileActionFunctions.CANCEL_REMINDER to "taskId",
             MobileActionFunctions.SHARE_TEXT to "text",
         )
 

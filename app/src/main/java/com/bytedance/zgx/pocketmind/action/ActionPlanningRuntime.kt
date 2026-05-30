@@ -128,6 +128,7 @@ private fun actionPrompt(input: String): String =
     - schedule_reminder {"title":"...","body":"...","delayMinutes":"15"} 仅用于明确的分钟/小时后提醒
     - read_clipboard {} 仅用于用户明确要求读取剪贴板
     - share_text {"text":"...","title":"..."} 仅打开系统分享面板，不直接发送
+    - cancel_reminder {"taskId":"..."} 仅用于取消已安排的提醒任务
 
     用户请求：$input
     """.trimIndent()

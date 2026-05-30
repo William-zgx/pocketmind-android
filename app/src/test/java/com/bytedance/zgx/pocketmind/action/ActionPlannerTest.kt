@@ -79,6 +79,20 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun treatsWithdrawReminderAsLikelyAction() {
+        assertTrue(planner.isLikelyAction("撤销提醒 task-abc123"))
+    }
+
+    @Test
+    fun infersCancelReminderDraftFromTaskId() {
+        val plan = planner.plan("请取消提醒 task-abc123")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.CANCEL_REMINDER, plan.draft?.functionName)
+        assertEquals("task-abc123", plan.draft?.parameters?.get("taskId"))
+    }
+
+    @Test
     fun infersClipboardReadDraftOnlyWhenClipboardIsNamed() {
         val plan = planner.plan("读取剪贴板并总结")
 

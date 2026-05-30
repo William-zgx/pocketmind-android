@@ -63,6 +63,75 @@ class ActionExecutorTest {
     }
 
     @Test
+    fun cancelsReminderThroughBackgroundScheduler() {
+        val scheduler = RecordingBackgroundTaskScheduler()
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = scheduler,
+            canPostReminderNotifications = { true },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-cancel",
+                toolName = MobileActionFunctions.CANCEL_REMINDER,
+                arguments = mapOf("taskId" to "task-abc"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("task-abc", scheduler.lastCancelledTaskId)
+        assertEquals(MobileActionFunctions.CANCEL_REMINDER, result.data["toolName"])
+        assertEquals("task-abc", result.data["taskId"])
+    }
+
+    @Test
+    fun rejectsCancelReminderWithoutTaskId() {
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = RecordingBackgroundTaskScheduler(),
+            canPostReminderNotifications = { true },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-cancel-empty",
+                toolName = MobileActionFunctions.CANCEL_REMINDER,
+                arguments = mapOf("taskId" to "  "),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals(ToolErrorCode.InvalidRequest, result.error?.code)
+    }
+
+    @Test
+    fun reportsCancelFailureAsStructuredToolResult() {
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = RecordingBackgroundTaskScheduler(
+                cancelFailure = IllegalArgumentException("cancel failed"),
+            ),
+            canPostReminderNotifications = { true },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-cancel-failed",
+                toolName = MobileActionFunctions.CANCEL_REMINDER,
+                arguments = mapOf("taskId" to "task-abc"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals(ToolErrorCode.ExecutionFailed, result.error?.code)
+        assertTrue(result.summary.contains("cancel failed"))
+    }
+
+    @Test
     fun readsClipboardTextThroughInjectedProvider() {
         val executor = ActionExecutor(
             context = null,
@@ -117,8 +186,11 @@ class ActionExecutorTest {
 
     private class RecordingBackgroundTaskScheduler(
         private val failure: Throwable? = null,
+        private val cancelFailure: Throwable? = null,
     ) : BackgroundTaskScheduler {
         var lastReminderRequest: ReminderScheduleRequest? = null
+            private set
+        var lastCancelledTaskId: String? = null
             private set
 
         override fun scheduleReminder(request: ReminderScheduleRequest): Result<ScheduledTask> {
@@ -138,7 +210,10 @@ class ActionExecutorTest {
             )
         }
 
-        override fun cancel(taskId: String): Result<Unit> =
-            Result.success(Unit)
+        override fun cancel(taskId: String): Result<Unit> {
+            lastCancelledTaskId = taskId
+            cancelFailure?.let { return Result.failure(it) }
+            return Result.success(Unit)
+        }
     }
 }

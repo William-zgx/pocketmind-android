@@ -36,6 +36,9 @@ class MobileActionPlanner : ActionPlanner {
             "share",
             "availability",
             "free/busy",
+            "取消",
+            "取消提醒",
+            "撤销",
         ).any { it in normalized } || isWebSearchRequest(input)
     }
 
@@ -77,6 +80,9 @@ class MobileActionPlanner : ActionPlanner {
             isCalendarAvailabilityRequest(input) && calendarWindowParameters != null ->
                 MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY.toDraft(calendarWindowParameters)
 
+            isCancelReminderRequest(input) ->
+                MobileActionFunctions.CANCEL_REMINDER.toDraft(cancelReminderParameters(input))
+
             "日程" in input || "calendar" in normalized || "提醒" in input ->
                 MobileActionFunctions.CREATE_CALENDAR_EVENT.toDraft(mapOf("title" to cleanedObject(input)))
 
@@ -115,6 +121,7 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.READ_CLIPBOARD -> "读取剪贴板"
             MobileActionFunctions.SHARE_TEXT -> "系统分享"
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY -> "查询日历忙闲"
+            MobileActionFunctions.CANCEL_REMINDER -> "取消提醒"
             else -> "动作草稿"
         }
 
@@ -133,6 +140,8 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.SHARE_TEXT -> "将打开系统分享面板并填入文本。"
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY ->
                 "将只读查询本机日历忙闲：${parameters["start"].orEmpty()} 到 ${parameters["end"].orEmpty()}"
+            MobileActionFunctions.CANCEL_REMINDER ->
+                "将取消提醒任务：${parameters["taskId"].orEmpty()}"
             else -> "将打开系统页面完成这个动作。"
         }
 
@@ -229,6 +238,16 @@ class MobileActionPlanner : ActionPlanner {
                 .containsMatchIn(normalized)
     }
 
+    private fun isCancelReminderRequest(input: String): Boolean {
+        return ("取消" in input || "撤销" in input) &&
+            TASK_ID_PATTERN.containsMatchIn(input)
+    }
+
+    private fun cancelReminderParameters(input: String): Map<String, String> {
+        val taskId = TASK_ID_PATTERN.find(input)?.value.orEmpty()
+        return mapOf("taskId" to taskId)
+    }
+
     private fun calendarAvailabilityParameters(input: String): Map<String, String>? {
         val matches = ISO_OFFSET_DATE_TIME_PATTERN.findAll(input).map { it.value }.take(2).toList()
         if (matches.size < 2) return null
@@ -254,5 +273,6 @@ class MobileActionPlanner : ActionPlanner {
         val REMINDER_HOURS_PATTERN = Regex("""(\d+)\s*(小时|hours?|hrs?)""", RegexOption.IGNORE_CASE)
         val ISO_OFFSET_DATE_TIME_PATTERN =
             Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})""")
+        val TASK_ID_PATTERN = Regex("task-[A-Za-z0-9_-]+")
     }
 }
