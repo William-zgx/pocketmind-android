@@ -347,20 +347,20 @@ class AgentLoopRuntime(
             AgentObservationDecision.Cancel -> AgentRunState.Cancelled
         }
         val updatedRun = traceStore.updateState(runId, finalState)
-            return AgentObservationResult(
-                run = updatedRun,
-                result = observedResult,
-                assistantMessage = assistantMessage,
-                decision = decision,
-                continuationPromptForModel = continuationPrompt,
-                continuationRequiresLocalModel = continuationPrompt != null &&
-                    (request.toolName == MobileActionFunctions.READ_CLIPBOARD ||
-                        observedResult.requiresLocalModelForContinuation() ||
-                        pendingModelContinuationByRun[runId]?.requiresLocalModel == true),
-                retryRequest = retryRequest,
-                retryAttempt = retryAttempt,
-                steps = traceStore.steps(runId),
-            )
+        return AgentObservationResult(
+            run = updatedRun,
+            result = observedResult,
+            assistantMessage = assistantMessage,
+            decision = decision,
+            continuationPromptForModel = continuationPrompt,
+            continuationRequiresLocalModel = continuationPrompt != null &&
+                (request.toolName == MobileActionFunctions.READ_CLIPBOARD ||
+                    observedResult.requiresLocalModelForContinuation() ||
+                    pendingModelContinuationByRun[runId]?.requiresLocalModel == true),
+            retryRequest = retryRequest,
+            retryAttempt = retryAttempt,
+            steps = traceStore.steps(runId),
+        )
     }
 
     private fun observationDecision(
