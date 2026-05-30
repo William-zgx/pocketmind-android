@@ -26,6 +26,7 @@ object MobileActionFunctions {
     const val COMPOSE_EMAIL = "compose_email"
     const val CREATE_CALENDAR_EVENT = "create_calendar_event"
     const val CREATE_CONTACT_DRAFT = "create_contact_draft"
+    const val QUERY_CONTACTS = "query_contacts"
     const val OPEN_FLASHLIGHT_SETTINGS = "open_flashlight_settings"
     const val SCHEDULE_REMINDER = "schedule_reminder"
     const val READ_CLIPBOARD = "read_clipboard"
@@ -43,6 +44,7 @@ object MobileActionFunctions {
         COMPOSE_EMAIL,
         CREATE_CALENDAR_EVENT,
         CREATE_CONTACT_DRAFT,
+        QUERY_CONTACTS,
         OPEN_FLASHLIGHT_SETTINGS,
         SCHEDULE_REMINDER,
         READ_CLIPBOARD,

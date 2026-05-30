@@ -28,6 +28,7 @@ class BuiltInSkillRuntimeTest {
         assertTrue(BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL in manifests)
         assertTrue(manifests.values.all { it.version >= 1 })
         assertTrue(manifests.values.all { it.inputSchemaJson.contains("additionalProperties") })
+        assertTrue(BuiltInSkillRuntime.CONTACTS_QUERY_SKILL in manifests)
     }
 
     @Test
@@ -101,6 +102,28 @@ class BuiltInSkillRuntimeTest {
         requireNotNull(plan)
         assertEquals(BuiltInSkillRuntime.CANCEL_REMINDER_SKILL, plan.request.skillId)
         assertEquals(listOf(MobileActionFunctions.CANCEL_REMINDER), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
+    fun plansContactQueryAsDeviceContextToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.QUERY_CONTACTS,
+            title = "查询联系人",
+            summary = "将按“联系人A”查询联系人。",
+            parameters = mapOf("query" to "联系人A"),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("查一下联系人 A", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.CONTACTS_QUERY_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.QUERY_CONTACTS), plan.manifest.requiredTools)
         assertEquals(1, plan.steps.size)
     }
 

@@ -18,6 +18,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         MobileActionFunctions.OPEN_DEEP_LINK to DEEP_LINK_NAVIGATION_SKILL,
         MobileActionFunctions.SCHEDULE_REMINDER to REMINDER_SKILL,
         MobileActionFunctions.CANCEL_REMINDER to CANCEL_REMINDER_SKILL,
+        MobileActionFunctions.QUERY_CONTACTS to CONTACTS_QUERY_SKILL,
         MobileActionFunctions.READ_CLIPBOARD to CLIPBOARD_CONTEXT_SKILL,
         MobileActionFunctions.SHARE_TEXT to SHARE_TEXT_SKILL,
     )
@@ -119,6 +120,7 @@ class BuiltInSkillRuntime : SkillRuntime {
         const val DEVICE_SETTINGS_SKILL = "device_settings_skill"
         const val REMINDER_SKILL = "reminder_skill"
         const val CANCEL_REMINDER_SKILL = "cancel_reminder_skill"
+        const val CONTACTS_QUERY_SKILL = "contacts_query_skill"
         const val CLIPBOARD_CONTEXT_SKILL = "clipboard_context_skill"
         const val SHARE_TEXT_SKILL = "share_text_skill"
         const val CLIPBOARD_SUMMARY_SHARE_SKILL = "clipboard_summary_share_skill"
@@ -223,6 +225,16 @@ private val builtInSkillManifests = listOf(
         requiredTools = listOf(MobileActionFunctions.CANCEL_REMINDER),
         inputSchemaJson = simpleTextInputSchema,
         riskLevel = RiskLevel.MediumDraftOrNavigation,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.CONTACTS_QUERY_SKILL,
+        version = 1,
+        title = "联系人查询",
+        description = "把联系人检索请求整理成本机联系人读取动作。",
+        triggerExamples = listOf("查找 李雷", "搜索联系人 张三"),
+        requiredTools = listOf(MobileActionFunctions.QUERY_CONTACTS),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.LowReadOnly,
     ),
     SkillManifest(
         id = BuiltInSkillRuntime.CLIPBOARD_CONTEXT_SKILL,

@@ -101,6 +101,9 @@ class MobileActionPlanner : ActionPlanner {
             isCalendarAvailabilityRequest(input) && calendarWindowParameters != null ->
                 MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY.toDraft(calendarWindowParameters)
 
+            isContactQueryRequest(input) ->
+                MobileActionFunctions.QUERY_CONTACTS.toDraft(contactQueryParameters(input))
+
             isCancelReminderRequest(input) ->
                 MobileActionFunctions.CANCEL_REMINDER.toDraft(cancelReminderParameters(input))
 
@@ -146,6 +149,7 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.OPEN_DEEP_LINK -> "打开深链"
             MobileActionFunctions.QUERY_FOREGROUND_APP -> "查询当前前台应用"
             MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS -> "查询最近通知"
+            MobileActionFunctions.QUERY_CONTACTS -> "查询联系人"
             else -> "动作草稿"
         }
 
@@ -176,6 +180,15 @@ class MobileActionPlanner : ActionPlanner {
                     "将读取最近未读通知的摘要。"
                 } else {
                     "将读取最近 ${maxCount} 条通知的摘要。"
+                }
+            }
+            MobileActionFunctions.QUERY_CONTACTS -> {
+                val maxCount = parameters["maxCount"]
+                val query = parameters["query"].orEmpty().ifBlank { "联系人" }
+                if (maxCount.isNullOrBlank()) {
+                    "将按“$query”查询联系人。"
+                } else {
+                    "将按“$query”查询最多 ${maxCount} 个联系人。"
                 }
             }
             else -> "将打开系统页面完成这个动作。"
@@ -303,6 +316,20 @@ class MobileActionPlanner : ActionPlanner {
             || Regex("""最近\d{1,2}条""").containsMatchIn(normalized.replace(" ", ""))
     }
 
+    private fun isContactQueryRequest(input: String): Boolean {
+        val normalized = input.lowercase()
+        return listOf(
+            "查询联系人",
+            "查联系人",
+            "查找联系人",
+            "搜索联系人",
+            "找联系人",
+            "联系人查询",
+        ).any { it in input } ||
+            Regex("""\b(contact|contacts)\b""").containsMatchIn(normalized) &&
+                Regex("""(查询|查找|搜索|找|find|search)""").containsMatchIn(normalized)
+    }
+
     private fun recentNotificationParameters(input: String): Map<String, String> {
         val cleaned = input.replace(Regex("\\s+"), "")
         val match = Regex("最近(\\d{1,2})条(消息|通知|讯息)?").find(cleaned)
@@ -310,6 +337,47 @@ class MobileActionPlanner : ActionPlanner {
         val rawCount = match?.groupValues?.getOrNull(1) ?: return emptyMap()
         val maxCount = rawCount.toIntOrNull() ?: return emptyMap()
         return if (maxCount <= 0) emptyMap() else mapOf("maxCount" to maxCount.toString())
+    }
+
+    private fun contactQueryParameters(input: String): Map<String, String> {
+        val cleaned = cleanedObject(input)
+        val normalizedForCount = cleaned.replace(Regex("\\s+"), "")
+        val maxMatch = Regex("""(?:前|最多)\s*(\d{1,2})\s*(个|位|条)""")
+            .find(normalizedForCount)
+        val maxCount = maxMatch?.groupValues?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+            ?.toString()
+        val query = cleaned
+            .replace(
+                Regex(
+                    """^请?\s*(?:帮我\s*)?(?:查询|查找|查|搜索|找)\s*联系人\s*""",
+                    RegexOption.IGNORE_CASE,
+                ),
+                "",
+            )
+            .replace(
+                Regex("""\b(contact|contacts)\b""", RegexOption.IGNORE_CASE),
+                "",
+            )
+            .replace(
+                Regex(
+                    """(?:^|[\s，,;；]*)?(?:前|最多)\s*\d{1,2}\s*(?:个|位|条)""",
+                ),
+                "",
+            )
+            .replace(Regex("""\bcontacts?\s*""", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .ifBlank { "联系人" }
+
+        return if (maxCount == null) {
+            mapOf("query" to query)
+        } else {
+            mapOf(
+                "query" to query,
+                "maxCount" to maxCount,
+            )
+        }
     }
 
     private fun isOpenDeepLinkRequest(input: String): Boolean {

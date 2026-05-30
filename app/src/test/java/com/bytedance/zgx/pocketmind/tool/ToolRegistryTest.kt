@@ -109,6 +109,18 @@ class ToolRegistryTest {
         assertTrue(ToolPermission.ReadsDeviceContext in recentNotificationSpec.permissions)
         assertTrue(recentNotificationSpec.inputSchemaJson.contains("maxCount"))
 
+        val contactQuerySpec = registry.specFor(MobileActionFunctions.QUERY_CONTACTS)
+        assertNotNull(contactQuerySpec)
+        requireNotNull(contactQuerySpec)
+        assertEquals(ToolCapability.DeviceContext, contactQuerySpec.capability)
+        assertEquals(RiskLevel.LowReadOnly, contactQuerySpec.riskLevel)
+        assertEquals(ConfirmationPolicy.Required, contactQuerySpec.confirmationPolicy)
+        assertTrue(ToolPermission.ReadsDeviceContext in contactQuerySpec.permissions)
+        assertTrue(ToolPermission.ReadsContacts in contactQuerySpec.permissions)
+        assertTrue(ToolPermission.RequiresAndroidRuntimePermission in contactQuerySpec.permissions)
+        assertTrue(contactQuerySpec.inputSchemaJson.contains("query"))
+        assertTrue(contactQuerySpec.inputSchemaJson.contains("maxCount"))
+
         val cancelReminderSpec = registry.specFor(MobileActionFunctions.CANCEL_REMINDER)
         assertNotNull(cancelReminderSpec)
         requireNotNull(cancelReminderSpec)
@@ -200,6 +212,7 @@ class ToolRegistryTest {
             MobileActionFunctions.CANCEL_REMINDER to "taskId",
             MobileActionFunctions.SHARE_TEXT to "text",
             MobileActionFunctions.OPEN_DEEP_LINK to "uri",
+            MobileActionFunctions.QUERY_CONTACTS to "query",
         )
 
         requiredArgumentsByTool.forEach { (toolName, requiredArgument) ->
@@ -238,6 +251,38 @@ class ToolRegistryTest {
                 id = "request-recent-valid",
                 toolName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
                 arguments = mapOf("maxCount" to "6"),
+                reason = "test",
+            ),
+        )
+        assertNull(valid)
+    }
+
+    @Test
+    fun validatesContactQueryMaxCountPattern() {
+        val invalid = registry.validate(
+            ToolRequest(
+                id = "request-contact-max-invalid",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf(
+                    "query" to "li",
+                    "maxCount" to "0",
+                ),
+                reason = "test",
+            ),
+        )
+        assertNotNull(invalid)
+        requireNotNull(invalid)
+        assertEquals(ToolStatus.Rejected, invalid.status)
+        assertTrue(invalid.summary.contains("maxCount"))
+
+        val valid = registry.validate(
+            ToolRequest(
+                id = "request-contact-max-valid",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf(
+                    "query" to "li",
+                    "maxCount" to "6",
+                ),
                 reason = "test",
             ),
         )

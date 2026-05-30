@@ -211,8 +211,8 @@ Current status:
   generation settings, remote settings, downloads, memory, tool execution, and
   assistant routing so privacy behavior can be regression-tested without
   Android-bound concrete repositories.
-- Screen understanding, current app, notification readers, files, calendar, and
-  contacts readers are still pending.
+- Screen understanding, current app, notification readers, files, and calendar
+  readers are still pending.
 
 ## Execution Boundary
 

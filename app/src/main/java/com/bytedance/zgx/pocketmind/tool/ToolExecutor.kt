@@ -8,6 +8,9 @@ import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityQueryValidation
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityReadResult
 import com.bytedance.zgx.pocketmind.device.ForegroundAppProvider
 import com.bytedance.zgx.pocketmind.device.ForegroundAppReadResult
+import com.bytedance.zgx.pocketmind.device.ContactSummaryItem
+import com.bytedance.zgx.pocketmind.device.ContactSummaryProvider
+import com.bytedance.zgx.pocketmind.device.ContactSummaryReadResult
 import com.bytedance.zgx.pocketmind.device.NotificationSummaryItem
 import com.bytedance.zgx.pocketmind.device.NotificationSummaryProvider
 import com.bytedance.zgx.pocketmind.device.NotificationSummaryReadResult
@@ -21,12 +24,14 @@ interface ToolExecutor {
 class RoutingToolExecutor(
     private val calendarAvailabilityProvider: CalendarAvailabilityProvider,
     private val foregroundAppProvider: ForegroundAppProvider,
+    private val contactSummaryProvider: ContactSummaryProvider,
     private val notificationSummaryProvider: NotificationSummaryProvider,
     private val delegate: ToolExecutor,
 ) : ToolExecutor {
     private val calendarAvailabilityToolExecutor =
         CalendarAvailabilityToolExecutor(calendarAvailabilityProvider)
     private val foregroundAppToolExecutor = ForegroundAppToolExecutor(foregroundAppProvider)
+    private val contactSummaryToolExecutor = ContactSummaryToolExecutor(contactSummaryProvider)
     private val notificationSummaryToolExecutor =
         NotificationSummaryToolExecutor(notificationSummaryProvider)
 
@@ -36,6 +41,8 @@ class RoutingToolExecutor(
                 calendarAvailabilityToolExecutor.execute(request)
             MobileActionFunctions.QUERY_FOREGROUND_APP ->
                 foregroundAppToolExecutor.execute(request)
+            MobileActionFunctions.QUERY_CONTACTS ->
+                contactSummaryToolExecutor.execute(request)
             MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS ->
                 notificationSummaryToolExecutor.execute(request)
 
@@ -170,6 +177,51 @@ class ForegroundAppToolExecutor(
     }
 }
 
+class ContactSummaryToolExecutor(
+    private val provider: ContactSummaryProvider,
+) : ToolExecutor {
+    override fun execute(request: ToolRequest): ToolResult {
+        if (request.toolName != MobileActionFunctions.QUERY_CONTACTS) {
+            return request.failed(
+                code = ToolErrorCode.UnknownTool,
+                summary = "Unknown tool: ${request.toolName}",
+                retryable = false,
+            )
+        }
+
+        val query = request.arguments["query"]?.trim().orEmpty()
+        val maxCount = request.arguments["maxCount"]?.trim()?.toIntOrNull() ?: 5
+        return when (val result = provider.queryContacts(query, maxCount)) {
+            is ContactSummaryReadResult.Available ->
+                request.succeeded(
+                    summary = "已查询到 ${result.items.size} 个联系人。",
+                    data = request.localOnlyData() + mapOf(
+                        "query" to query,
+                        "maxCount" to maxCount.toString(),
+                        "contactCount" to result.items.size.toString(),
+                        "contactsJson" to result.items.toContactsJsonString(),
+                    ),
+                )
+
+            is ContactSummaryReadResult.PermissionDenied ->
+                request.failed(
+                    code = ToolErrorCode.PermissionDenied,
+                    summary = "未授权“读取联系人”权限，无法查询联系人",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+
+            is ContactSummaryReadResult.Failed ->
+                request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "联系人查询失败：${result.reason}",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+        }
+    }
+}
+
 class NotificationSummaryToolExecutor(
     private val provider: NotificationSummaryProvider,
 ) : ToolExecutor {
@@ -225,6 +277,18 @@ class NotificationSummaryToolExecutor(
         }
         return notificationsArray.toString()
     }
+}
+
+private fun List<ContactSummaryItem>.toContactsJsonString(): String {
+    val contactsArray = JSONArray()
+    forEach { item ->
+        contactsArray.put(
+            JSONObject()
+                .put("name", item.name)
+                .put("phone", item.phone),
+        )
+    }
+    return contactsArray.toString()
 }
 
 private fun ToolRequest.localOnlyData(): Map<String, String> =

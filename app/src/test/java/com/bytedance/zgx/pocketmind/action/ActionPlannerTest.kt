@@ -71,6 +71,19 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun parsesContactQueryCallOutputWithLimit() {
+        val draft = planner.parseModelOutput(
+            """call:query_contacts{"query":"李雷","maxCount":"3"}""",
+        )
+
+        requireNotNull(draft)
+        assertEquals(MobileActionFunctions.QUERY_CONTACTS, draft.functionName)
+        assertEquals("李雷", draft.parameters["query"])
+        assertEquals("3", draft.parameters["maxCount"])
+        assertTrue(draft.summary.contains("联系人"))
+    }
+
+    @Test
     fun parsesOpenDeepLinkCallOutput() {
         val draft = planner.parseModelOutput(
             """call:open_deep_link{"uri":"https://example.com/help"}""",
@@ -147,6 +160,16 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun infersContactQueryDraftWithCustomLimit() {
+        val plan = planner.plan("帮我查找联系人 张三 前3个")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.QUERY_CONTACTS, plan.draft?.functionName)
+        assertEquals("张三", plan.draft?.parameters?.get("query"))
+        assertEquals("3", plan.draft?.parameters?.get("maxCount"))
+    }
+
+    @Test
     fun infersClipboardReadDraftOnlyWhenClipboardIsNamed() {
         val plan = planner.plan("读取剪贴板并总结")
 
@@ -187,6 +210,13 @@ class ActionPlannerTest {
 
         assertTrue(prompt.contains("- query_foreground_app {}"))
         assertTrue(prompt.contains("- query_recent_notifications {\"maxCount\":\"...\"}"))
+    }
+
+    @Test
+    fun modelPromptMentionsContactQueryTool() {
+        val prompt = actionPrompt("查询联系人 张三")
+
+        assertTrue(prompt.contains("- query_contacts"))
     }
 
     @Test

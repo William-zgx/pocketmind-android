@@ -5,6 +5,9 @@ import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityProvider
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityReadResult
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityWindow
+import com.bytedance.zgx.pocketmind.device.ContactSummaryItem
+import com.bytedance.zgx.pocketmind.device.ContactSummaryProvider
+import com.bytedance.zgx.pocketmind.device.ContactSummaryReadResult
 import com.bytedance.zgx.pocketmind.device.ForegroundAppInfo
 import com.bytedance.zgx.pocketmind.device.ForegroundAppProvider
 import com.bytedance.zgx.pocketmind.device.ForegroundAppReadResult
@@ -88,6 +91,84 @@ class DeviceContextToolExecutorTest {
     }
 
     @Test
+    fun contactSummaryToolExecutorReadsAndSerializesItems() {
+        val executor = ContactSummaryToolExecutor(
+            FakeContactSummaryProvider { _, _ ->
+                ContactSummaryReadResult.Available(
+                    listOf(
+                        ContactSummaryItem(name = "联系人A", phone = "13800000000"),
+                        ContactSummaryItem(name = "联系人B", phone = "13800000001"),
+                    ),
+                )
+            },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-contacts",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf("query" to "联系人", "maxCount" to "2"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("2", result.data["contactCount"])
+        assertEquals("2", result.data["maxCount"])
+        assertEquals("联系人", result.data["query"])
+        assertEquals(MessagePrivacy.LocalOnly.name, result.data["privacy"])
+
+        val contacts = JSONArray(result.data.getValue("contactsJson"))
+        assertEquals(2, contacts.length())
+        assertEquals("联系人A", contacts.getJSONObject(0).getString("name"))
+        assertEquals("13800000000", contacts.getJSONObject(0).getString("phone"))
+    }
+
+    @Test
+    fun contactSummaryToolExecutorDefaultsToConfiguredCountWhenMaxCountMissing() {
+        val fakeProvider = FakeContactSummaryProvider { query, maxCount ->
+            assertEquals("联系人A", query)
+            assertEquals(5, maxCount)
+            ContactSummaryReadResult.Available(emptyList())
+        }
+        val executor = ContactSummaryToolExecutor(fakeProvider)
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-contacts-default",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf("query" to "联系人A"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("0", result.data["contactCount"])
+    }
+
+    @Test
+    fun contactSummaryToolExecutorReturnsStructuredPermissionFailure() {
+        val executor = ContactSummaryToolExecutor(
+            FakeContactSummaryProvider { _, _ ->
+                ContactSummaryReadResult.PermissionDenied("未授权")
+            },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-contact-deny",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf("query" to "联系人A"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals(ToolErrorCode.PermissionDenied, result.error?.code)
+        assertEquals(MessagePrivacy.LocalOnly.name, result.data["privacy"])
+    }
+
+    @Test
     fun notificationSummaryToolExecutorReadsAndSerializesItems() {
         val executor = NotificationSummaryToolExecutor(
             FakeNotificationSummaryProvider {
@@ -168,6 +249,9 @@ class DeviceContextToolExecutorTest {
             notificationSummaryProvider = FakeNotificationSummaryProvider {
                 NotificationSummaryReadResult.Available(emptyList())
             },
+            contactSummaryProvider = FakeContactSummaryProvider { _, _ ->
+                ContactSummaryReadResult.Available(emptyList())
+            },
             delegate = object : ToolExecutor {
                 override fun execute(request: ToolRequest): ToolResult {
                     delegatedTool = request.toolName
@@ -194,6 +278,17 @@ class DeviceContextToolExecutorTest {
             ),
         )
         assertEquals(ToolStatus.Succeeded, notificationsResult.status)
+        assertNull(delegatedTool)
+
+        val contactsResult = routing.execute(
+            ToolRequest(
+                id = "request-route-contact",
+                toolName = MobileActionFunctions.QUERY_CONTACTS,
+                arguments = mapOf("query" to "联系人A"),
+                reason = "test",
+            ),
+        )
+        assertEquals(ToolStatus.Succeeded, contactsResult.status)
         assertNull(delegatedTool)
 
         routing.execute(
@@ -249,6 +344,14 @@ class DeviceContextToolExecutorTest {
         override fun recentNotifications(maxCount: Int): NotificationSummaryReadResult {
             lastRequestedCount = maxCount
             return resultFactory(maxCount)
+        }
+    }
+
+    private class FakeContactSummaryProvider(
+        private val resultFactory: (String, Int) -> ContactSummaryReadResult,
+    ) : ContactSummaryProvider {
+        override fun queryContacts(query: String, maxCount: Int): ContactSummaryReadResult {
+            return resultFactory(query, maxCount)
         }
     }
 }

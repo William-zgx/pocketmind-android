@@ -233,6 +233,24 @@ private val contactDraftSchemaJson = """
     }
 """.trimIndent()
 
+private val contactQuerySchemaJson = """
+    {
+      "type": "object",
+      "required": ["query"],
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxCount": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
 private val reminderSchemaJson = """
     {
       "type": "object",
@@ -401,6 +419,22 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
                 ToolPermission.StartsExternalActivity,
                 ToolPermission.SendsTextToExternalApp,
             ),
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.QUERY_CONTACTS,
+            title = "查询联系人",
+            description = "读取通讯录中的联系人名称与电话，返回最小字段以辅助用户决策。",
+            inputSchemaJson = contactQuerySchemaJson,
+            capability = ToolCapability.DeviceContext,
+            permissions = setOf(
+                ToolPermission.ReadsDeviceContext,
+                ToolPermission.ReadsContacts,
+                ToolPermission.RequiresAndroidRuntimePermission,
+            ),
+            riskLevel = RiskLevel.LowReadOnly,
+            confirmationPolicy = ConfirmationPolicy.Required,
         ),
     ),
     ToolDefinition(

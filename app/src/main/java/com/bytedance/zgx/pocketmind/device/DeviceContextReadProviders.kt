@@ -1,16 +1,21 @@
 package com.bytedance.zgx.pocketmind.device
 
+import android.Manifest
 import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.app.usage.UsageStats
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.provider.ContactsContract
 import android.os.Build
 import android.os.Process
+import androidx.core.content.ContextCompat
 
 private const val DEFAULT_MAX_NOTIFICATION_LOOKBACK_MS = 15 * 60 * 1000L
 private const val DEFAULT_MAX_NOTIFICATION_COUNT = 5
+private const val DEFAULT_MAX_CONTACT_SUMMARY_COUNT = 5
+private const val DEFAULT_MAX_CONTACT_SUMMARY_LOOKBACK = 20
 
 interface ForegroundAppProvider {
     fun currentForegroundApp(): ForegroundAppReadResult
@@ -18,6 +23,10 @@ interface ForegroundAppProvider {
 
 interface NotificationSummaryProvider {
     fun recentNotifications(maxCount: Int = DEFAULT_MAX_NOTIFICATION_COUNT): NotificationSummaryReadResult
+}
+
+interface ContactSummaryProvider {
+    fun queryContacts(query: String, maxCount: Int = DEFAULT_MAX_CONTACT_SUMMARY_COUNT): ContactSummaryReadResult
 }
 
 data class ForegroundAppInfo(
@@ -43,6 +52,83 @@ sealed class NotificationSummaryReadResult {
     data class Available(val items: List<NotificationSummaryItem>) : NotificationSummaryReadResult()
     data class PermissionDenied(val reason: String) : NotificationSummaryReadResult()
     data class Failed(val reason: String) : NotificationSummaryReadResult()
+}
+
+data class ContactSummaryItem(
+    val name: String,
+    val phone: String,
+)
+
+sealed class ContactSummaryReadResult {
+    data class Available(val items: List<ContactSummaryItem>) : ContactSummaryReadResult()
+    data class PermissionDenied(val reason: String) : ContactSummaryReadResult()
+    data class Failed(val reason: String) : ContactSummaryReadResult()
+}
+
+class AndroidContactSummaryProvider(
+    private val context: Context,
+) : ContactSummaryProvider {
+    override fun queryContacts(query: String, maxCount: Int): ContactSummaryReadResult {
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank()) {
+            return ContactSummaryReadResult.Failed("查询关键词不能为空")
+        }
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return ContactSummaryReadResult.PermissionDenied("未授权“读取联系人”权限")
+        }
+        val normalizedMax = maxCount.coerceIn(1, DEFAULT_MAX_CONTACT_SUMMARY_LOOKBACK)
+        val likeArg = "%$trimmedQuery%"
+        val selection =
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} LIKE ? OR " +
+                "${ContactsContract.CommonDataKinds.Phone.NUMBER} LIKE ?"
+
+        return try {
+            val cursor = context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                CONTACT_PROJECTION,
+                selection,
+                arrayOf(likeArg, likeArg),
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} ASC",
+            ) ?: return ContactSummaryReadResult.Failed("通讯录数据源不可用")
+
+            val results = linkedMapOf<String, ContactSummaryItem>()
+            cursor.use {
+                val nameIndex = it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY)
+                val phoneIndex = it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (it.moveToNext()) {
+                    val name = it.getString(nameIndex).orEmpty().trim().ifBlank { "未知联系人" }
+                    val phone = it.getString(phoneIndex).orEmpty().trim()
+                    if (phone.isBlank()) continue
+
+                    val key = "$name|${phone.replace("\\s+".toRegex(), "")}"
+                    if (!results.containsKey(key)) {
+                        results[key] = ContactSummaryItem(
+                            name = name,
+                            phone = phone,
+                        )
+                        if (results.size >= normalizedMax) break
+                    }
+                }
+            }
+            ContactSummaryReadResult.Available(results.values.toList())
+        } catch (_: SecurityException) {
+            ContactSummaryReadResult.PermissionDenied("未授权“读取联系人”权限")
+        } catch (throwable: Throwable) {
+            ContactSummaryReadResult.Failed(
+                throwable.message?.takeIf { it.isNotBlank() } ?: throwable::class.java.simpleName,
+            )
+        }
+    }
+
+    private companion object {
+        val CONTACT_PROJECTION = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+        )
+    }
 }
 
 class AndroidForegroundAppProvider(
