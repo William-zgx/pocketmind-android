@@ -106,7 +106,7 @@ class ToolSchemaContractTest {
     private fun validValueFor(property: JSONObject): String {
         val pattern = property.optStringOrNull("pattern")
         if (pattern != null) {
-            return listOf("1", "10", "abc", "value")
+            return listOf("1", "10", "abc", "value", "http://x", "https://x", "mailto:a@b.com", "tel:123", "geo:0,0")
                 .firstOrNull { Regex(pattern).matches(it) }
                 ?: error("No test fixture value matches pattern $pattern")
         }
@@ -116,7 +116,7 @@ class ToolSchemaContractTest {
     }
 
     private fun firstInvalidValueFor(pattern: String): String =
-        listOf("", " ", "0", "-1", "1.5", "abc")
+        listOf("", " ", "0", "-1", "1.5", "abc", "http://", "geo:", "mailto:", "tel:")
             .firstOrNull { !Regex(pattern).matches(it) }
             ?: error("No invalid fixture value for pattern $pattern")
 
