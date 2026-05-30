@@ -131,6 +131,7 @@ data class ChatUiState(
     val sessions: List<ChatSessionSummary> = emptyList(),
     val activeSessionId: String? = null,
     val messages: List<ChatMessage> = emptyList(),
+    val scheduledTasks: List<ScheduledTaskSummary> = emptyList(),
 ) {
     val selectedRecommendedModel: RecommendedModel
         get() = ModelCatalog.recommendedChatModelById(selectedModelId)
@@ -153,6 +154,17 @@ data class ChatUiState(
     fun isModelInstalled(modelId: String): Boolean =
         installedModels.any { it.recommendedModelId == modelId && it.isUsable }
 }
+
+data class ScheduledTaskSummary(
+    val id: String,
+    val type: String,
+    val title: String,
+    val body: String,
+    val triggerAtMillis: Long,
+    val status: String,
+    val isPeriodicCheck: Boolean,
+    val policy: Map<String, String> = emptyMap(),
+)
 
 fun BackendChoice.label(): String =
     when (this) {

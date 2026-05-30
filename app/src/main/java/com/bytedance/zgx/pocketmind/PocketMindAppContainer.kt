@@ -9,6 +9,7 @@ import com.bytedance.zgx.pocketmind.action.HybridActionPlanningRuntime
 import com.bytedance.zgx.pocketmind.audit.ToolAuditRepository
 import com.bytedance.zgx.pocketmind.background.AndroidBackgroundTaskScheduler
 import com.bytedance.zgx.pocketmind.background.ReminderNotificationHelper
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskStore
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskRepository
 import com.bytedance.zgx.pocketmind.data.EncryptedSecretStore
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
@@ -116,6 +117,7 @@ class PocketMindAppContainer(context: Context) {
             memoryRepository = memoryRepository,
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantOrchestrator,
+            scheduledTaskStore = scheduledTaskRepository,
             canPostNotificationsProvider = reminderNotificationHelper::canPostNotifications,
             isArm64DeviceProvider = {
                 Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" }
@@ -138,6 +140,7 @@ private class PocketMindViewModelFactory(
     private val memoryRepository: MemoryRepository,
     private val actionExecutor: ToolExecutor,
     private val assistantOrchestrator: AssistantOrchestrator,
+    private val scheduledTaskStore: ScheduledTaskStore,
     private val canPostNotificationsProvider: () -> Boolean,
     private val isArm64DeviceProvider: () -> Boolean,
 ) : ViewModelProvider.Factory {
@@ -158,6 +161,7 @@ private class PocketMindViewModelFactory(
             memoryRepository = memoryRepository,
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantOrchestrator,
+            scheduledTaskStore = scheduledTaskStore,
             canPostNotificationsProvider = canPostNotificationsProvider,
             isArm64DeviceProvider = isArm64DeviceProvider,
         ) as T

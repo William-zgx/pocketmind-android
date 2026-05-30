@@ -3,10 +3,15 @@ package com.bytedance.zgx.pocketmind.background
 import com.bytedance.zgx.pocketmind.data.ScheduledTaskDao
 import com.bytedance.zgx.pocketmind.data.ScheduledTaskEntity
 
+interface ScheduledTaskStore {
+    fun scheduledReminders(limit: Int = 100): List<ScheduledTask>
+    fun periodicCheck(): ScheduledTask?
+}
+
 class ScheduledTaskRepository(
     private val dao: ScheduledTaskDao,
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
-) {
+) : ScheduledTaskStore {
     fun createReminder(
         title: String,
         body: String,
@@ -33,10 +38,10 @@ class ScheduledTaskRepository(
     fun scheduled(limit: Int = 100): List<ScheduledTask> =
         dao.scheduled(limit).map { it.toModel() }
 
-    fun scheduledReminders(limit: Int = 100): List<ScheduledTask> =
+    override fun scheduledReminders(limit: Int): List<ScheduledTask> =
         dao.scheduledByType(ScheduledTaskType.Reminder.name, limit).map { it.toModel() }
 
-    fun periodicCheck(): ScheduledTask? =
+    override fun periodicCheck(): ScheduledTask? =
         dao.task(PeriodicCheckScheduleRequest.TASK_ID)?.toModel()
 
     fun createOrUpdatePeriodicCheck(request: PeriodicCheckScheduleRequest): ScheduledTask {

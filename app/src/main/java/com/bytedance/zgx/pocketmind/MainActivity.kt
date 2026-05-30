@@ -78,15 +78,16 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    onSetupModelToggled = viewModel::toggleSetupModel,
-                    onDownloadSetupModels = viewModel::startSetupModelDownload,
-                    onSkipFirstRunSetup = viewModel::skipFirstRunSetup,
-                    onMemoryEnabledChanged = viewModel::updateMemoryEnabled,
-                    onConfirmAgentConfirmation = ::confirmAgentConfirmationWithPermissions,
-                    onDismissAgentConfirmation = viewModel::dismissAgentConfirmation,
-                    onSendMessage = viewModel::sendMessage,
-                    onStopGeneration = viewModel::stopGeneration,
-                )
+                        onSetupModelToggled = viewModel::toggleSetupModel,
+                        onDownloadSetupModels = viewModel::startSetupModelDownload,
+                        onSkipFirstRunSetup = viewModel::skipFirstRunSetup,
+                        onMemoryEnabledChanged = viewModel::updateMemoryEnabled,
+                        onOpenTaskManager = viewModel::refreshScheduledTaskSummaries,
+                        onConfirmAgentConfirmation = ::confirmAgentConfirmationWithPermissions,
+                        onDismissAgentConfirmation = viewModel::dismissAgentConfirmation,
+                        onSendMessage = viewModel::sendMessage,
+                        onStopGeneration = viewModel::stopGeneration,
+                    )
             }
         }
     }

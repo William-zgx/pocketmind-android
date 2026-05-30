@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
@@ -92,8 +93,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import com.bytedance.zgx.pocketmind.BackendChoice
 import com.bytedance.zgx.pocketmind.ChatMessage
 import com.bytedance.zgx.pocketmind.ChatUiState
@@ -106,6 +105,7 @@ import com.bytedance.zgx.pocketmind.MessageRole
 import com.bytedance.zgx.pocketmind.ModelCapability
 import com.bytedance.zgx.pocketmind.PendingAgentConfirmation
 import com.bytedance.zgx.pocketmind.RecommendedModel
+import com.bytedance.zgx.pocketmind.ScheduledTaskSummary
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import com.bytedance.zgx.pocketmind.SetupTier
 import com.bytedance.zgx.pocketmind.action.ActionDraft
@@ -113,6 +113,8 @@ import com.bytedance.zgx.pocketmind.data.ModelVerificationStatus
 import com.bytedance.zgx.pocketmind.isUsable
 import com.bytedance.zgx.pocketmind.label
 import com.bytedance.zgx.pocketmind.ui.theme.LocalPocketMindColors
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -140,6 +142,7 @@ fun PocketMindScreen(
     onDownloadSetupModels: () -> Unit,
     onSkipFirstRunSetup: () -> Unit,
     onMemoryEnabledChanged: (Boolean) -> Unit,
+    onOpenTaskManager: () -> Unit,
     onConfirmAgentConfirmation: (PendingAgentConfirmation) -> Unit,
     onDismissAgentConfirmation: () -> Unit,
     onSendMessage: (String) -> Unit,
@@ -153,6 +156,7 @@ fun PocketMindScreen(
     var customModelUrl by rememberSaveable { mutableStateOf("") }
     var showModelManager by rememberSaveable { mutableStateOf(false) }
     var showSessions by rememberSaveable { mutableStateOf(false) }
+    var showTasks by rememberSaveable { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val lastMessageId = state.messages.lastOrNull()?.id
 
@@ -180,6 +184,10 @@ fun PocketMindScreen(
                     state = state,
                     onOpenModelManager = { showModelManager = true },
                     onOpenSessions = { showSessions = true },
+                    onOpenTasks = {
+                        showTasks = true
+                        onOpenTaskManager()
+                    },
                     onCreateSession = onCreateSession,
                 )
 
@@ -292,6 +300,19 @@ fun PocketMindScreen(
                 }
             }
 
+            if (showTasks) {
+                ModalBottomSheet(
+                    sheetState = sheetState,
+                    onDismissRequest = { showTasks = false },
+                ) {
+                    TaskManagerSheet(
+                        state = state,
+                        onDismiss = { showTasks = false },
+                        onRefresh = onOpenTaskManager,
+                    )
+                }
+            }
+
             if (state.showFirstRunSetup) {
                 ModalBottomSheet(
                     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -337,6 +358,7 @@ private fun ChatTopBar(
     state: ChatUiState,
     onOpenModelManager: () -> Unit,
     onOpenSessions: () -> Unit,
+    onOpenTasks: () -> Unit,
     onCreateSession: () -> Unit,
 ) {
     Surface(
@@ -395,6 +417,12 @@ private fun ChatTopBar(
                     icon = Icons.Filled.Hub,
                     label = "会话",
                     onClick = onOpenSessions,
+                )
+                TopActionButton(
+                    modifier = Modifier.testTag("top_task_button"),
+                    icon = Icons.Filled.Schedule,
+                    label = "任务",
+                    onClick = onOpenTasks,
                 )
             }
 
@@ -747,7 +775,7 @@ private fun FirstRunSetupSheet(
                         )
                     }
                 }
-            }
+                }
         }
         DeviceCheck(
             state = state,
@@ -1478,7 +1506,166 @@ private fun SessionManagerSheet(
             }
         }
     }
+
 }
+
+@Composable
+private fun TaskManagerSheet(
+    state: ChatUiState,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("task_manager_sheet")
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                modifier = Modifier.testTag("task_manager_title"),
+                text = "运行时任务",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            TextButton(
+                onClick = onRefresh,
+                enabled = !state.isBusy,
+            ) {
+                Text("刷新")
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "关闭任务管理",
+                )
+            }
+        }
+
+        if (state.scheduledTasks.isEmpty()) {
+            EmptyPanelText("暂无任务。周期检查与提醒任务会在此显示。")
+        } else {
+            state.scheduledTasks.forEach { task ->
+                TaskSummaryCard(task = task)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskSummaryCard(task: ScheduledTaskSummary) {
+    val isScheduled = task.status.equals("Scheduled", ignoreCase = true)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (isScheduled) {
+            MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+        },
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (task.isPeriodicCheck) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+            },
+        ),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                CapabilityMark(
+                    icon = if (task.isPeriodicCheck) Icons.Filled.Schedule else Icons.Filled.Hub,
+                    tint = if (task.isPeriodicCheck) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(
+                        text = task.title.ifBlank { if (task.isPeriodicCheck) "周期检查" else "提醒" },
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = task.body.ifBlank { "（无备注）" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = task.status,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isScheduled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            Text(
+                text = "触发时间：${formatTaskTriggerTime(task.triggerAtMillis)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (task.isPeriodicCheck && task.policy.isNotEmpty()) {
+                task.policy.forEach { (key, value) ->
+                    Text(
+                        text = "${policyDisplayName(key)}：${policyDisplayValue(key, value)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatTaskTriggerTime(triggerAtMillis: Long): String {
+    val formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault())
+    return formatter.format(Date(triggerAtMillis))
+}
+
+private fun policyDisplayName(key: String): String =
+    when (key) {
+        "enabled" -> "启用"
+        "intervalMinutes" -> "周期"
+        "minNotificationSpacingMinutes" -> "最小间隔"
+        "overdueGraceMinutes" -> "过期容差"
+        "requiresBatteryNotLow" -> "低电量限制"
+        "requiresCharging" -> "需要充电"
+        else -> key
+    }
+
+private fun policyDisplayValue(key: String, value: String): String =
+    when (key) {
+        "enabled" -> if (value.equals("true", true)) "是" else "否"
+        "intervalMinutes", "minNotificationSpacingMinutes", "overdueGraceMinutes" ->
+            "$value 分钟"
+        "requiresBatteryNotLow", "requiresCharging" ->
+            if (value.equals("true", true)) "是" else "否"
+        else -> value
+    }
 
 @Composable
 private fun RecommendedModelCard(

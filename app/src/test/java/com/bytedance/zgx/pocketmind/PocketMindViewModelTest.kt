@@ -3,6 +3,10 @@ package com.bytedance.zgx.pocketmind
 import android.net.Uri
 import com.bytedance.zgx.pocketmind.action.ActionDraft
 import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
+import com.bytedance.zgx.pocketmind.background.ScheduledTask
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskStatus
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskType
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskStore
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupStore
 import com.bytedance.zgx.pocketmind.data.GenerationParametersStore
 import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
@@ -132,6 +136,77 @@ class PocketMindViewModelTest {
         assertFalse(call.history.toString().contains("私密分享内容"))
         assertFalse(call.history.toString().contains("本地回复：私密分享摘要"))
         assertEquals("普通远程问题", sessionStore.messages.dropLast(1).last().text)
+    }
+
+    @Test
+    fun scheduledTaskSummariesIncludePeriodicCheckAndReminders() = runTest(dispatcher) {
+        val reminder = ScheduledTask(
+            id = "reminder-1",
+            type = ScheduledTaskType.Reminder,
+            title = "喝水提醒",
+            body = "两小时后提醒",
+            triggerAtMillis = 2_000L,
+            status = ScheduledTaskStatus.Scheduled,
+            createdAtMillis = 1L,
+            updatedAtMillis = 1L,
+        )
+        val periodicCheck = ScheduledTask(
+            id = "periodic-check-local",
+            type = ScheduledTaskType.PeriodicCheck,
+            title = "PocketMind 后台检查",
+            body = "enabled=true;intervalMinutes=90;minNotificationSpacingMinutes=60;overdueGraceMinutes=30;requiresBatteryNotLow=true;requiresCharging=false",
+            triggerAtMillis = 3_000L,
+            status = ScheduledTaskStatus.Scheduled,
+            createdAtMillis = 1L,
+            updatedAtMillis = 1L,
+        )
+        val viewModel = createViewModel(
+            scheduledTaskStore = FakeScheduledTaskStore(
+                reminders = listOf(reminder),
+                periodicCheck = periodicCheck,
+            ),
+        )
+        viewModel.refreshScheduledTaskSummaries()
+        advanceUntilIdle()
+
+        val summaries = viewModel.uiState.value.scheduledTasks
+        assertEquals(2, summaries.size)
+
+        val reminderSummary = summaries.first { !it.isPeriodicCheck }
+        assertEquals("Reminder", reminderSummary.type)
+        assertEquals(emptyMap<String, String>(), reminderSummary.policy)
+
+        val periodicSummary = summaries.first { it.isPeriodicCheck }
+        assertEquals("periodic-check-local", periodicSummary.id)
+        assertEquals("true", periodicSummary.policy["enabled"])
+    }
+
+    @Test
+    fun scheduledTaskSummariesParsePeriodicPolicy() = runTest(dispatcher) {
+        val periodicCheck = ScheduledTask(
+            id = "periodic-check-local",
+            type = ScheduledTaskType.PeriodicCheck,
+            title = "PocketMind 后台检查",
+            body = "enabled=true;intervalMinutes=120;requiresCharging=true",
+            triggerAtMillis = 4_000L,
+            status = ScheduledTaskStatus.Cancelled,
+            createdAtMillis = 1L,
+            updatedAtMillis = 1L,
+        )
+        val viewModel = createViewModel(
+            scheduledTaskStore = FakeScheduledTaskStore(
+                periodicCheck = periodicCheck,
+            ),
+        )
+        viewModel.refreshScheduledTaskSummaries()
+        advanceUntilIdle()
+
+        val summary = viewModel.uiState.value.scheduledTasks.single()
+        assertEquals(
+            mapOf("enabled" to "true", "intervalMinutes" to "120", "requiresCharging" to "true"),
+            summary.policy,
+        )
+        assertEquals("Cancelled", summary.status)
     }
 
     @Test
@@ -631,6 +706,7 @@ class PocketMindViewModelTest {
         remoteStore: FakeRemoteModelStore = FakeRemoteModelStore(),
         firstRunStore: FakeFirstRunSetupStore = FakeFirstRunSetupStore(),
         downloadClient: FakeModelDownloadClient = FakeModelDownloadClient(),
+        scheduledTaskStore: FakeScheduledTaskStore = FakeScheduledTaskStore(),
         runtime: FakeLiteRtRuntime = FakeLiteRtRuntime(),
         remoteRuntime: RecordingRemoteChatRuntime = RecordingRemoteChatRuntime(),
         assistantRouter: FakeAssistantRouter = FakeAssistantRouter(),
@@ -650,6 +726,7 @@ class PocketMindViewModelTest {
             remoteModelRepository = remoteStore,
             firstRunSetupRepository = firstRunStore,
             downloadService = downloadClient,
+            scheduledTaskStore = scheduledTaskStore,
             runtime = runtime,
             remoteRuntime = remoteRuntime,
             memoryRepository = MemoryRepository(),
@@ -935,6 +1012,15 @@ class PocketMindViewModelTest {
         override fun isMemoryEnabled(): Boolean = true
 
         override fun setMemoryEnabled(enabled: Boolean) = Unit
+    }
+
+    private class FakeScheduledTaskStore(
+        private val reminders: List<ScheduledTask> = emptyList(),
+        private val periodicCheck: ScheduledTask? = null,
+    ) : ScheduledTaskStore {
+        override fun scheduledReminders(limit: Int): List<ScheduledTask> = reminders.take(limit)
+
+        override fun periodicCheck(): ScheduledTask? = periodicCheck
     }
 
     private class FakeModelDownloadClient : ModelDownloadClient {

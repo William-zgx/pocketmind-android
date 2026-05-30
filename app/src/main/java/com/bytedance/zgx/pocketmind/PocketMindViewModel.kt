@@ -7,6 +7,11 @@ import androidx.lifecycle.viewModelScope
 import com.bytedance.zgx.pocketmind.action.ActionDraft
 import com.bytedance.zgx.pocketmind.action.ActionExecutor
 import com.bytedance.zgx.pocketmind.action.MobileActionPlanner
+import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
+import com.bytedance.zgx.pocketmind.background.ScheduledTask
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskStatus
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskStore
+import com.bytedance.zgx.pocketmind.background.ScheduledTaskType
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupStore
 import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
@@ -63,6 +68,7 @@ class PocketMindViewModel(
     private val memoryRepository: MemoryIndex,
     private val actionExecutor: ToolExecutor,
     private val assistantOrchestrator: AssistantRouter,
+    private val scheduledTaskStore: ScheduledTaskStore,
     private val canPostNotificationsProvider: () -> Boolean,
     private val isArm64DeviceProvider: () -> Boolean,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -84,6 +90,7 @@ class PocketMindViewModel(
         startupRestored = true
 
         refreshDeviceStatus()
+        refreshScheduledTaskSummaries()
         rebuildMemoryIndex()
         verifyLegacyModelsOnStartup(skipModelRuntimeWork)
 
@@ -135,6 +142,46 @@ class PocketMindViewModel(
             return
         }
     }
+
+    fun refreshScheduledTaskSummaries() {
+        viewModelScope.launch(ioDispatcher) {
+            val summaries = buildScheduledTaskSummaries()
+            _uiState.update { it.copy(scheduledTasks = summaries) }
+        }
+    }
+
+    private fun buildScheduledTaskSummaries(): List<ScheduledTaskSummary> =
+        kotlin.runCatching {
+            val reminders = scheduledTaskStore.scheduledReminders()
+            val periodicCheck = scheduledTaskStore.periodicCheck()?.let { listOf(it) }.orEmpty()
+            (reminders + periodicCheck).map { task ->
+                task.toScheduledTaskSummary()
+            }.sortedBy { it.triggerAtMillis }
+        }.getOrDefault(emptyList())
+
+    private fun ScheduledTask.toScheduledTaskSummary(): ScheduledTaskSummary =
+        ScheduledTaskSummary(
+            id = id,
+            type = type.name,
+            title = title,
+            body = body,
+            triggerAtMillis = triggerAtMillis,
+            status = status.name,
+            isPeriodicCheck = type == ScheduledTaskType.PeriodicCheck,
+            policy = if (type == ScheduledTaskType.PeriodicCheck) parseTaskPolicy(body) else emptyMap(),
+        )
+
+    private fun parseTaskPolicy(taskBody: String): Map<String, String> =
+        taskBody.split(';')
+            .mapNotNull { part ->
+                val trimmed = part.trim()
+                val delimiter = trimmed.indexOf('=')
+                if (delimiter <= 0) return@mapNotNull null
+                val key = trimmed.substring(0, delimiter).trim()
+                if (key.isEmpty()) return@mapNotNull null
+                val value = trimmed.substring(delimiter + 1).trim()
+                key to value
+            }.associate { it.first to it.second }
 
     fun startModelDownload() {
         beginModelDownload(ModelDownloadSource.recommended(modelRepository.selectedRecommendedModel()))
