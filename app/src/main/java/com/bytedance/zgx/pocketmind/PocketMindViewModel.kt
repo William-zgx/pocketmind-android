@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bytedance.zgx.pocketmind.action.ActionDraft
 import com.bytedance.zgx.pocketmind.action.ActionExecutor
+import com.bytedance.zgx.pocketmind.action.MobileActionPlanner
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupStore
 import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
@@ -67,6 +68,7 @@ class PocketMindViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val runtimeLock = Mutex()
+    private val remoteModelToolParser = MobileActionPlanner()
     private var generationJob: Job? = null
     private var downloadMonitorJob: Job? = null
     private var activeDownloadId: Long? = null
@@ -753,7 +755,16 @@ class PocketMindViewModel(
                             partial.append(chunk)
                             _uiState.updateLastAssistant(partial.toString())
                         }
-                        if (partial.isBlank()) {
+                        val output = partial.toString()
+                        if (useRemoteModel && routeFromGeneratedToolCallIfAny(
+                            output = output,
+                            installedCapabilities = stateBeforeSend.installedCapabilities,
+                            actionModelPath = modelRepository.verifiedActionModelPath(),
+                            responsePrivacy = messagePrivacy,
+                        )) {
+                            return@launch
+                        }
+                        if (output.isBlank()) {
                             _uiState.updateLastAssistant("没有生成内容")
                         } else if (!useRemoteModel) {
                             _uiState.updateLastAssistantStats(
@@ -1088,7 +1099,19 @@ class PocketMindViewModel(
                     partial.append(chunk)
                     _uiState.updateLastAssistant(partial.toString())
                 }
-                if (partial.isBlank()) {
+                val output = partial.toString()
+                val modelObservation = runId?.let { id ->
+                    assistantOrchestrator.observeModelResult(id, output)
+                }
+                if (routeFromGeneratedToolCallIfAny(
+                    output = output,
+                    installedCapabilities = stateAtStart.installedCapabilities,
+                    actionModelPath = modelRepository.verifiedActionModelPath(),
+                    responsePrivacy = responsePrivacy,
+                )) {
+                    return@launch
+                }
+                if (output.isBlank()) {
                     _uiState.updateLastAssistant("没有生成内容")
                 } else if (!useRemoteModel) {
                     _uiState.updateLastAssistantStats(
@@ -1097,9 +1120,6 @@ class PocketMindViewModel(
                 }
                 persistActiveSessionFromUi()
                 rebuildMemoryIndex()
-                val modelObservation = runId?.let { id ->
-                    assistantOrchestrator.observeModelResult(id, partial.toString())
-                }
                 val nextToolPlan = (modelObservation?.decision as? AgentObservationDecision.PlanNextTool)?.plan
                 if (nextToolPlan != null) {
                     _uiState.update {
@@ -1210,6 +1230,110 @@ class PocketMindViewModel(
 
     fun dismissActionDraft() {
         dismissAgentConfirmation()
+    }
+
+    private fun routeFromGeneratedToolCallIfAny(
+        output: String,
+        installedCapabilities: Set<ModelCapability>,
+        actionModelPath: String?,
+        responsePrivacy: MessagePrivacy,
+    ): Boolean {
+        if (remoteModelToolParser.parseModelOutput(output) == null) {
+            return false
+        }
+        val route = assistantOrchestrator.route(
+            input = output,
+            installedCapabilities = installedCapabilities,
+            memoryEnabled = false,
+            actionModelPath = actionModelPath,
+        )
+        return when (route) {
+            is AssistantRoute.Action -> {
+                val planningLabel = if (route.plannedByModel) {
+                    "动作模型实验"
+                } else {
+                    "规则回退"
+                }
+                val assistantMessage = ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = "已准备动作草稿（$planningLabel）：${route.draft.summary}\n请确认后再执行。",
+                    privacy = responsePrivacy,
+                )
+                replaceActiveSessionMessages(
+                    _uiState.value.messages.replaceLastAssistant(assistantMessage),
+                    persistNow = true,
+                )
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        isGenerating = false,
+                        pendingConfirmation = PendingAgentConfirmation(
+                            runId = route.runId,
+                            draft = route.draft,
+                            toolRequest = route.toolRequest,
+                            skillId = route.skillId,
+                            plannedByModel = route.plannedByModel,
+                            fallbackReason = route.fallbackReason,
+                        ),
+                        memoryHits = emptyList(),
+                        statusText = "动作草稿待确认 · $planningLabel",
+                    )
+                }
+                rebuildMemoryIndex()
+                true
+            }
+
+            is AssistantRoute.ToolRejected -> {
+                val assistantMessage = ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = "无法准备这个动作：${route.summary}",
+                    privacy = responsePrivacy,
+                )
+                replaceActiveSessionMessages(
+                    _uiState.value.messages.replaceLastAssistant(assistantMessage),
+                    persistNow = true,
+                )
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        isGenerating = false,
+                        memoryHits = emptyList(),
+                        statusText = "动作不可执行",
+                    )
+                }
+                rebuildMemoryIndex()
+                true
+            }
+
+            is AssistantRoute.MissingModel -> {
+                val capabilityName = when (route.capability) {
+                    ModelCapability.Chat -> "对话模型"
+                    ModelCapability.MemoryEmbedding -> "记忆模型"
+                    ModelCapability.MobileAction -> "动作模型"
+                }
+                val assistantMessage = ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = "需要先安装$capabilityName，才能完成这个请求。请到模型管理安装基础能力包。",
+                    privacy = responsePrivacy,
+                )
+                replaceActiveSessionMessages(
+                    _uiState.value.messages.replaceLastAssistant(assistantMessage),
+                    persistNow = true,
+                )
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        isGenerating = false,
+                        memoryHits = emptyList(),
+                        statusText = "缺少$capabilityName",
+                    )
+                }
+                rebuildMemoryIndex()
+                true
+            }
+
+            is AssistantRoute.Chat -> false
+        }
     }
 
     override fun onCleared() {
@@ -1753,6 +1877,17 @@ class PocketMindViewModel(
             }
             state.copy(messages = updatedMessages)
         }
+    }
+
+    private fun List<ChatMessage>.replaceLastAssistant(message: ChatMessage): List<ChatMessage> {
+        val updatedMessages = toMutableList()
+        val index = indexOfLast { it.role == MessageRole.Assistant }
+        if (index >= 0) {
+            updatedMessages[index] = message
+        } else {
+            updatedMessages += message
+        }
+        return updatedMessages
     }
 
     private fun ChatUiState.toDeviceContextSnapshot(): DeviceContextSnapshot =

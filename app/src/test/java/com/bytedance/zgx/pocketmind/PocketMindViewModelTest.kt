@@ -135,6 +135,167 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModelOutputCanEmitToolCallAndTriggerActionLoop() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime(remoteResponse = "call:open_wifi_settings{}")
+        val sessionStore = FakeSessionStore()
+        val openRequest = ToolRequest(
+            id = "open-settings",
+            toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            arguments = emptyMap(),
+            reason = "打开系统 Wi-Fi 设置",
+        )
+        val openDraft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            title = "打开 Wi-Fi 设置",
+            summary = "将打开系统 Wi-Fi 设置页。",
+            parameters = openRequest.arguments,
+        )
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                promptForModel = "正常远程聊天",
+                memoryHits = emptyList(),
+            ),
+            routeByInput = { input ->
+                if (input.startsWith("call:open_wifi_settings")) {
+                    AssistantRoute.Action(
+                        runId = "run-open-wifi",
+                        toolRequest = openRequest,
+                        draft = openDraft,
+                        plannedByModel = false,
+                        fallbackReason = "test fallback",
+                    )
+                } else {
+                    AssistantRoute.Chat(
+                        promptForModel = "正常远程聊天",
+                        memoryHits = emptyList(),
+                    )
+                }
+            },
+        )
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            assistantRouter = assistantRouter,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("继续执行远程指令")
+        advanceUntilIdle()
+
+        val pending = viewModel.uiState.value.pendingConfirmation
+        requireNotNull(pending)
+        assertEquals(MobileActionFunctions.OPEN_WIFI_SETTINGS, pending.draft.functionName)
+        assertEquals("动作草稿待确认 · 规则回退", viewModel.uiState.value.statusText)
+        assertEquals(2, assistantRouter.routeCallCount)
+        assertEquals(1, remoteRuntime.calls.size)
+        assertFalse(sessionStore.messages.last().text.contains("call:open_wifi_settings"))
+    }
+
+    @Test
+    fun remoteToolObservationContinuationCanEmitToolCallAndLoopAgain() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime(remoteResponse = "call:query_foreground_app{}")
+        val sessionStore = FakeSessionStore()
+        val actionRequest = ToolRequest(
+            id = "open-settings",
+            toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            arguments = emptyMap(),
+            reason = "打开系统 Wi-Fi 设置",
+        )
+        val openDraft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            title = "打开 Wi-Fi 设置",
+            summary = "将打开系统 Wi-Fi 设置页。",
+            parameters = actionRequest.arguments,
+        )
+        val foregroundRequest = ToolRequest(
+            id = "query-foreground",
+            toolName = MobileActionFunctions.QUERY_FOREGROUND_APP,
+            arguments = emptyMap(),
+            reason = "查询当前前台应用",
+        )
+        val foregroundDraft = ActionDraft(
+            functionName = MobileActionFunctions.QUERY_FOREGROUND_APP,
+            title = "查询当前前台应用",
+            summary = "将读取当前前台应用信息（包名与应用名）。",
+            parameters = foregroundRequest.arguments,
+        )
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Action(
+                runId = "run-open-wifi",
+                toolRequest = actionRequest,
+                draft = openDraft,
+                plannedByModel = false,
+                fallbackReason = "test fallback",
+            ),
+            confirmedRun = AgentRun("run-open-wifi", "打开 Wi-Fi 设置", AgentRunState.ExecutingTool, 1L, 2L),
+            toolObservation = AgentObservationResult(
+                run = AgentRun("run-open-wifi", "打开 Wi-Fi 设置", AgentRunState.GeneratingAnswer, 1L, 3L),
+                result = ToolResult(
+                    requestId = actionRequest.id,
+                    status = ToolStatus.Succeeded,
+                    summary = "已打开设置",
+                ),
+                assistantMessage = "工具执行结果：已打开设置",
+                decision = AgentObservationDecision.ContinueWithModel(
+                    requiresLocalModel = false,
+                    reason = "请继续执行",
+                ),
+                continuationPromptForModel = "请继续处理",
+                continuationRequiresLocalModel = false,
+                steps = emptyList(),
+            ),
+            routeByInput = { input ->
+                if (input.startsWith("call:query_foreground_app")) {
+                    AssistantRoute.Action(
+                        runId = "run-query-foreground",
+                        toolRequest = foregroundRequest,
+                        draft = foregroundDraft,
+                        plannedByModel = false,
+                        fallbackReason = "test fallback",
+                    )
+                } else {
+                    AssistantRoute.Chat(
+                        promptForModel = "请继续处理",
+                        memoryHits = emptyList(),
+                    )
+                }
+            },
+        )
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            assistantRouter = assistantRouter,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("打开设置")
+        advanceUntilIdle()
+
+        val firstConfirmation = viewModel.uiState.value.pendingConfirmation
+        requireNotNull(firstConfirmation)
+        viewModel.confirmAgentConfirmation(firstConfirmation)
+        advanceUntilIdle()
+
+        val secondConfirmation = viewModel.uiState.value.pendingConfirmation
+        requireNotNull(secondConfirmation)
+        assertEquals(MobileActionFunctions.QUERY_FOREGROUND_APP, secondConfirmation.draft.functionName)
+        assertEquals("动作草稿待确认 · 规则回退", viewModel.uiState.value.statusText)
+        assertEquals(2, remoteRuntime.calls.size)
+        assertFalse(sessionStore.messages.last().text.contains("call:query_foreground_app"))
+    }
+
+    @Test
     fun clipboardSummaryShareShowsSecondConfirmationAfterLocalSummary() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore()
@@ -510,7 +671,9 @@ class PocketMindViewModelTest {
         val history: List<ChatMessage>,
     )
 
-    private class RecordingRemoteChatRuntime : RemoteChatRuntime {
+    private class RecordingRemoteChatRuntime(
+        private val remoteResponse: String = "远程回复",
+    ) : RemoteChatRuntime {
         val calls = mutableListOf<RemoteCall>()
 
         override fun send(
@@ -520,7 +683,7 @@ class PocketMindViewModelTest {
             config: RemoteModelConfig,
         ): Flow<String> {
             calls += RemoteCall(prompt, history)
-            return flowOf("远程回复")
+            return flowOf(remoteResponse)
         }
 
         override fun stop() = Unit
@@ -573,6 +736,7 @@ class PocketMindViewModelTest {
 
     private class FakeAssistantRouter(
         private val routeResult: AssistantRoute? = null,
+        private val routeByInput: ((String) -> AssistantRoute)? = null,
         private val confirmedRun: AgentRun? = null,
         private val cancelObservation: AgentObservationResult? = null,
         private val toolObservation: AgentObservationResult? = null,
@@ -583,6 +747,7 @@ class PocketMindViewModelTest {
             private set
         var confirmCallCount: Int = 0
             private set
+        val routeInputs: MutableList<String> = mutableListOf()
 
         override fun route(
             input: String,
@@ -592,6 +757,10 @@ class PocketMindViewModelTest {
             deviceContext: com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot?,
         ): AssistantRoute {
             routeCallCount += 1
+            routeInputs += input
+            routeByInput?.let { byInput ->
+                return byInput(input)
+            }
             return routeResult ?:
                 AssistantRoute.Chat(
                     promptForModel = input,
