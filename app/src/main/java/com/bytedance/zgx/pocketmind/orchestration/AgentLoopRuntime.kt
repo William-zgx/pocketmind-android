@@ -49,6 +49,14 @@ class AgentLoopRuntime(
         val requiresLocalModel: Boolean,
     )
 
+    private fun isFinalState(state: AgentRunState): Boolean =
+        state == AgentRunState.Completed || state == AgentRunState.Cancelled || state == AgentRunState.Failed
+
+    private fun clearRunCaches(runId: String) {
+        skillStepOutputsByRun.remove(runId)
+        pendingModelContinuationByRun.remove(runId)
+    }
+
     @Suppress("UNUSED_PARAMETER")
     fun runOnce(
         input: String,
@@ -78,6 +86,7 @@ class AgentLoopRuntime(
                 if (rejectedForLoopLimit != null) {
                     rejectNextToolPlan(createdRun.id, rejectedForLoopLimit)
                     val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                    clearRunCaches(createdRun.id)
                     return AgentLoopResult(
                         run = failedRun,
                         plan = AgentPlan.RejectedTool(rejectedForLoopLimit),
@@ -99,6 +108,7 @@ class AgentLoopRuntime(
             is AgentPlan.MissingModel -> {
                 traceStore.appendStep(createdRun.id, AgentStep.ModelPlanned(toolPlan))
                 val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                clearRunCaches(createdRun.id)
                 return AgentLoopResult(
                     run = failedRun,
                     plan = toolPlan,
@@ -111,6 +121,7 @@ class AgentLoopRuntime(
                 traceStore.appendStep(createdRun.id, AgentStep.ToolRejected(toolPlan.result))
                 auditRejectedTool(createdRun.id, toolPlan.result)
                 val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                clearRunCaches(createdRun.id)
                 return AgentLoopResult(
                     run = failedRun,
                     plan = toolPlan,
@@ -142,8 +153,10 @@ class AgentLoopRuntime(
             AgentRunState.AwaitingUserConfirmation -> {
                 val pendingTool = traceStore.latestPendingToolRequest(latestRun.id)
                 if (pendingTool == null || !pendingTool.hasFullArguments) {
+                    val failedRun = traceStore.updateState(latestRun.id, AgentRunState.Failed)
+                    clearRunCaches(latestRun.id)
                     AgentRunRecovery(
-                        run = traceStore.updateState(latestRun.id, AgentRunState.Failed),
+                        run = failedRun,
                         pendingTool = null,
                     )
                 } else {
@@ -151,10 +164,14 @@ class AgentLoopRuntime(
                 }
             }
 
-            else -> AgentRunRecovery(
-                run = traceStore.updateState(latestRun.id, AgentRunState.Failed),
-                pendingTool = null,
-            )
+            else -> {
+                val failedRun = traceStore.updateState(latestRun.id, AgentRunState.Failed)
+                clearRunCaches(latestRun.id)
+                AgentRunRecovery(
+                    run = failedRun,
+                    pendingTool = null,
+                )
+            }
         }
     }
 
@@ -171,7 +188,9 @@ class AgentLoopRuntime(
             traceStore.appendStep(runId, AgentStep.SafetyChecked(safetyDecision))
             traceStore.appendStep(runId, AgentStep.ToolRejected(rejection))
             auditRejectedTool(runId, rejection)
-            return traceStore.updateState(runId, AgentRunState.Failed)
+            val failedRun = traceStore.updateState(runId, AgentRunState.Failed)
+            clearRunCaches(runId)
+            return failedRun
         }
         traceStore.appendStep(runId, AgentStep.SafetyChecked(safetyDecision))
         traceStore.appendStep(runId, AgentStep.UserConfirmed(requestId))
@@ -248,6 +267,9 @@ class AgentLoopRuntime(
             is AgentObservationDecision.RetryTool -> AgentRunState.RetryingTool
         }
         val updatedRun = traceStore.updateState(runId, finalState)
+        if (isFinalState(finalState)) {
+            clearRunCaches(runId)
+        }
         return AgentModelObservationResult(
             run = updatedRun,
             decision = decision,
@@ -361,6 +383,9 @@ class AgentLoopRuntime(
             AgentObservationDecision.Cancel -> AgentRunState.Cancelled
         }
         val updatedRun = traceStore.updateState(runId, finalState)
+        if (isFinalState(finalState)) {
+            clearRunCaches(runId)
+        }
         return AgentObservationResult(
             run = updatedRun,
             result = observedResult,
