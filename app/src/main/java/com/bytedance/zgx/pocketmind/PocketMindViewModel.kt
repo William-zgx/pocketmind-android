@@ -972,7 +972,7 @@ class PocketMindViewModel(
                 replaceActiveSessionMessages(
                     messagesWithObservation + ChatMessage(
                         role = MessageRole.Assistant,
-                        text = "已读取剪贴板。当前为远程模型模式，为保护隐私，我不会自动发送剪贴板内容到远程模型。请切换到本地模型后重试，或手动粘贴你愿意发送的内容。",
+                        text = "当前为远程模型模式。该工具结果被标记为仅本地敏感上下文，暂不发送到远程模型。请切换到本地模型后重试，或手动确认后粘贴你愿意发送的内容。",
                         privacy = MessagePrivacy.LocalOnly,
                     ),
                     persistNow = true,
@@ -983,7 +983,7 @@ class PocketMindViewModel(
                         pendingConfirmation = null,
                         isBusy = false,
                         isGenerating = false,
-                        statusText = "已保护剪贴板内容",
+                        statusText = "已保护工具结果",
                     )
                 }
                 return

@@ -245,6 +245,81 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun nonClipboardToolCanTriggerRemoteModeProtectionForModelContinuation() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val actionRequest = ToolRequest(
+            id = "open-settings",
+            toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            arguments = emptyMap(),
+            reason = "打开系统设置",
+        )
+        val openDraft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            title = "打开 Wi-Fi 设置",
+            summary = "将打开系统 Wi-Fi 设置页。",
+            parameters = actionRequest.arguments,
+        )
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Action(
+                runId = "run-open-wifi",
+                toolRequest = actionRequest,
+                draft = openDraft,
+                plannedByModel = false,
+                fallbackReason = "test fallback",
+                skillId = BuiltInSkillRuntime.DEVICE_SETTINGS_SKILL,
+            ),
+            confirmedRun = AgentRun("run-open-wifi", "打开 Wi-Fi 设置", AgentRunState.ExecutingTool, 1L, 2L),
+            toolObservation = AgentObservationResult(
+                run = AgentRun("run-open-wifi", "打开 Wi-Fi 设置", AgentRunState.GeneratingAnswer, 1L, 3L),
+                result = ToolResult(
+                    requestId = actionRequest.id,
+                    status = ToolStatus.Succeeded,
+                    summary = "已打开设置",
+                ),
+                assistantMessage = "工具执行结果：已打开设置",
+                decision = AgentObservationDecision.ContinueWithModel(
+                    requiresLocalModel = true,
+                    reason = "该结果被工具标记为敏感上下文。",
+                ),
+                continuationPromptForModel = "请继续分析该设置执行结果",
+                continuationRequiresLocalModel = true,
+                steps = emptyList(),
+            ),
+        )
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            assistantRouter = assistantRouter,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("打开设置")
+        advanceUntilIdle()
+        val firstConfirmation = viewModel.uiState.value.pendingConfirmation
+        requireNotNull(firstConfirmation)
+        assertEquals(MobileActionFunctions.OPEN_WIFI_SETTINGS, firstConfirmation.draft.functionName)
+
+        viewModel.confirmAgentConfirmation(firstConfirmation)
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(
+            "已保护工具结果",
+            viewModel.uiState.value.statusText,
+        )
+        val lastMessage = sessionStore.messages.last()
+        assertEquals(MessagePrivacy.LocalOnly, lastMessage.privacy)
+        assertTrue(lastMessage.text.contains("该工具结果被标记为仅本地敏感上下文"))
+        assertFalse(lastMessage.text.contains("读取剪贴板"))
+    }
+
+    @Test
     fun pendingConfirmationBlocksNewMessageUntilHandled() = runTest(dispatcher) {
         val sessionStore = FakeSessionStore()
         val assistantRouter = FakeAssistantRouter(
