@@ -88,6 +88,7 @@ sealed class AgentStep {
     data class ToolRequested(
         val request: ToolRequest,
         val draft: ActionDraft,
+        val skillStepId: String? = null,
     ) : AgentStep()
 
     data class SkillPlanned(

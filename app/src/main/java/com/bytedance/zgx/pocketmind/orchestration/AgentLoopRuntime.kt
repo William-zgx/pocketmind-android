@@ -38,6 +38,16 @@ class AgentLoopRuntime(
     private val observationReplanner: AgentObservationReplanner = NoOpAgentObservationReplanner,
     private val maxToolRetryAttempts: Int = 1,
 ) {
+    private val skillStepOutputsByRun = mutableMapOf<String, MutableMap<String, Map<String, String>>>()
+    private val pendingModelContinuationByRun = mutableMapOf<String, PendingModelContinuation?>()
+
+    private data class PendingModelContinuation(
+        val targetToolStepId: String,
+        val modelStepId: String,
+        val outputKey: String,
+        val requiresLocalModel: Boolean,
+    )
+
     @Suppress("UNUSED_PARAMETER")
     fun runOnce(
         input: String,
@@ -59,23 +69,9 @@ class AgentLoopRuntime(
 
         when (val toolPlan = planToolIfSupported(input, actionModelPath)) {
             is AgentPlan.UseTool -> {
-                traceStore.appendStep(createdRun.id, AgentStep.ModelPlanned(toolPlan))
-                toolPlan.skillRequest?.let { skillRequest ->
-                    traceStore.appendStep(createdRun.id, AgentStep.SkillPlanned(skillRequest, toolPlan.skillPlan))
-                }
-                traceStore.appendStep(createdRun.id, AgentStep.SafetyChecked(toolPlan.safetyDecision))
-                traceStore.appendStep(createdRun.id, AgentStep.ToolRequested(toolPlan.request, toolPlan.draft))
-                auditToolEvent(createdRun.id, toolPlan, ToolAuditEventType.ToolPlanned, null, toolPlan.request.reason)
-                traceStore.appendStep(
-                    createdRun.id,
-                    AgentStep.UserConfirmationRequested(toolPlan.request, toolPlan.draft),
-                )
-                auditToolEvent(
+                appendToolPlanSteps(
                     runId = createdRun.id,
                     plan = toolPlan,
-                    eventType = ToolAuditEventType.ConfirmationRequested,
-                    status = null,
-                    summary = toolPlan.safetyDecision.reason,
                 )
                 val waitingRun = traceStore.updateState(createdRun.id, AgentRunState.AwaitingUserConfirmation)
                 return AgentLoopResult(
@@ -248,9 +244,27 @@ class AgentLoopRuntime(
             return null
         }
         val request = toolRequestFor(runId, result.requestId) ?: return null
+        pendingModelContinuationByRun.remove(runId)
         traceStore.updateState(runId, AgentRunState.Observing)
-        val continuationPrompt = promptForToolObservation(run, request, result)
         val observedResult = result.redactedForTrace(request)
+        val runSkillPlan = latestSkillPlan(runId)
+        val skillStepId = latestToolStepIdForRequest(runId, request.id, runSkillPlan)
+        val continuationPromptForSkill = if (
+            observedResult.status == ToolStatus.Succeeded &&
+            runSkillPlan != null &&
+            skillStepId != null
+        ) {
+            updateSkillOutputsAndPromptForNextStep(
+                run = run,
+                request = request,
+                result = result,
+                skillStepId = skillStepId,
+                runSkillPlan = runSkillPlan,
+            )
+        } else {
+            null
+        }
+        val continuationPrompt = continuationPromptForSkill ?: promptForToolObservation(run, request, result)
         val retryAttempt = nextRetryAttempt(runId, observedResult)
         val retryRequest = if (retryAttempt > 0) request else null
         traceStore.appendStep(runId, AgentStep.ToolObserved(observedResult))
@@ -330,7 +344,8 @@ class AgentLoopRuntime(
                 continuationPromptForModel = continuationPrompt,
                 continuationRequiresLocalModel = continuationPrompt != null &&
                     (request.toolName == MobileActionFunctions.READ_CLIPBOARD ||
-                        observedResult.requiresLocalModelForContinuation()),
+                        observedResult.requiresLocalModelForContinuation() ||
+                        pendingModelContinuationByRun[runId]?.requiresLocalModel == true),
                 retryRequest = retryRequest,
                 retryAttempt = retryAttempt,
                 steps = traceStore.steps(runId),
@@ -378,6 +393,30 @@ class AgentLoopRuntime(
         request: ToolRequest,
         result: ToolResult,
     ): NextObservationPlan {
+        val skillPlan = latestSkillPlan(run.id) ?: return planNextToolFromReplanner(run, request, result)
+        val skillStep = latestToolRequestedStep(run.id, request.id, skillPlan)
+            ?: return planNextToolFromReplanner(run, request, result)
+        val skillPlanContinuation = planNextToolFromSkillPlan(
+            run = run,
+            skillPlan = skillPlan,
+            request = request,
+        )
+        return when (skillPlanContinuation) {
+            is NextObservationPlan.None -> if (skillStep.dependsOn.isNotEmpty()) {
+                NextObservationPlan.None
+            } else {
+                planNextToolFromReplanner(run, request, result)
+            }
+
+            else -> skillPlanContinuation
+        }
+    }
+
+    private fun planNextToolFromReplanner(
+        run: AgentRun,
+        request: ToolRequest,
+        result: ToolResult,
+    ): NextObservationPlan {
         val replan = observationReplanner.planNext(
             AgentObservationReplanContext(
                 run = run,
@@ -397,39 +436,243 @@ class AgentLoopRuntime(
         )
     }
 
+    private fun planNextToolFromSkillPlan(
+        run: AgentRun,
+        skillPlan: SkillPlan,
+        request: ToolRequest,
+    ): NextObservationPlan {
+        val skillStep = latestToolRequestedStep(run.id, request.id, skillPlan) ?: return NextObservationPlan.None
+        val skillStepId = skillStep.id
+        val skillOutputs = outputsForSkillRun(run.id)
+        if (skillStepId !in skillOutputs) {
+            return NextObservationPlan.None
+        }
+        val nextStep = skillPlan.steps.firstOrNull { step ->
+            step.id !in skillOutputs && step.dependsOn.all { it in skillOutputs.keys }
+        } ?: return NextObservationPlan.None
+        return when (nextStep) {
+            is SkillStep.ToolStep -> {
+                val boundArguments = resolveSkillBindings(
+                    bindings = nextStep.argumentBindings,
+                    outputs = skillOutputs,
+                ) ?: return rejectNextToolPlan(
+                    run.id,
+                    nextStep.request.rejected("Missing skill argument binding for step ${nextStep.id}."),
+                )
+                val nextRequest = nextStep.request.copy(arguments = nextStep.request.arguments + boundArguments)
+                val nextDraft = nextStep.draft.copy(parameters = nextStep.draft.parameters + boundArguments)
+                buildNextToolPlan(
+                    runId = run.id,
+                    request = nextRequest,
+                    draft = nextDraft,
+                    plannedByModel = false,
+                    fallbackReason = "skill step continuation",
+                    skillPlan = skillPlan,
+                )
+            }
+            is SkillStep.ModelStep -> {
+                val inputs = resolveSkillBindings(
+                    bindings = nextStep.inputBindings,
+                    outputs = skillOutputsWithInput(run),
+                ) ?: return rejectNextToolPlan(
+                    run.id,
+                    request.rejected("Missing model input binding for step ${nextStep.id}."),
+                )
+                val targetStep = skillPlan.steps
+                    .filterIsInstance<SkillStep.ToolStep>()
+                    .firstOrNull { it.dependsOn.contains(nextStep.id) }
+                if (targetStep == null) {
+                    return NextObservationPlan.Rejected(
+                        "No follow-up tool step for model step ${nextStep.id}.",
+                    )
+                }
+                pendingModelContinuationByRun[run.id] = PendingModelContinuation(
+                    targetToolStepId = targetStep.id,
+                    modelStepId = nextStep.id,
+                    outputKey = nextStep.outputKey,
+                    requiresLocalModel = nextStep.keepsSensitiveInputLocal,
+                )
+                NextObservationPlan.None
+            }
+        }
+    }
+
     private fun planNextToolAfterModelResult(
         run: AgentRun,
         text: String,
     ): NextObservationPlan {
-        val skillPlan = latestSkillPlan(run.id) ?: return NextObservationPlan.None
-        if (skillPlan.request.skillId != BuiltInSkillRuntime.CLIPBOARD_SUMMARY_SHARE_SKILL) {
+        val pendingContinuation = pendingModelContinuationByRun.remove(run.id) ?: run {
             return NextObservationPlan.None
         }
-        val validation = skillPlan.validateStructure()
-        if (!validation.isValid) {
-            return NextObservationPlan.Rejected("Invalid skill plan: ${validation.errors.joinToString()}")
-        }
-        val modelStep = skillPlan.steps
-            .filterIsInstance<SkillStep.ModelStep>()
-            .lastOrNull() ?: return NextObservationPlan.None
-        val toolStep = skillPlan.steps
+        val skillPlan = latestSkillPlan(run.id) ?: return NextObservationPlan.None
+        val targetToolStep = skillPlan.steps
             .filterIsInstance<SkillStep.ToolStep>()
-            .firstOrNull { step -> modelStep.id in step.dependsOn }
-            ?: return NextObservationPlan.None
+            .firstOrNull { it.id == pendingContinuation.targetToolStepId }
+            ?: return NextObservationPlan.Rejected(
+                "Missing target tool step: ${pendingContinuation.targetToolStepId}",
+            )
+        if (pendingContinuation.outputKey.isBlank()) {
+            return NextObservationPlan.Rejected("Model continuation output key is missing.")
+        }
+        val outputMap = outputsForSkillRun(run.id) + mapOf(
+            pendingContinuation.modelStepId to mapOf(
+                pendingContinuation.outputKey to text,
+            ),
+        )
         val boundArguments = resolveSkillBindings(
-            bindings = toolStep.argumentBindings,
-            outputs = mapOf(modelStep.id to mapOf(modelStep.outputKey to text)),
-        ) ?: return rejectNextToolPlan(run.id, toolStep.request.rejected("Missing model output binding for skill step."))
-        val request = toolStep.request.copy(arguments = toolStep.request.arguments + boundArguments)
-        val draft = toolStep.draft.copy(parameters = toolStep.draft.parameters + boundArguments)
+            bindings = targetToolStep.argumentBindings,
+            outputs = outputMap,
+        ) ?: return NextObservationPlan.Rejected("Missing model output binding for skill step.")
+        val toolRequestForContinuation = targetToolStep.request.copy(
+            arguments = targetToolStep.request.arguments + boundArguments,
+        )
+        outputsForSkillRun(run.id)[pendingContinuation.modelStepId] = mapOf(
+            pendingContinuation.outputKey to text,
+        )
         return buildNextToolPlan(
             runId = run.id,
-            request = request,
-            draft = draft,
+            request = toolRequestForContinuation,
+            draft = targetToolStep.draft.copy(
+                parameters = targetToolStep.draft.parameters + boundArguments,
+            ),
             plannedByModel = false,
             fallbackReason = "skill model step",
             skillPlan = skillPlan,
         )
+    }
+
+    private fun updateSkillOutputsAndPromptForNextStep(
+        run: AgentRun,
+        request: ToolRequest,
+        result: ToolResult,
+        skillStepId: String,
+        runSkillPlan: SkillPlan,
+    ): String? {
+        val outputs = outputsForSkillRun(run.id)
+        outputs[skillStepId] = resolveSkillOutput(result)
+        val nextStep = runSkillPlan.steps.firstOrNull { step ->
+            step.id !in outputs && step.dependsOn.all { it in outputs.keys }
+        } ?: return null
+        if (nextStep !is SkillStep.ModelStep) return null
+
+        val nextInputs = resolveSkillBindings(
+            bindings = nextStep.inputBindings,
+            outputs = skillOutputsWithInput(run),
+        ) ?: return null
+        val targetStep = runSkillPlan.steps
+            .filterIsInstance<SkillStep.ToolStep>()
+            .firstOrNull { it.dependsOn.contains(nextStep.id) }
+            ?: return null
+
+        pendingModelContinuationByRun[run.id] = PendingModelContinuation(
+            targetToolStepId = targetStep.id,
+            modelStepId = nextStep.id,
+            outputKey = nextStep.outputKey,
+            requiresLocalModel = nextStep.keepsSensitiveInputLocal,
+        )
+
+        return buildModelContinuationPrompt(
+            run = run,
+            request = request,
+            result = result,
+            modelStep = nextStep,
+            resolvedInputs = nextInputs,
+        )
+    }
+
+    private fun buildModelContinuationPrompt(
+        run: AgentRun,
+        request: ToolRequest,
+        result: ToolResult,
+        modelStep: SkillStep.ModelStep,
+        resolvedInputs: Map<String, String>,
+    ): String {
+        val inputLines = if (resolvedInputs.isEmpty()) {
+            "（未提供输入）"
+        } else {
+            resolvedInputs.entries.joinToString("\n") { (name, value) -> "$name: $value" }
+        }
+        return """
+            用户已确认工具执行。检测到后续技能模型步骤，请基于以下内容继续输出：
+
+            用户原始请求：${run.input}
+            工具名称：${request.toolName}
+            工具结果摘要：${result.summary}
+            模型步骤：${modelStep.title}
+            模型指令：${modelStep.instruction}
+            可用模型输入：
+            $inputLines
+        """.trimIndent()
+    }
+
+    private fun resolveSkillOutput(result: ToolResult): Map<String, String> {
+        val output = linkedMapOf<String, String>()
+        output.putAll(result.data)
+        if (result.summary.isNotBlank()) {
+            output.putIfAbsent("summary", result.summary)
+        }
+        return output
+    }
+
+    private fun outputsForSkillRun(runId: String): MutableMap<String, Map<String, String>> {
+        return skillStepOutputsByRun.getOrPut(runId) { linkedMapOf() }.also { outputs ->
+            val skillInput = latestSkillPlan(runId)?.request?.arguments.orEmpty()
+            if (outputs["input"] == null && skillInput.isNotEmpty()) {
+                outputs["input"] = skillInput
+            }
+        }
+    }
+
+    private fun skillOutputsWithInput(run: AgentRun): Map<String, Map<String, String>> {
+        val outputs = outputsForSkillRun(run.id)
+        val skillInput = latestSkillPlan(run.id)?.request?.arguments.orEmpty()
+        return if (outputs["input"] == null && skillInput.isNotEmpty()) {
+            outputs + mapOf("input" to skillInput)
+        } else {
+            outputs.toMap()
+        }
+    }
+
+    private fun latestToolStepIdForRequest(
+        runId: String,
+        requestId: String,
+        skillPlan: SkillPlan?,
+    ): String? {
+        if (skillPlan == null) return null
+        return latestToolRequestedStep(runId, requestId, skillPlan)?.id
+    }
+
+    private fun latestToolRequestedStep(
+        runId: String,
+        requestId: String,
+        skillPlan: SkillPlan,
+    ): SkillStep.ToolStep? {
+        val requestedStep = traceStore.steps(runId)
+            .asReversed()
+            .firstOrNull { step ->
+                step is AgentStep.ToolRequested && step.request.id == requestId
+            } as? AgentStep.ToolRequested
+            ?: return null
+
+        requestedStep.skillStepId?.let { stepId ->
+            return skillPlan.steps
+                .filterIsInstance<SkillStep.ToolStep>()
+                .firstOrNull { it.id == stepId }
+        }
+
+        val requestIndex = traceStore.steps(runId).indexOfLast { step ->
+            step is AgentStep.ToolRequested && step.request.id == requestId
+        }
+        if (requestIndex < 0) return null
+        val skillPlanIndex = traceStore.steps(runId).subList(0, requestIndex)
+            .indexOfLast { step -> step is AgentStep.SkillPlanned }
+        if (skillPlanIndex < 0) return null
+        val priorToolRequestCount = traceStore.steps(runId)
+            .subList(skillPlanIndex + 1, requestIndex)
+            .count { step -> step is AgentStep.ToolRequested }
+        return skillPlan.steps
+            .filterIsInstance<SkillStep.ToolStep>()
+            .getOrNull(priorToolRequestCount)
     }
 
     private fun buildNextToolPlan(
@@ -504,7 +747,12 @@ class AgentLoopRuntime(
             traceStore.appendStep(runId, AgentStep.SkillPlanned(skillRequest, plan.skillPlan))
         }
         traceStore.appendStep(runId, AgentStep.SafetyChecked(plan.safetyDecision))
-        traceStore.appendStep(runId, AgentStep.ToolRequested(plan.request, plan.draft))
+        val skillStepId = plan.skillPlan
+            ?.steps
+            ?.filterIsInstance<SkillStep.ToolStep>()
+            ?.firstOrNull { it.request.id == plan.request.id }
+            ?.id
+        traceStore.appendStep(runId, AgentStep.ToolRequested(plan.request, plan.draft, skillStepId))
         auditToolEvent(runId, plan, ToolAuditEventType.ToolPlanned, null, plan.request.reason)
         traceStore.appendStep(runId, AgentStep.UserConfirmationRequested(plan.request, plan.draft))
         auditToolEvent(
