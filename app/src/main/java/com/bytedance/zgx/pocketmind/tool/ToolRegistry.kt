@@ -254,6 +254,19 @@ private val reminderSchemaJson = """
     }
 """.trimIndent()
 
+private val recentNotificationSchemaJson = """
+    {
+      "type": "object",
+      "properties": {
+        "maxCount": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
 private val cancelReminderSchemaJson = """
     {
       "type": "object",
@@ -461,6 +474,35 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
                 ToolPermission.ReadsDeviceContext,
                 ToolPermission.ReadsCalendar,
                 ToolPermission.RequiresAndroidRuntimePermission,
+            ),
+            riskLevel = RiskLevel.LowReadOnly,
+            confirmationPolicy = ConfirmationPolicy.Required,
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.QUERY_FOREGROUND_APP,
+            title = "查询当前前台应用",
+            description = "读取当前前台应用的应用名与包名（用户当前界面可见应用）。",
+            inputSchemaJson = emptyObjectSchemaJson,
+            capability = ToolCapability.DeviceContext,
+            permissions = setOf(
+                ToolPermission.ReadsDeviceContext,
+                ToolPermission.RequiresAndroidRuntimePermission,
+            ),
+            riskLevel = RiskLevel.LowReadOnly,
+            confirmationPolicy = ConfirmationPolicy.Required,
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+            title = "查询近期通知",
+            description = "读取当前应用最近一段时间的通知摘要，默认返回最近 5 条。",
+            inputSchemaJson = recentNotificationSchemaJson,
+            capability = ToolCapability.DeviceContext,
+            permissions = setOf(
+                ToolPermission.ReadsDeviceContext,
             ),
             riskLevel = RiskLevel.LowReadOnly,
             confirmationPolicy = ConfirmationPolicy.Required,

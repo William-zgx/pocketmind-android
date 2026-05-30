@@ -90,6 +90,25 @@ class ToolRegistryTest {
         assertTrue(calendarAvailabilitySpec.inputSchemaJson.contains("\"end\""))
         assertTrue(calendarAvailabilitySpec.inputSchemaJson.contains("31 days"))
 
+        val foregroundAppSpec = registry.specFor(MobileActionFunctions.QUERY_FOREGROUND_APP)
+        assertNotNull(foregroundAppSpec)
+        requireNotNull(foregroundAppSpec)
+        assertEquals(ToolCapability.DeviceContext, foregroundAppSpec.capability)
+        assertEquals(RiskLevel.LowReadOnly, foregroundAppSpec.riskLevel)
+        assertEquals(ConfirmationPolicy.Required, foregroundAppSpec.confirmationPolicy)
+        assertTrue(ToolPermission.ReadsDeviceContext in foregroundAppSpec.permissions)
+        assertTrue(ToolPermission.RequiresAndroidRuntimePermission in foregroundAppSpec.permissions)
+        assertTrue(foregroundAppSpec.inputSchemaJson.contains("\"type\": \"object\""))
+
+        val recentNotificationSpec = registry.specFor(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS)
+        assertNotNull(recentNotificationSpec)
+        requireNotNull(recentNotificationSpec)
+        assertEquals(ToolCapability.DeviceContext, recentNotificationSpec.capability)
+        assertEquals(RiskLevel.LowReadOnly, recentNotificationSpec.riskLevel)
+        assertEquals(ConfirmationPolicy.Required, recentNotificationSpec.confirmationPolicy)
+        assertTrue(ToolPermission.ReadsDeviceContext in recentNotificationSpec.permissions)
+        assertTrue(recentNotificationSpec.inputSchemaJson.contains("maxCount"))
+
         val cancelReminderSpec = registry.specFor(MobileActionFunctions.CANCEL_REMINDER)
         assertNotNull(cancelReminderSpec)
         requireNotNull(cancelReminderSpec)
@@ -198,6 +217,31 @@ class ToolRegistryTest {
             assertEquals(ToolStatus.Rejected, rejection.status)
             assertTrue(rejection.summary.contains(requiredArgument))
         }
+    }
+
+    @Test
+    fun validatesRecentNotificationMaxCountPattern() {
+        val invalid = registry.validate(
+            ToolRequest(
+                id = "request-recent-invalid",
+                toolName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+                arguments = mapOf("maxCount" to "0"),
+                reason = "test",
+            ),
+        )
+        assertNotNull(invalid)
+        requireNotNull(invalid)
+        assertTrue(invalid.summary.contains("maxCount"))
+
+        val valid = registry.validate(
+            ToolRequest(
+                id = "request-recent-valid",
+                toolName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+                arguments = mapOf("maxCount" to "6"),
+                reason = "test",
+            ),
+        )
+        assertNull(valid)
     }
 
     @Test

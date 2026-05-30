@@ -6,6 +6,11 @@ import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityProvider
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityQuery
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityQueryValidation
 import com.bytedance.zgx.pocketmind.device.CalendarAvailabilityReadResult
+import com.bytedance.zgx.pocketmind.device.ForegroundAppProvider
+import com.bytedance.zgx.pocketmind.device.ForegroundAppReadResult
+import com.bytedance.zgx.pocketmind.device.NotificationSummaryItem
+import com.bytedance.zgx.pocketmind.device.NotificationSummaryProvider
+import com.bytedance.zgx.pocketmind.device.NotificationSummaryReadResult
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,15 +20,24 @@ interface ToolExecutor {
 
 class RoutingToolExecutor(
     private val calendarAvailabilityProvider: CalendarAvailabilityProvider,
+    private val foregroundAppProvider: ForegroundAppProvider,
+    private val notificationSummaryProvider: NotificationSummaryProvider,
     private val delegate: ToolExecutor,
 ) : ToolExecutor {
     private val calendarAvailabilityToolExecutor =
         CalendarAvailabilityToolExecutor(calendarAvailabilityProvider)
+    private val foregroundAppToolExecutor = ForegroundAppToolExecutor(foregroundAppProvider)
+    private val notificationSummaryToolExecutor =
+        NotificationSummaryToolExecutor(notificationSummaryProvider)
 
     override fun execute(request: ToolRequest): ToolResult =
         when (request.toolName) {
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY ->
                 calendarAvailabilityToolExecutor.execute(request)
+            MobileActionFunctions.QUERY_FOREGROUND_APP ->
+                foregroundAppToolExecutor.execute(request)
+            MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS ->
+                notificationSummaryToolExecutor.execute(request)
 
             else -> delegate.execute(request)
         }
@@ -112,25 +126,125 @@ class CalendarAvailabilityToolExecutor(
                     data = request.localOnlyData(),
                 )
         }
+}
 
-    private fun ToolRequest.localOnlyData(): Map<String, String> =
-        mapOf(
-            "toolName" to toolName,
-            "privacy" to MessagePrivacy.LocalOnly.name,
-        )
-
-    private fun List<com.bytedance.zgx.pocketmind.device.CalendarAvailabilityBlock>.toJsonString(): String {
-        val blocksArray = JSONArray()
-        forEach { block ->
-            blocksArray.put(
-                JSONObject()
-                    .put("status", block.status.wireValue)
-                    .put("start", CalendarAvailabilityQuery.formatInstant(block.start))
-                    .put("end", CalendarAvailabilityQuery.formatInstant(block.end)),
+class ForegroundAppToolExecutor(
+    private val provider: ForegroundAppProvider,
+) : ToolExecutor {
+    override fun execute(request: ToolRequest): ToolResult {
+        if (request.toolName != MobileActionFunctions.QUERY_FOREGROUND_APP) {
+            return request.failed(
+                code = ToolErrorCode.UnknownTool,
+                summary = "Unknown tool: ${request.toolName}",
+                retryable = false,
             )
         }
-        return blocksArray.toString()
+
+        return when (val result = provider.currentForegroundApp()) {
+            is ForegroundAppReadResult.Available ->
+                request.succeeded(
+                    summary = "当前前台应用：${result.appInfo.appLabel}",
+                    data = request.localOnlyData() + mapOf(
+                        "packageName" to result.appInfo.packageName,
+                        "appLabel" to result.appInfo.appLabel,
+                        "lastTimeUsedMillis" to result.appInfo.lastTimeUsedMillis.toString(),
+                    ),
+                )
+
+            is ForegroundAppReadResult.PermissionDenied ->
+                request.failed(
+                    code = ToolErrorCode.PermissionDenied,
+                    summary = "需要“查看应用使用情况”权限来查询前台应用",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+
+            is ForegroundAppReadResult.Failed ->
+                request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "查询前台应用失败：${result.reason}",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+        }
     }
+}
+
+class NotificationSummaryToolExecutor(
+    private val provider: NotificationSummaryProvider,
+) : ToolExecutor {
+    override fun execute(request: ToolRequest): ToolResult {
+        if (request.toolName != MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS) {
+            return request.failed(
+                code = ToolErrorCode.UnknownTool,
+                summary = "Unknown tool: ${request.toolName}",
+                retryable = false,
+            )
+        }
+
+        val maxCount = request.arguments["maxCount"]?.trim()?.toIntOrNull() ?: 5
+        return when (val result = provider.recentNotifications(maxCount)) {
+            is NotificationSummaryReadResult.Available ->
+                request.succeeded(
+                    summary = "已读取 ${result.items.size} 条最近通知。",
+                    data = request.localOnlyData() + mapOf(
+                        "maxCount" to maxCount.toString(),
+                        "notificationCount" to result.items.size.toString(),
+                        "notificationsJson" to result.items.toJsonString(),
+                    ),
+                )
+
+            is NotificationSummaryReadResult.PermissionDenied ->
+                request.failed(
+                    code = ToolErrorCode.PermissionDenied,
+                    summary = "未开启应用通知权限，无法读取通知摘要",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+
+            is NotificationSummaryReadResult.Failed ->
+                request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "通知摘要查询失败：${result.reason}",
+                    retryable = true,
+                    data = request.localOnlyData(),
+                )
+        }
+    }
+
+    private fun List<NotificationSummaryItem>.toJsonString(): String {
+        val notificationsArray = JSONArray()
+        forEach { item ->
+            notificationsArray.put(
+                JSONObject()
+                    .put("id", item.id)
+                    .put("title", item.title)
+                    .put("isOngoing", item.isOngoing)
+                    .put("postTimeMillis", item.postTimeMillis),
+            )
+        }
+        return notificationsArray.toString()
+    }
+}
+
+private fun ToolRequest.localOnlyData(): Map<String, String> =
+    mapOf(
+        "toolName" to toolName,
+        "privacy" to MessagePrivacy.LocalOnly.name,
+        "requiresLocalModel" to true.toString(),
+    )
+
+private fun List<com.bytedance.zgx.pocketmind.device.CalendarAvailabilityBlock>.toJsonString(): String {
+    val blocksArray = JSONArray()
+    forEach { block ->
+        blocksArray.put(
+            JSONObject()
+                .put("status", block.status.wireValue)
+                .put("start", CalendarAvailabilityQuery.formatInstant(block.start))
+                .put("end", CalendarAvailabilityQuery.formatInstant(block.end)),
+        )
+    }
+    return blocksArray.toString()
 }
 
 private fun ToolRequest.toolExecutionContext(): Map<String, String> =

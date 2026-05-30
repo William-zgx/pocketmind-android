@@ -47,6 +47,30 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun parsesForegroundAppCallOutput() {
+        val draft = planner.parseModelOutput(
+            """call:query_foreground_app{}""",
+        )
+
+        requireNotNull(draft)
+        assertEquals(MobileActionFunctions.QUERY_FOREGROUND_APP, draft.functionName)
+        assertEquals("查询当前前台应用", draft.title)
+        assertTrue(draft.summary.contains("前台应用"))
+    }
+
+    @Test
+    fun parsesRecentNotificationsCallOutputWithLimit() {
+        val draft = planner.parseModelOutput(
+            """call:query_recent_notifications{"maxCount":"6"}""",
+        )
+
+        requireNotNull(draft)
+        assertEquals(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS, draft.functionName)
+        assertEquals("6", draft.parameters["maxCount"])
+        assertTrue(draft.summary.contains("通知"))
+    }
+
+    @Test
     fun parsesOpenDeepLinkCallOutput() {
         val draft = planner.parseModelOutput(
             """call:open_deep_link{"uri":"https://example.com/help"}""",
@@ -105,6 +129,24 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun infersForegroundAppDraft() {
+        val plan = planner.plan("帮我查一下当前应用是什么")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.QUERY_FOREGROUND_APP, plan.draft?.functionName)
+        assertEquals(emptyMap<String, String>(), plan.draft?.parameters)
+    }
+
+    @Test
+    fun infersRecentNotificationsDraftWithCustomLimit() {
+        val plan = planner.plan("查看最近3条通知")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS, plan.draft?.functionName)
+        assertEquals("3", plan.draft?.parameters?.get("maxCount"))
+    }
+
+    @Test
     fun infersClipboardReadDraftOnlyWhenClipboardIsNamed() {
         val plan = planner.plan("读取剪贴板并总结")
 
@@ -137,6 +179,14 @@ class ActionPlannerTest {
 
         assertTrue(prompt.contains("- open_deep_link"))
         assertTrue(prompt.contains("open_deep_link"))
+    }
+
+    @Test
+    fun modelPromptMentionsRecentNotificationAndForegroundQueries() {
+        val prompt = actionPrompt("查询最近通知")
+
+        assertTrue(prompt.contains("- query_foreground_app {}"))
+        assertTrue(prompt.contains("- query_recent_notifications {\"maxCount\":\"...\"}"))
     }
 
     @Test

@@ -24,6 +24,15 @@ class MobileActionPlanner : ActionPlanner {
             "小时后",
             "剪贴板",
             "分享",
+            "前台",
+            "当前应用",
+            "当前 app",
+            "当前app",
+            "app",
+            "应用",
+            "通知",
+            "通知栏",
+            "提醒",
             "忙闲",
             "空闲",
             "有空",
@@ -83,6 +92,12 @@ class MobileActionPlanner : ActionPlanner {
             isShareTextRequest(input) ->
                 MobileActionFunctions.SHARE_TEXT.toDraft(shareTextParameters(input))
 
+            isForegroundAppRequest(input) ->
+                MobileActionFunctions.QUERY_FOREGROUND_APP.toDraft(emptyMap())
+
+            isRecentNotificationRequest(input) ->
+                MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS.toDraft(recentNotificationParameters(input))
+
             isCalendarAvailabilityRequest(input) && calendarWindowParameters != null ->
                 MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY.toDraft(calendarWindowParameters)
 
@@ -129,6 +144,8 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY -> "查询日历忙闲"
             MobileActionFunctions.CANCEL_REMINDER -> "取消提醒"
             MobileActionFunctions.OPEN_DEEP_LINK -> "打开深链"
+            MobileActionFunctions.QUERY_FOREGROUND_APP -> "查询当前前台应用"
+            MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS -> "查询最近通知"
             else -> "动作草稿"
         }
 
@@ -151,6 +168,16 @@ class MobileActionPlanner : ActionPlanner {
                 "将取消提醒任务：${parameters["taskId"].orEmpty()}"
             MobileActionFunctions.OPEN_DEEP_LINK ->
                 "将打开深度链接：${parameters["uri"].orEmpty()}"
+            MobileActionFunctions.QUERY_FOREGROUND_APP ->
+                "将读取当前前台应用信息（包名与应用名）。"
+            MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS -> {
+                val maxCount = parameters["maxCount"]
+                if (maxCount.isNullOrBlank()) {
+                    "将读取最近未读通知的摘要。"
+                } else {
+                    "将读取最近 ${maxCount} 条通知的摘要。"
+                }
+            }
             else -> "将打开系统页面完成这个动作。"
         }
 
@@ -250,6 +277,39 @@ class MobileActionPlanner : ActionPlanner {
     private fun isCancelReminderRequest(input: String): Boolean {
         return ("取消" in input || "撤销" in input) &&
             TASK_ID_PATTERN.containsMatchIn(input)
+    }
+
+    private fun isForegroundAppRequest(input: String): Boolean {
+        val normalized = input.lowercase()
+        return listOf(
+            "前台",
+            "当前应用",
+            "current app",
+            "active app",
+        ).any { it in input } ||
+            Regex("\\b(foreground|current\\s+app)\\b").containsMatchIn(normalized)
+    }
+
+    private fun isRecentNotificationRequest(input: String): Boolean {
+        val normalized = input.lowercase()
+        return listOf(
+            "最近通知",
+            "最近的通知",
+            "通知列表",
+            "通知摘要",
+            "通知栏",
+            "最近通知栏",
+        ).any { it in input } || Regex("\\b(notifications?|notification)\\b").containsMatchIn(normalized)
+            || Regex("""最近\d{1,2}条""").containsMatchIn(normalized.replace(" ", ""))
+    }
+
+    private fun recentNotificationParameters(input: String): Map<String, String> {
+        val cleaned = input.replace(Regex("\\s+"), "")
+        val match = Regex("最近(\\d{1,2})条(消息|通知|讯息)?").find(cleaned)
+            ?: Regex("notification|notifications?\\s*(?:recent|last)\\s+(\\d{1,2})").find(input.lowercase())
+        val rawCount = match?.groupValues?.getOrNull(1) ?: return emptyMap()
+        val maxCount = rawCount.toIntOrNull() ?: return emptyMap()
+        return if (maxCount <= 0) emptyMap() else mapOf("maxCount" to maxCount.toString())
     }
 
     private fun isOpenDeepLinkRequest(input: String): Boolean {

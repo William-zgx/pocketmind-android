@@ -20,6 +20,8 @@ import com.bytedance.zgx.pocketmind.data.PreferenceSettingsStore
 import com.bytedance.zgx.pocketmind.data.RemoteModelRepository
 import com.bytedance.zgx.pocketmind.data.SessionRepository
 import com.bytedance.zgx.pocketmind.device.AndroidCalendarAvailabilityProvider
+import com.bytedance.zgx.pocketmind.device.AndroidForegroundAppProvider
+import com.bytedance.zgx.pocketmind.device.AndroidNotificationSummaryProvider
 import com.bytedance.zgx.pocketmind.download.ModelDownloadService
 import com.bytedance.zgx.pocketmind.memory.MemoryRepository
 import com.bytedance.zgx.pocketmind.memory.RoomMemoryRecordStore
@@ -82,6 +84,8 @@ class PocketMindAppContainer(context: Context) {
         actionExecutor = ValidatingToolExecutor(
             delegate = RoutingToolExecutor(
                 calendarAvailabilityProvider = AndroidCalendarAvailabilityProvider(appContext),
+                foregroundAppProvider = AndroidForegroundAppProvider(appContext),
+                notificationSummaryProvider = AndroidNotificationSummaryProvider(appContext),
                 delegate = ActionExecutor(
                     context = appContext,
                     backgroundTaskScheduler = backgroundTaskSchedulerInternal,

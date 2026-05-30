@@ -32,6 +32,8 @@ object MobileActionFunctions {
     const val SHARE_TEXT = "share_text"
     const val OPEN_DEEP_LINK = "open_deep_link"
     const val QUERY_CALENDAR_AVAILABILITY = "query_calendar_availability"
+    const val QUERY_FOREGROUND_APP = "query_foreground_app"
+    const val QUERY_RECENT_NOTIFICATIONS = "query_recent_notifications"
     const val CANCEL_REMINDER = "cancel_reminder"
 
     val supported: Set<String> = setOf(
@@ -47,6 +49,8 @@ object MobileActionFunctions {
         SHARE_TEXT,
         OPEN_DEEP_LINK,
         QUERY_CALENDAR_AVAILABILITY,
+        QUERY_FOREGROUND_APP,
+        QUERY_RECENT_NOTIFICATIONS,
         CANCEL_REMINDER,
     )
 }
