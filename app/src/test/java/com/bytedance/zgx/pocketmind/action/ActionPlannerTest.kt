@@ -132,6 +132,14 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun modelPromptSupportsOpenDeepLinkFunction() {
+        val prompt = actionPrompt("打开 https://example.com/help")
+
+        assertTrue(prompt.contains("- open_deep_link"))
+        assertTrue(prompt.contains("open_deep_link"))
+    }
+
+    @Test
     fun infersCalendarAvailabilityDraftWhenIsoWindowIsExplicit() {
         val plan = planner.plan(
             "查一下忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z",

@@ -115,7 +115,7 @@ private fun actionConversationConfig(): ConversationConfig =
         ),
     )
 
-private fun actionPrompt(input: String): String =
+internal fun actionPrompt(input: String): String =
     """
     将用户请求转换成一个手机动作调用。支持函数：
     - open_wifi_settings {}
@@ -128,6 +128,7 @@ private fun actionPrompt(input: String): String =
     - schedule_reminder {"title":"...","body":"...","delayMinutes":"15"} 仅用于明确的分钟/小时后提醒
     - read_clipboard {} 仅用于用户明确要求读取剪贴板
     - share_text {"text":"...","title":"..."} 仅打开系统分享面板，不直接发送
+    - open_deep_link {"uri":"..."} 仅用于打开外部 URL/URI 深度链接
     - cancel_reminder {"taskId":"..."} 仅用于取消已安排的提醒任务
 
     用户请求：$input

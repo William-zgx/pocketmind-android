@@ -209,7 +209,7 @@ data class ToolResult(
 
 ### 初始工具清单
 
-第一阶段只迁移现有 6 个动作，避免扩大风险面：
+第一阶段只迁移现有 7 个动作，避免扩大风险面（其中 `open_deep_link` 已加入）：
 
 | Tool | 当前来源 | 确认策略 | 结果 |
 | --- | --- | --- | --- |
@@ -219,13 +219,16 @@ data class ToolResult(
 | `create_calendar_event` | `ActionExecutor` | 必须确认 | 日历新建页打开成功/失败 |
 | `create_contact_draft` | `ActionExecutor` | 必须确认 | 联系人草稿页打开成功/失败 |
 | `open_flashlight_settings` | `ActionExecutor` | 必须确认 | 设置页打开成功/失败 |
+| `open_deep_link` | `ActionExecutor` + `BuiltInSkillRuntime` | 必须确认 | 支持 URL/URI 外部跳转 |
 
 之后再补：
 
-- `read_clipboard`：只读，敏感，需显式授权。
+- `read_clipboard`：只读，敏感，需显式授权。已在主循环中做模型续接治理。
 - `share_text`：中风险，必须确认。
 - `save_note`：低风险，可配置是否确认。
 - `query_calendar_availability`：敏感，只读，需权限与最小字段返回。
+
+> 已实现状态：`open_deep_link` 已通过模型动作提示与 `ToolRegistry` 接入到主循环，`run` 侧新增了工具步数上限兜底（达到上限直接失败），用于防止规划循环失控。
 
 ### Tool 调用协议
 

@@ -1012,6 +1012,121 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun maxToolStepsLimitsInitialToolPlanning() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "将打开系统 Wi-Fi 设置页。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+            maxToolStepsPerRun = 0,
+        )
+
+        val result = runtime.runOnce(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.Failed, result.run.state)
+        require(result.plan is AgentPlan.RejectedTool)
+        assertTrue(result.plan.result.summary.contains("最大步数"))
+        assertTrue(result.steps.any { it is AgentStep.ToolRejected })
+        assertTrue(result.steps.any { it is AgentStep.Failed })
+    }
+
+    @Test
+    fun maxToolStepsRejectsReplannedTool() {
+        val nextRequest = ToolRequest(
+            toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            reason = "搜索后打开设置",
+        )
+        val nextDraft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+            title = "打开 Wi-Fi 设置",
+            summary = "搜索完成后继续打开 Wi-Fi 设置页。",
+            parameters = emptyMap(),
+            requiresConfirmation = true,
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(
+                likelyAction = true,
+                planningResult = ActionPlanningResult(
+                    plan = ActionPlan(
+                        kind = ActionPlanKind.Draft,
+                        draft = ActionDraft(
+                            functionName = MobileActionFunctions.WEB_SEARCH,
+                            title = "Web 搜索",
+                            summary = "将在浏览器中搜索：Kotlin",
+                            parameters = mapOf("query" to "Kotlin"),
+                            requiresConfirmation = true,
+                        ),
+                    ),
+                    usedModel = false,
+                    fallbackReason = "test fallback",
+                ),
+            ),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+            maxToolStepsPerRun = 1,
+            observationReplanner = AgentObservationReplanner { context ->
+                if (
+                    context.previousRequest.toolName == MobileActionFunctions.WEB_SEARCH &&
+                    context.observedResult.status == ToolStatus.Succeeded
+                ) {
+                    AgentObservationReplan(
+                        request = nextRequest,
+                        draft = nextDraft,
+                        plannedByModel = false,
+                        fallbackReason = "test replan",
+                    )
+                } else {
+                    null
+                }
+            },
+        )
+        val planned = runtime.runOnce(
+            input = "先搜 Kotlin，然后打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        require(planned.plan is AgentPlan.UseTool)
+        runtime.confirmToolRequest(planned.run.id, planned.plan.request.id)
+
+        val observed = runtime.observeToolResult(
+            runId = planned.run.id,
+            result = ToolResult(
+                requestId = planned.plan.request.id,
+                status = ToolStatus.Succeeded,
+                summary = "已打开网页搜索",
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Failed, observed.run.state)
+        require(observed.decision is AgentObservationDecision.Fail)
+        assertTrue(observed.decision.reason.contains("最大步数"))
+        assertTrue(observed.steps.any { it is AgentStep.ToolRequested && it.request.toolName == MobileActionFunctions.WEB_SEARCH })
+        assertTrue(observed.steps.none { it is AgentStep.UserConfirmationRequested && it.request.toolName == MobileActionFunctions.OPEN_WIFI_SETTINGS })
+        assertTrue(observed.steps.any { it is AgentStep.Failed })
+    }
+
+    @Test
     fun replannedToolCannotReuseExistingRequestId() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = true,

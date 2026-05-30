@@ -79,6 +79,9 @@ Current status:
 - Retryable tool failures now schedule one bounded retry on the already
   confirmed request, record a `ToolRetryScheduled` trace/audit event, and only
   fail the run after the retry budget is exhausted.
+- Enforce a per-run tool-step ceiling (`maxToolStepsPerRun`) to prevent
+  infinite planner/skill continuation loops; hitting the ceiling now moves the run
+  to `Failed` with a `Failed` trace step and tool rejection summary.
 - Tool observation now produces an explicit `AgentObservationDecision`:
   complete, continue with model, retry tool, fail, or cancel. The decision is
   recorded in trace without storing private continuation prompts.

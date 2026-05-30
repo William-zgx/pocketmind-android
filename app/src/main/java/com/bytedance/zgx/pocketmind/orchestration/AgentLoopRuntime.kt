@@ -37,6 +37,7 @@ class AgentLoopRuntime(
     private val traceStore: AgentTraceStore = InMemoryAgentTraceStore(),
     private val observationReplanner: AgentObservationReplanner = NoOpAgentObservationReplanner,
     private val maxToolRetryAttempts: Int = 1,
+    private val maxToolStepsPerRun: Int = DEFAULT_MAX_TOOL_STEPS_PER_RUN,
 ) {
     private val skillStepOutputsByRun = mutableMapOf<String, MutableMap<String, Map<String, String>>>()
     private val pendingModelContinuationByRun = mutableMapOf<String, PendingModelContinuation?>()
@@ -69,6 +70,16 @@ class AgentLoopRuntime(
 
         when (val toolPlan = planToolIfSupported(input, actionModelPath)) {
             is AgentPlan.UseTool -> {
+                val rejectedForLoopLimit = planToolLimitExceeded(createdRun.id, toolPlan.request)
+                if (rejectedForLoopLimit != null) {
+                    rejectNextToolPlan(createdRun.id, rejectedForLoopLimit)
+                    val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                    return AgentLoopResult(
+                        run = failedRun,
+                        plan = AgentPlan.RejectedTool(rejectedForLoopLimit),
+                        steps = traceStore.steps(createdRun.id),
+                    )
+                }
                 appendToolPlanSteps(
                     runId = createdRun.id,
                     plan = toolPlan,
@@ -683,6 +694,10 @@ class AgentLoopRuntime(
         fallbackReason: String?,
         skillPlan: SkillPlan?,
     ): NextObservationPlan {
+        val loopLimitRejection = planToolLimitExceeded(runId, request)
+        if (loopLimitRejection != null) {
+            return rejectNextToolPlan(runId, loopLimitRejection)
+        }
         if (toolRequestFor(runId, request.id) != null) {
             return rejectNextToolPlan(
                 runId,
@@ -719,9 +734,21 @@ class AgentLoopRuntime(
     private fun rejectNextToolPlan(runId: String, result: ToolResult): NextObservationPlan {
         traceStore.appendStep(runId, AgentStep.ModelPlanned(AgentPlan.RejectedTool(result)))
         traceStore.appendStep(runId, AgentStep.ToolRejected(result))
+        traceStore.appendStep(runId, AgentStep.Failed(result.summary))
         auditRejectedTool(runId, result)
         return NextObservationPlan.Rejected(result.summary)
     }
+
+    private fun planToolLimitExceeded(
+        runId: String,
+        request: ToolRequest,
+    ): ToolResult? {
+        if (toolRequestsFor(runId).size < maxToolStepsPerRun) return null
+        return request.rejected(
+            summary = "已达到工具循环最大步数限制（$maxToolStepsPerRun）",
+        )
+    }
+
 
     private fun resolveSkillBindings(
         bindings: Map<String, String>,
@@ -1005,6 +1032,10 @@ class AgentLoopRuntime(
             .asSequence()
             .mapNotNull { step -> (step as? AgentStep.SkillPlanned)?.plan }
             .lastOrNull()
+
+    private companion object {
+        const val DEFAULT_MAX_TOOL_STEPS_PER_RUN = 8
+    }
 }
 
 fun AgentLoopResult.toAssistantRoute(): AssistantRoute =
