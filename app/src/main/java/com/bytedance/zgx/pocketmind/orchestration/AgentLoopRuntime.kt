@@ -68,7 +68,11 @@ class AgentLoopRuntime(
         traceStore.appendStep(createdRun.id, AgentStep.ContextLoaded(memoryHits, deviceContext))
         traceStore.updateState(createdRun.id, AgentRunState.Planning)
 
-        when (val toolPlan = planToolIfSupported(input, actionModelPath)) {
+        when (val toolPlan = planToolIfSupported(
+            input = input,
+            actionModelPath = actionModelPath,
+            installedCapabilities = installedCapabilities,
+        )) {
             is AgentPlan.UseTool -> {
                 val rejectedForLoopLimit = planToolLimitExceeded(createdRun.id, toolPlan.request)
                 if (rejectedForLoopLimit != null) {
@@ -87,6 +91,16 @@ class AgentLoopRuntime(
                 val waitingRun = traceStore.updateState(createdRun.id, AgentRunState.AwaitingUserConfirmation)
                 return AgentLoopResult(
                     run = waitingRun,
+                    plan = toolPlan,
+                    steps = traceStore.steps(createdRun.id),
+                )
+            }
+
+            is AgentPlan.MissingModel -> {
+                traceStore.appendStep(createdRun.id, AgentStep.ModelPlanned(toolPlan))
+                val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                return AgentLoopResult(
+                    run = failedRun,
                     plan = toolPlan,
                     steps = traceStore.steps(createdRun.id),
                 )
@@ -802,8 +816,15 @@ class AgentLoopRuntime(
         ) : NextObservationPlan()
     }
 
-    private fun planToolIfSupported(input: String, actionModelPath: String?): AgentPlan? {
+    private fun planToolIfSupported(
+        input: String,
+        actionModelPath: String?,
+        installedCapabilities: Set<ModelCapability>,
+    ): AgentPlan? {
         if (!actionPlanningRuntime.isLikelyAction(input)) return null
+        if (actionModelPath == null && ModelCapability.MobileAction !in installedCapabilities) {
+            return AgentPlan.MissingModel(ModelCapability.MobileAction)
+        }
         val result = actionPlanningRuntime.plan(input, actionModelPath)
         val draft = result.plan.draft
         if (result.plan.kind != ActionPlanKind.Draft || draft == null) return null

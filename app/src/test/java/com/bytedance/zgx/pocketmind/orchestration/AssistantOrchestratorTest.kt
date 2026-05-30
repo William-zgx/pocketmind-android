@@ -20,13 +20,27 @@ class AssistantOrchestratorTest {
 
         val route = orchestrator.route(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 
         assertTrue(route is AssistantRoute.Action)
         require(route is AssistantRoute.Action)
         assertTrue(!route.plannedByModel)
+    }
+
+    @Test
+    fun routesActionInputWithoutMobileActionCapabilityReturnsMissingModel() {
+        val orchestrator = AssistantOrchestrator(MemoryRepository(), RuleActionRuntime())
+
+        val route = orchestrator.route(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = true,
+        )
+
+        require(route is AssistantRoute.MissingModel)
+        assertEquals(ModelCapability.MobileAction, route.capability)
     }
 
     @Test
@@ -37,7 +51,7 @@ class AssistantOrchestratorTest {
 
         val route = orchestrator.route(
             input = "端侧聊天偏好是什么",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 
@@ -69,7 +83,7 @@ class AssistantOrchestratorTest {
         val orchestrator = AssistantOrchestrator(MemoryRepository(), RuleActionRuntime())
         val route = orchestrator.route(
             input = "先搜索 Kotlin，然后打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(route is AssistantRoute.Action)
@@ -98,7 +112,7 @@ class AssistantOrchestratorTest {
         val orchestrator = AssistantOrchestrator(MemoryRepository(), RuleActionRuntime())
         val route = orchestrator.route(
             input = "总结剪贴板并分享",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(route is AssistantRoute.Action)

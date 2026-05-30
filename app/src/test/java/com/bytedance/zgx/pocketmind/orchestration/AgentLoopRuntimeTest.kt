@@ -39,7 +39,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "端侧聊天偏好是什么",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 
@@ -56,6 +56,44 @@ class AgentLoopRuntimeTest {
         assertTrue(result.steps.any { step ->
             step is AgentStep.ModelPlanned && step.plan is AgentPlan.Answer
         })
+    }
+
+    @Test
+    fun actionInputWithoutMobileActionCapabilityReturnsMissingModel() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "将打开系统 Wi-Fi 设置页。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+        )
+
+        val result = runtime.runOnce(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.Failed, result.run.state)
+        require(result.plan is AgentPlan.MissingModel)
+        assertEquals(ModelCapability.MobileAction, result.plan.capability)
+        assertEquals(2, result.steps.size)
+        assertTrue(result.steps.any { it is AgentStep.ContextLoaded })
+        assertTrue(result.steps.any { it is AgentStep.ModelPlanned })
     }
 
     @Test
@@ -85,7 +123,7 @@ class AgentLoopRuntimeTest {
 
         val planned = runtime.runOnce(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 
@@ -127,7 +165,7 @@ class AgentLoopRuntimeTest {
 
         val planned = runtime.runOnce(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         runtime.confirmToolRequest(
@@ -175,7 +213,7 @@ class AgentLoopRuntimeTest {
 
         val planned = runtime.runOnce(
             input = "搜索 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 
@@ -198,7 +236,7 @@ class AgentLoopRuntimeTest {
         val deviceContext = DeviceContextSnapshot(
             isArm64Supported = true,
             inferenceMode = "Remote",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             canPostNotifications = false,
             memoryEnabled = true,
             availableStorageBytes = 512L * 1024L * 1024L,
@@ -208,7 +246,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "现在用的是什么推理模式",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
             deviceContext = deviceContext,
         )
@@ -249,7 +287,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 
@@ -316,7 +354,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "提醒我 15 分钟后喝水",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 
@@ -354,7 +392,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "读取剪贴板",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 
@@ -394,7 +432,7 @@ class AgentLoopRuntimeTest {
         val rawClipboardText = "这是一段剪贴板文本"
         val planned = runtime.runOnce(
             input = "读取剪贴板并总结",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -457,7 +495,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "打开 Wi-Fi 设置后继续执行建议",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -515,7 +553,7 @@ class AgentLoopRuntimeTest {
         val modelSummary = "摘要：这段内容适合分享。"
         val planned = runtime.runOnce(
             input = "总结剪贴板并分享",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -589,7 +627,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "总结剪贴板并分享",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -643,7 +681,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "总结剪贴板并分享",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -704,7 +742,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "读取剪贴板并总结",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -757,7 +795,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "读取剪贴板并总结",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -805,7 +843,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "读取剪贴板并总结",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -855,7 +893,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "搜一下 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -951,7 +989,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "先搜 Kotlin，然后打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1039,7 +1077,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 
@@ -1102,7 +1140,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "先搜 Kotlin，然后打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1164,7 +1202,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "搜一下 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1218,7 +1256,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "搜一下 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1294,7 +1332,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "搜一下 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1345,7 +1383,7 @@ class AgentLoopRuntimeTest {
         )
         val planned = runtime.runOnce(
             input = "搜一下 Kotlin",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
@@ -1399,7 +1437,7 @@ class AgentLoopRuntimeTest {
 
         val result = runtime.runOnce(
             input = "帮我写邮件",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = false,
         )
 

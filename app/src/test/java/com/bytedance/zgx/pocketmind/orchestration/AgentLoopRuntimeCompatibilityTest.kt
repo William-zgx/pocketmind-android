@@ -22,7 +22,7 @@ class AgentLoopRuntimeCompatibilityTest {
 
         val route = orchestrator.route(
             input = "端侧聊天偏好是什么",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 
@@ -56,7 +56,7 @@ class AgentLoopRuntimeCompatibilityTest {
 
         val route = orchestrator.route(
             input = "打开 Wi-Fi 设置",
-            installedCapabilities = setOf(ModelCapability.Chat),
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
             memoryEnabled = true,
         )
 

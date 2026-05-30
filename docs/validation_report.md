@@ -53,6 +53,25 @@ git diff --check
 
 结果：通过。
 
+## 2026-05-31 Agent Loop 动作能力门控增量验证
+
+本轮覆盖项：
+
+- `installedCapabilities` 已接入 `AgentLoopRuntime.runOnce` 的动作路由分支。
+- 当用户输入判定为动作意图，但未具备 `ModelCapability.MobileAction` 且无可用动作模型路径时，
+  主循环返回 `MissingModel` 并终止为失败状态，触发 `AssistantRoute.MissingModel`。
+- 新增单测覆盖：
+  - `AgentLoopRuntimeTest.actionInputWithoutMobileActionCapabilityReturnsMissingModel`
+  - `AgentLoopRuntimeCompatibilityTest` / `AssistantOrchestratorTest` 的动作路径能力集合更新与缺能力返回校验。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeTest' --tests 'com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestratorTest' --tests 'com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeCompatibilityTest'
+```
+
+结果：通过。
+
 补充检查：
 
 - 严格敏感信息扫描未发现 OpenAI-style API Key、DeepSeek URL/model 或真实
