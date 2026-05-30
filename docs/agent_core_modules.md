@@ -29,8 +29,8 @@ Current status:
   declarations, risk levels, confirmation policy, structured result helpers,
   and Android Intent execution results.
 - Tool argument validation is now driven by each tool's JSON schema for
-  required properties, closed argument sets, `minLength`, and regex `pattern`
-  checks.
+  required properties, closed argument sets, argument types, enum constraints,
+  numeric min/max bounds, and regex `pattern` checks.
 - Current tools cover Wi-Fi settings, flashlight settings, map search, web
   search, email draft, calendar draft, contact draft, local reminders,
   confirmed clipboard text reads, outbound system sharing for text, and

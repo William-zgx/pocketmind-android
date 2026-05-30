@@ -103,7 +103,80 @@ class ToolSchemaContractTest {
         }
     }
 
+    @Test
+    fun typedAndEnumeratedConstraintsAreEnforcedByRegistry() {
+        registry.specs().forEach { spec ->
+            val schema = JSONObject(spec.inputSchemaJson)
+            val properties = schema.optJSONObject("properties") ?: JSONObject()
+            val requiredProperties = schema.optStringSet("required")
+            val minimalValidArguments = requiredProperties.associateWith { propertyName ->
+                validValueFor(properties.getJSONObject(propertyName))
+            }
+
+            properties.keysSet().forEach { propertyName ->
+                val property = properties.optJSONObject(propertyName) ?: return@forEach
+                val invalidValue = invalidValueFor(property)
+                    ?: return@forEach
+                val candidate = minimalValidArguments + (propertyName to invalidValue)
+                val rejection = registry.validate(
+                    ToolRequest(
+                        id = "typed-${spec.name}-$propertyName",
+                        toolName = spec.name,
+                        arguments = candidate,
+                        reason = "schema contract",
+                    ),
+                )
+
+                assertNotNull(
+                    "${spec.name} should reject invalid typed/enum value for $propertyName",
+                    rejection,
+                )
+            }
+        }
+    }
+
     private fun validValueFor(property: JSONObject): String {
+        val enum = property.optStringSetOrNull("enum")
+        if (enum != null && enum.isNotEmpty()) {
+            return enum.first()
+        }
+
+        val type = property.optStringOrNull("type") ?: "string"
+        if (type == "boolean") {
+            return "true"
+        }
+        if (type == "integer" || type == "number") {
+            val minimum = property.optDoubleOrNull("minimum")
+            val maximum = property.optDoubleOrNull("maximum")
+            val exclusiveMinimum = property.optDoubleOrNull("exclusiveMinimum")
+            val exclusiveMaximum = property.optDoubleOrNull("exclusiveMaximum")
+            return when {
+                minimum != null -> {
+                    val value = if (exclusiveMinimum != null) minimum + 1 else minimum
+                    if (type == "integer") value.toLong().toString() else value.toString()
+                }
+
+                maximum != null -> {
+                    val value = if (exclusiveMaximum != null) maximum - 1 else maximum
+                    if (type == "integer") value.toLong().toString() else value.toString()
+                }
+
+                else -> {
+                    if (type == "integer") {
+                        "1"
+                    } else {
+                        "1.0"
+                    }
+                }
+            }
+        }
+        if (type == "array") {
+            return "[]"
+        }
+        if (type == "object") {
+            return "{}"
+        }
+
         val pattern = property.optStringOrNull("pattern")
         if (pattern != null) {
             return listOf("1", "10", "abc", "value", "http://x", "https://x", "mailto:a@b.com", "tel:123", "geo:0,0")
@@ -119,6 +192,53 @@ class ToolSchemaContractTest {
         listOf("", " ", "0", "-1", "1.5", "abc", "http://", "geo:", "mailto:", "tel:")
             .firstOrNull { !Regex(pattern).matches(it) }
             ?: error("No invalid fixture value for pattern $pattern")
+
+    private fun invalidValueFor(property: JSONObject): String? {
+        val enum = property.optStringSetOrNull("enum")
+        if (enum != null && enum.isNotEmpty()) {
+            return listOf("invalid", "_", "", "0", "false", "unsupported").firstOrNull {
+                it !in enum
+            }
+        }
+
+        return when (property.optStringOrNull("type")) {
+            "integer", "number" -> {
+                val minimum = property.optDoubleOrNull("minimum")
+                val maximum = property.optDoubleOrNull("maximum")
+                val exclusiveMinimum = property.optDoubleOrNull("exclusiveMinimum")
+                val exclusiveMaximum = property.optDoubleOrNull("exclusiveMaximum")
+                when {
+                    minimum != null -> (minimum - 1).toString()
+                    exclusiveMinimum != null -> exclusiveMinimum.toString()
+                    maximum != null -> (maximum + 1).toString()
+                    exclusiveMaximum != null -> exclusiveMaximum.toString()
+                    else -> "abc"
+                }
+            }
+
+            "boolean" -> "not-a-bool"
+            "array" -> "{}"
+            "object" -> "[]"
+
+            "string" -> property.optStringOrNull("pattern")?.let { firstInvalidValueFor(it) }
+
+            else -> null
+        }
+    }
+
+    private fun JSONObject.optDoubleOrNull(name: String): Double? {
+        if (!has(name) || isNull(name)) return null
+        return optDouble(name)
+    }
+
+    private fun JSONObject.optStringSetOrNull(name: String): Set<String>? {
+        val array = optJSONArray(name) ?: return null
+        return buildSet {
+            for (index in 0 until array.length()) {
+                add(array.getString(index))
+            }
+        }
+    }
 
     private fun JSONObject.keysSet(): Set<String> {
         val result = linkedSetOf<String>()

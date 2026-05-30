@@ -72,21 +72,22 @@ private data class ToolArgumentValidator(
         }
 
         val missingArguments = requiredArguments
-            .filter { request.arguments[it].isNullOrBlank() }
+            .filter { argumentName ->
+                val argumentValue = request.arguments[argumentName]
+                val expectedType = properties[argumentName]?.type
+                if (expectedType == "boolean") {
+                    argumentValue == null
+                } else {
+                    argumentValue.isNullOrBlank()
+                }
+            }
         if (missingArguments.isNotEmpty()) {
             return "Tool ${request.toolName} requires argument(s): ${missingArguments.sorted().joinToString()}"
         }
 
         request.arguments.forEach { (name, value) ->
             val rule = properties[name] ?: return@forEach
-            val minLength = rule.minLength
-            if (minLength != null && value.trim().length < minLength) {
-                return "Tool ${request.toolName} argument $name must have at least $minLength character(s)"
-            }
-            val pattern = rule.pattern
-            if (pattern != null && !pattern.matches(value)) {
-                return "Tool ${request.toolName} argument $name does not match required pattern"
-            }
+            rule.validate(request.toolName, name, value)?.let { return it }
         }
 
         return null
@@ -102,8 +103,15 @@ private data class ToolArgumentValidator(
             val properties = propertiesJson.keysSet().associateWith { propertyName ->
                 val propertyJson = propertiesJson.optJSONObject(propertyName) ?: JSONObject()
                 PropertyRule(
+                    type = propertyJson.optStringOrNull("type"),
                     minLength = propertyJson.optIntOrNull("minLength"),
+                    maxLength = propertyJson.optIntOrNull("maxLength"),
                     pattern = propertyJson.optStringOrNull("pattern")?.let(::Regex),
+                    enum = propertyJson.optStringSetOrNull("enum")?.toSet(),
+                    minimum = propertyJson.optDoubleOrNull("minimum"),
+                    maximum = propertyJson.optDoubleOrNull("maximum"),
+                    exclusiveMinimum = propertyJson.optDoubleOrNull("exclusiveMinimum"),
+                    exclusiveMaximum = propertyJson.optDoubleOrNull("exclusiveMaximum"),
                 )
             }
             val requiredArguments = schema.optStringSet("required")
@@ -121,9 +129,118 @@ private data class ToolArgumentValidator(
 }
 
 private data class PropertyRule(
+    val type: String?,
     val minLength: Int?,
+    val maxLength: Int?,
     val pattern: Regex?,
-)
+    val enum: Set<String>?,
+    val minimum: Double?,
+    val maximum: Double?,
+    val exclusiveMinimum: Double?,
+    val exclusiveMaximum: Double?,
+) {
+    fun validate(toolName: String, argumentName: String, value: String): String? {
+        if (enum != null && !enum.contains(value)) {
+            return "Tool ${toolName} argument $argumentName has invalid value"
+        }
+
+        return when (type?.lowercase()) {
+            "string" -> {
+                val minLength = this.minLength
+                if (minLength != null && value.trim().length < minLength) {
+                    "Tool $toolName argument $argumentName must have at least $minLength character(s)"
+                } else {
+                    val maxLength = this.maxLength
+                    if (maxLength != null && value.length > maxLength) {
+                        "Tool $toolName argument $argumentName must have at most $maxLength character(s)"
+                    } else {
+                        val pattern = this.pattern
+                        if (pattern != null && !pattern.matches(value)) {
+                            "Tool $toolName argument $argumentName does not match required pattern"
+                        } else {
+                            null
+                        }
+                    }
+                }
+            }
+
+            "integer" -> {
+                val numeric = value.toLongOrNull()
+                if (numeric == null) {
+                    "Tool $toolName argument $argumentName must be an integer"
+                } else {
+                    validateNumericRange(toolName, argumentName, numeric.toDouble())
+                }
+            }
+
+            "number" -> {
+                val numeric = value.toDoubleOrNull()
+                if (numeric == null) {
+                    "Tool $toolName argument $argumentName must be a number"
+                } else {
+                    validateNumericRange(toolName, argumentName, numeric)
+                }
+            }
+
+            "boolean" -> {
+                if (value.toBooleanStrictOrNull() == null) {
+                    "Tool $toolName argument $argumentName must be true or false"
+                } else {
+                    null
+                }
+            }
+
+            "array" -> {
+                try {
+                    org.json.JSONArray(value)
+                    null
+                } catch (_: Exception) {
+                    "Tool $toolName argument $argumentName must be an array"
+                }
+            }
+
+            "object" -> {
+                try {
+                    JSONObject(value)
+                    null
+                } catch (_: Exception) {
+                    "Tool $toolName argument $argumentName must be an object"
+                }
+            }
+
+            null -> null
+            else -> null
+        }
+    }
+
+    private fun validateNumericRange(
+        toolName: String,
+        argumentName: String,
+        numeric: Double,
+    ): String? {
+        minimum?.let { min ->
+            if (numeric < min) {
+                return "Tool $toolName argument $argumentName must be at least $min"
+            }
+        }
+        maximum?.let { max ->
+            if (numeric > max) {
+                return "Tool $toolName argument $argumentName must be at most $max"
+            }
+        }
+        exclusiveMinimum?.let { min ->
+            if (numeric <= min) {
+                return "Tool $toolName argument $argumentName must be greater than $min"
+            }
+        }
+        exclusiveMaximum?.let { max ->
+            if (numeric >= max) {
+                return "Tool $toolName argument $argumentName must be less than $max"
+            }
+        }
+        return null
+    }
+}
 
 private fun JSONObject.keysSet(): Set<String> {
     val result = linkedSetOf<String>()
@@ -149,6 +266,20 @@ private fun JSONObject.optIntOrNull(name: String): Int? =
 private fun JSONObject.optStringOrNull(name: String): String? =
     if (!has(name) || isNull(name)) null else optString(name)
 
+private fun JSONObject.optDoubleOrNull(name: String): Double? {
+    if (!has(name) || isNull(name)) return null
+    return optDouble(name)
+}
+
+private fun JSONObject.optStringSetOrNull(name: String): Set<String>? {
+    val array = optJSONArray(name) ?: return null
+    return buildSet {
+        for (index in 0 until array.length()) {
+            add(array.getString(index))
+        }
+    }
+}
+
 private fun definitionsFor(supportedActions: Set<String>): List<ToolDefinition> {
     val missingDefinitions = supportedActions - toolDefinitionsByName.keys
     require(missingDefinitions.isEmpty()) {
@@ -173,6 +304,10 @@ private val querySchemaJson = """
         "query": {
           "type": "string",
           "minLength": 1
+        },
+        "searchMode": {
+          "type": "string",
+          "enum": ["general", "local"]
         }
       },
       "additionalProperties": false
@@ -243,8 +378,8 @@ private val contactQuerySchemaJson = """
           "minLength": 1
         },
         "maxCount": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "type": "integer",
+          "minimum": 1
         }
       },
       "additionalProperties": false
@@ -264,8 +399,8 @@ private val reminderSchemaJson = """
           "type": "string"
         },
         "delayMinutes": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "type": "integer",
+          "minimum": 1
         }
       },
       "additionalProperties": false
@@ -277,8 +412,8 @@ private val recentNotificationSchemaJson = """
       "type": "object",
       "properties": {
         "maxCount": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "type": "integer",
+          "minimum": 1
         }
       },
       "additionalProperties": false
