@@ -96,6 +96,20 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun parsesOpenAppIntentCallOutput() {
+        val draft = planner.parseModelOutput(
+            """call:open_app_intent{"packageName":"com.tencent.mm","activityClass":"com.tencent.mm.ui.LauncherUI","action":"android.intent.action.MAIN"}""",
+        )
+
+        requireNotNull(draft)
+        assertEquals(MobileActionFunctions.OPEN_APP_INTENT, draft.functionName)
+        assertEquals("com.tencent.mm", draft.parameters["packageName"])
+        assertEquals("com.tencent.mm.ui.LauncherUI", draft.parameters["activityClass"])
+        assertEquals("android.intent.action.MAIN", draft.parameters["action"])
+        assertTrue(draft.summary.contains("应用"))
+    }
+
+    @Test
     fun rejectsUnsupportedFunctionCalls() {
         assertNull(planner.parseModelOutput("""call:delete_contact{"name":"A"}"""))
     }
@@ -197,6 +211,15 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun infersOpenAppIntentDraftFromPackage() {
+        val plan = planner.plan("打开 com.tencent.mm")
+
+        assertEquals(ActionPlanKind.Draft, plan.kind)
+        assertEquals(MobileActionFunctions.OPEN_APP_INTENT, plan.draft?.functionName)
+        assertEquals("com.tencent.mm", plan.draft?.parameters?.get("packageName"))
+    }
+
+    @Test
     fun modelPromptSupportsOpenDeepLinkFunction() {
         val prompt = actionPrompt("打开 https://example.com/help")
 
@@ -205,11 +228,20 @@ class ActionPlannerTest {
     }
 
     @Test
+    fun modelPromptMentionsOpenAppIntentFunction() {
+        val prompt = actionPrompt("打开 com.tencent.mm")
+
+        assertTrue(prompt.contains("- open_app_intent"))
+        assertTrue(prompt.contains("open_app_intent"))
+    }
+
+    @Test
     fun modelPromptMentionsRecentNotificationAndForegroundQueries() {
         val prompt = actionPrompt("查询最近通知")
 
         assertTrue(prompt.contains("- query_foreground_app {}"))
         assertTrue(prompt.contains("- query_recent_notifications {\"maxCount\":\"...\"}"))
+        assertTrue(prompt.contains("- query_calendar_availability {\"start\":\"...\",\"end\":\"...\"}"))
     }
 
     @Test

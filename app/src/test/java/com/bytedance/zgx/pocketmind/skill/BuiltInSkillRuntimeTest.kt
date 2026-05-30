@@ -26,6 +26,10 @@ class BuiltInSkillRuntimeTest {
         assertTrue(BuiltInSkillRuntime.SHARE_TEXT_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.CLIPBOARD_SUMMARY_SHARE_SKILL in manifests)
         assertTrue(BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.OPEN_APP_INTENT_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.FOREGROUND_APP_QUERY_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.RECENT_NOTIFICATIONS_QUERY_SKILL in manifests)
+        assertTrue(BuiltInSkillRuntime.CALENDAR_AVAILABILITY_QUERY_SKILL in manifests)
         assertTrue(manifests.values.all { it.version >= 1 })
         assertTrue(manifests.values.all { it.inputSchemaJson.contains("additionalProperties") })
         assertTrue(BuiltInSkillRuntime.CONTACTS_QUERY_SKILL in manifests)
@@ -128,6 +132,75 @@ class BuiltInSkillRuntimeTest {
     }
 
     @Test
+    fun plansForegroundAppQueryAsDeviceContextToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.QUERY_FOREGROUND_APP,
+            title = "查询当前前台应用",
+            summary = "将读取当前前台应用。",
+            parameters = emptyMap(),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("帮我查一下当前应用", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.FOREGROUND_APP_QUERY_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.QUERY_FOREGROUND_APP), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
+    fun plansRecentNotificationsQueryAsDeviceContextToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+            title = "查询最近通知",
+            summary = "将读取最近通知摘要。",
+            parameters = mapOf("maxCount" to "3"),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("查看最近3条通知", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.RECENT_NOTIFICATIONS_QUERY_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
+    fun plansCalendarAvailabilityQueryAsDeviceContextToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
+            title = "查询日历忙闲",
+            summary = "将查询指定时间窗内日历忙闲。",
+            parameters = mapOf(
+                "start" to "2026-06-01T09:00:00Z",
+                "end" to "2026-06-01T10:00:00Z",
+            ),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("查忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.CALENDAR_AVAILABILITY_QUERY_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
     fun plansClipboardReadAsContextToolStep() {
         val draft = ActionDraft(
             functionName = MobileActionFunctions.READ_CLIPBOARD,
@@ -205,6 +278,31 @@ class BuiltInSkillRuntimeTest {
         requireNotNull(plan)
         assertEquals(BuiltInSkillRuntime.DEEP_LINK_NAVIGATION_SKILL, plan.request.skillId)
         assertEquals(listOf(MobileActionFunctions.OPEN_DEEP_LINK), plan.manifest.requiredTools)
+        assertEquals(1, plan.steps.size)
+    }
+
+    @Test
+    fun plansOpenAppIntentAsNavigationToolStep() {
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.OPEN_APP_INTENT,
+            title = "打开应用",
+            summary = "将打开应用",
+            parameters = mapOf(
+                "packageName" to "com.tencent.mm",
+                "activityClass" to "com.tencent.mm.ui.LauncherUI",
+            ),
+        )
+        val request = ToolRequest(
+            toolName = draft.functionName,
+            arguments = draft.parameters,
+            reason = draft.summary,
+        )
+
+        val plan = runtime.plan("打开 com.tencent.mm", draft, request)
+
+        requireNotNull(plan)
+        assertEquals(BuiltInSkillRuntime.OPEN_APP_INTENT_SKILL, plan.request.skillId)
+        assertEquals(listOf(MobileActionFunctions.OPEN_APP_INTENT), plan.manifest.requiredTools)
         assertEquals(1, plan.steps.size)
     }
 

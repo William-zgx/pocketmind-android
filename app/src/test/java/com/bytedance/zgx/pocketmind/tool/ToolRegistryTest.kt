@@ -78,6 +78,14 @@ class ToolRegistryTest {
         assertTrue(ToolPermission.StartsExternalActivity in deepLinkSpec.permissions)
         assertTrue(deepLinkSpec.inputSchemaJson.contains("\"uri\""))
 
+        val openAppIntentSpec = registry.specFor(MobileActionFunctions.OPEN_APP_INTENT)
+        assertNotNull(openAppIntentSpec)
+        requireNotNull(openAppIntentSpec)
+        assertEquals(ToolCapability.ExternalNavigation, openAppIntentSpec.capability)
+        assertTrue(ToolPermission.StartsExternalActivity in openAppIntentSpec.permissions)
+        assertTrue(openAppIntentSpec.inputSchemaJson.contains("\"packageName\""))
+        assertEquals(ConfirmationPolicy.Required, openAppIntentSpec.confirmationPolicy)
+
         val calendarAvailabilitySpec = registry.specFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY)
         assertNotNull(calendarAvailabilitySpec)
         requireNotNull(calendarAvailabilitySpec)
@@ -212,6 +220,7 @@ class ToolRegistryTest {
             MobileActionFunctions.CANCEL_REMINDER to "taskId",
             MobileActionFunctions.SHARE_TEXT to "text",
             MobileActionFunctions.OPEN_DEEP_LINK to "uri",
+            MobileActionFunctions.OPEN_APP_INTENT to "packageName",
             MobileActionFunctions.QUERY_CONTACTS to "query",
         )
 

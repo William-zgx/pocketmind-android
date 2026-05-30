@@ -179,7 +179,19 @@ class ToolSchemaContractTest {
 
         val pattern = property.optStringOrNull("pattern")
         if (pattern != null) {
-            return listOf("1", "10", "abc", "value", "http://x", "https://x", "mailto:a@b.com", "tel:123", "geo:0,0")
+            return listOf(
+                "1",
+                "10",
+                "abc",
+                "value",
+                "value.com",
+                "com.example.app",
+                "http://x",
+                "https://x",
+                "mailto:a@b.com",
+                "tel:123",
+                "geo:0,0",
+            )
                 .firstOrNull { Regex(pattern).matches(it) }
                 ?: error("No test fixture value matches pattern $pattern")
         }

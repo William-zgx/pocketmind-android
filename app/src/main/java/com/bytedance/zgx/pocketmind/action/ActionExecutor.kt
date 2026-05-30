@@ -240,6 +240,9 @@ class ActionExecutor(
             MobileActionFunctions.OPEN_DEEP_LINK ->
                 listOf(openDeepLinkIntent(request))
 
+            MobileActionFunctions.OPEN_APP_INTENT ->
+                listOf(openAppIntent(request))
+
             else -> null
         }
 
@@ -273,6 +276,7 @@ class ActionExecutor(
             MobileActionFunctions.SHARE_TEXT -> "已打开系统分享面板"
             MobileActionFunctions.CANCEL_REMINDER -> "提醒已取消"
             MobileActionFunctions.OPEN_DEEP_LINK -> "已打开外部链接"
+            MobileActionFunctions.OPEN_APP_INTENT -> "已打开应用"
             else -> "工具已执行"
         }
 
@@ -299,14 +303,55 @@ class ActionExecutor(
         return uri?.let { Intent(Intent.ACTION_VIEW, it) } ?: Intent(Intent.ACTION_VIEW)
     }
 
+    private fun openAppIntent(request: ToolRequest): Intent {
+        val packageName = request.arguments["packageName"].orEmpty()
+        val activityClass = request.arguments["activityClass"].orEmpty()
+        val action = request.arguments["action"].orEmpty()
+        val dataString = request.arguments["data"].orEmpty()
+        val data = runCatching { dataString.ifBlank { null }?.let(Uri::parse) }.getOrNull()
+        val intent = if (activityClass.isBlank() || packageName.isBlank()) {
+            Intent(
+                action.ifBlank { Intent.ACTION_MAIN },
+            ).apply {
+                if (packageName.isNotBlank()) {
+                    runCatching { setPackage(packageName) }.onFailure {
+                        // setPackage can be unavailable in plain JVM unit tests.
+                    }
+                }
+                if (action.isBlank()) {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+            }
+        } else {
+            Intent(action.ifBlank { Intent.ACTION_MAIN }).apply {
+                runCatching { setPackage(packageName) }.onFailure {
+                    // setPackage can be unavailable in plain JVM unit tests.
+                }
+                runCatching {
+                    setClassName(packageName, activityClass)
+                }.onFailure {
+                    // Intent#setClassName is not mocked in plain JVM tests.
+                    // In that environment we still return a valid package launch intent.
+                }
+                if (action.isBlank()) {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+            }
+        }
+        return if (data != null) {
+            intent.setData(data)
+        } else {
+            intent
+        }
+    }
+
     private fun startActivity(intent: Intent): Boolean {
+        val launchIntent = runCatching { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }.getOrDefault(intent)
         activityStarter?.let { starter ->
-            return runCatching { starter(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.getOrDefault(false)
+            return runCatching { starter(launchIntent) }.getOrDefault(false)
         }
         val appContext = context ?: return false
-        return runCatching {
-            appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.isSuccess
+        return runCatching { appContext.startActivity(launchIntent) }.isSuccess
     }
 
     private fun readClipboardText(): String? {

@@ -16,9 +16,13 @@ class BuiltInSkillRuntime : SkillRuntime {
         MobileActionFunctions.OPEN_WIFI_SETTINGS to DEVICE_SETTINGS_SKILL,
         MobileActionFunctions.OPEN_FLASHLIGHT_SETTINGS to DEVICE_SETTINGS_SKILL,
         MobileActionFunctions.OPEN_DEEP_LINK to DEEP_LINK_NAVIGATION_SKILL,
+        MobileActionFunctions.OPEN_APP_INTENT to OPEN_APP_INTENT_SKILL,
         MobileActionFunctions.SCHEDULE_REMINDER to REMINDER_SKILL,
         MobileActionFunctions.CANCEL_REMINDER to CANCEL_REMINDER_SKILL,
         MobileActionFunctions.QUERY_CONTACTS to CONTACTS_QUERY_SKILL,
+        MobileActionFunctions.QUERY_FOREGROUND_APP to FOREGROUND_APP_QUERY_SKILL,
+        MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS to RECENT_NOTIFICATIONS_QUERY_SKILL,
+        MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY to CALENDAR_AVAILABILITY_QUERY_SKILL,
         MobileActionFunctions.READ_CLIPBOARD to CLIPBOARD_CONTEXT_SKILL,
         MobileActionFunctions.SHARE_TEXT to SHARE_TEXT_SKILL,
     )
@@ -121,10 +125,14 @@ class BuiltInSkillRuntime : SkillRuntime {
         const val REMINDER_SKILL = "reminder_skill"
         const val CANCEL_REMINDER_SKILL = "cancel_reminder_skill"
         const val CONTACTS_QUERY_SKILL = "contacts_query_skill"
+        const val FOREGROUND_APP_QUERY_SKILL = "foreground_app_query_skill"
+        const val RECENT_NOTIFICATIONS_QUERY_SKILL = "recent_notifications_query_skill"
+        const val CALENDAR_AVAILABILITY_QUERY_SKILL = "calendar_availability_query_skill"
         const val CLIPBOARD_CONTEXT_SKILL = "clipboard_context_skill"
         const val SHARE_TEXT_SKILL = "share_text_skill"
         const val CLIPBOARD_SUMMARY_SHARE_SKILL = "clipboard_summary_share_skill"
         const val DEEP_LINK_NAVIGATION_SKILL = "deep_link_navigation_skill"
+        const val OPEN_APP_INTENT_SKILL = "open_app_intent_skill"
     }
 }
 
@@ -152,11 +160,21 @@ private val simpleTextInputSchema = """
     }
 """.trimIndent()
 
-private val builtInSkillManifests = listOf(
-    SkillManifest(
-        id = BuiltInSkillRuntime.EMAIL_DRAFT_SKILL,
-        version = 1,
-        title = "邮件草稿",
+    private val builtInSkillManifests = listOf(
+        SkillManifest(
+            id = BuiltInSkillRuntime.OPEN_APP_INTENT_SKILL,
+            version = 1,
+            title = "应用 Intent 跳转",
+            description = "将应用包名 / 类名参数转为应用跳转请求，由用户确认后执行。",
+            triggerExamples = listOf("打开 com.tencent.mm", "打开 应用包名 com.example.app"),
+            requiredTools = listOf(MobileActionFunctions.OPEN_APP_INTENT),
+            inputSchemaJson = simpleTextInputSchema,
+            riskLevel = RiskLevel.MediumDraftOrNavigation,
+        ),
+        SkillManifest(
+            id = BuiltInSkillRuntime.EMAIL_DRAFT_SKILL,
+            version = 1,
+            title = "邮件草稿",
         description = "把自然语言请求整理成邮件草稿工具调用，不直接发送邮件。",
         triggerExamples = listOf("帮我写封邮件", "draft an email"),
         requiredTools = listOf(MobileActionFunctions.COMPOSE_EMAIL),
@@ -233,6 +251,36 @@ private val builtInSkillManifests = listOf(
         description = "把联系人检索请求整理成本机联系人读取动作。",
         triggerExamples = listOf("查找 李雷", "搜索联系人 张三"),
         requiredTools = listOf(MobileActionFunctions.QUERY_CONTACTS),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.LowReadOnly,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.FOREGROUND_APP_QUERY_SKILL,
+        version = 1,
+        title = "前台应用查询",
+        description = "读取当前前台应用的包名和应用名，仅返回当前可见应用信息。",
+        triggerExamples = listOf("当前应用是什么", "查一下前台 App"),
+        requiredTools = listOf(MobileActionFunctions.QUERY_FOREGROUND_APP),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.LowReadOnly,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.RECENT_NOTIFICATIONS_QUERY_SKILL,
+        version = 1,
+        title = "近期通知查询",
+        description = "读取当前应用最近一段时间的通知摘要，仅返回数量和关键字段。",
+        triggerExamples = listOf("查看最近通知", "最近5条通知"),
+        requiredTools = listOf(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS),
+        inputSchemaJson = simpleTextInputSchema,
+        riskLevel = RiskLevel.LowReadOnly,
+    ),
+    SkillManifest(
+        id = BuiltInSkillRuntime.CALENDAR_AVAILABILITY_QUERY_SKILL,
+        version = 1,
+        title = "日历忙闲查询",
+        description = "查询某一时间窗内的日历忙闲摘要，用于安排任务或确认空档。",
+        triggerExamples = listOf("查询 9:00 到 10:00 是否有空", "查一下忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z"),
+        requiredTools = listOf(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY),
         inputSchemaJson = simpleTextInputSchema,
         riskLevel = RiskLevel.LowReadOnly,
     ),

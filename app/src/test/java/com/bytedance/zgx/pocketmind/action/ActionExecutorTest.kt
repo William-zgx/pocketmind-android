@@ -167,6 +167,65 @@ class ActionExecutorTest {
     }
 
     @Test
+    fun buildsOpenAppIntentWithPackageAndOptionalClass() {
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = RecordingBackgroundTaskScheduler(),
+            canPostReminderNotifications = { true },
+        )
+
+        val request = ToolRequest(
+            id = "request-open-app-intent",
+            toolName = MobileActionFunctions.OPEN_APP_INTENT,
+            arguments = mapOf(
+                "packageName" to "com.tencent.mm",
+                "activityClass" to "com.tencent.mm.ui.LauncherUI",
+                "action" to "android.intent.action.VIEW",
+                "data" to "https://example.com/app",
+            ),
+            reason = "test",
+        )
+        val openAppIntentMethod = ActionExecutor::class.java.getDeclaredMethod(
+            "openAppIntent",
+            ToolRequest::class.java,
+        ).apply { isAccessible = true }
+        val openAppIntent = openAppIntentMethod.invoke(executor, request) as Intent
+        assertEquals(Intent::class.java, openAppIntent.javaClass)
+    }
+
+    @Test
+    fun executesOpenAppIntentTool() {
+        var started = false
+        val executor = ActionExecutor(
+            context = null,
+            backgroundTaskScheduler = RecordingBackgroundTaskScheduler(),
+            canPostReminderNotifications = { true },
+            activityStarter = {
+                started = true
+                true
+            },
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "request-open-app-intent-exec",
+                toolName = MobileActionFunctions.OPEN_APP_INTENT,
+                arguments = mapOf(
+                    "packageName" to "com.tencent.mm",
+                    "activityClass" to "com.tencent.mm.ui.LauncherUI",
+                    "action" to "android.intent.action.VIEW",
+                ),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertTrue(started)
+        assertEquals(MobileActionFunctions.OPEN_APP_INTENT, result.data["toolName"])
+        assertTrue(result.summary.contains("已打开应用"))
+    }
+
+    @Test
     fun readsClipboardTextThroughInjectedProvider() {
         val executor = ActionExecutor(
             context = null,

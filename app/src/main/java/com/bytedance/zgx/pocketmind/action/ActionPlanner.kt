@@ -51,6 +51,8 @@ class MobileActionPlanner : ActionPlanner {
             "链接",
             "网址",
             "网页",
+            "打开应用",
+            "启动应用",
         ).any { it in normalized } || isWebSearchRequest(input)
     }
 
@@ -82,6 +84,9 @@ class MobileActionPlanner : ActionPlanner {
 
             isOpenDeepLinkRequest(input) ->
                 MobileActionFunctions.OPEN_DEEP_LINK.toDraft(mapOf("uri" to extractUri(input)))
+
+            isOpenAppIntentRequest(input) ->
+                MobileActionFunctions.OPEN_APP_INTENT.toDraft(openAppIntentParameters(input))
 
             isReminderRequest(input) ->
                 MobileActionFunctions.SCHEDULE_REMINDER.toDraft(reminderParameters(input))
@@ -147,6 +152,7 @@ class MobileActionPlanner : ActionPlanner {
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY -> "查询日历忙闲"
             MobileActionFunctions.CANCEL_REMINDER -> "取消提醒"
             MobileActionFunctions.OPEN_DEEP_LINK -> "打开深链"
+            MobileActionFunctions.OPEN_APP_INTENT -> "打开应用"
             MobileActionFunctions.QUERY_FOREGROUND_APP -> "查询当前前台应用"
             MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS -> "查询最近通知"
             MobileActionFunctions.QUERY_CONTACTS -> "查询联系人"
@@ -172,6 +178,9 @@ class MobileActionPlanner : ActionPlanner {
                 "将取消提醒任务：${parameters["taskId"].orEmpty()}"
             MobileActionFunctions.OPEN_DEEP_LINK ->
                 "将打开深度链接：${parameters["uri"].orEmpty()}"
+            MobileActionFunctions.OPEN_APP_INTENT ->
+                "将打开应用：${parameters["packageName"].orEmpty()}" +
+                    (parameters["activityClass"]?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: "")
             MobileActionFunctions.QUERY_FOREGROUND_APP ->
                 "将读取当前前台应用信息（包名与应用名）。"
             MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS -> {
@@ -384,10 +393,45 @@ class MobileActionPlanner : ActionPlanner {
         return DEEP_LINK_PATTERN.containsMatchIn(input)
     }
 
+    private fun isOpenAppIntentRequest(input: String): Boolean {
+        val hasTrigger = APP_INTENT_TRIGGER_PATTERN.containsMatchIn(input)
+        val hasKnownPackage = knownPackageFromInput(input) != null
+        val hasPackageLike = APP_INTENT_PACKAGE_PATTERN.containsMatchIn(input)
+        return hasTrigger && (hasKnownPackage || hasPackageLike)
+    }
+
+    private fun openAppIntentParameters(input: String): Map<String, String> {
+        val packageName = knownPackageFromInput(input)
+            ?: APP_INTENT_PACKAGE_PATTERN.find(input)?.value
+            ?: return emptyMap()
+        val action = APP_INTENT_ACTION_PATTERN.find(input)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+        val activityClass =
+            APP_INTENT_ACTIVITY_CLASS_PATTERN.find(input)?.groupValues?.getOrNull(1)?.trim()
+                ?.takeIf { it.isNotBlank() }
+        val data = APP_INTENT_DATA_PATTERN.find(input)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf { it.isNotBlank() }
+        return buildMap {
+            put("packageName", packageName)
+            action?.let { put("action", it) }
+            activityClass?.let { put("activityClass", it) }
+            data?.let { put("data", cleanUri(it)) }
+        }
+    }
+
+    private fun knownPackageFromInput(input: String): String? {
+        val normalized = input.lowercase()
+        return KNOWN_APP_PACKAGES.entries.firstNotNullOfOrNull { (alias, packageName) ->
+            if (normalized.contains(alias.lowercase())) packageName else null
+        }
+    }
+
+    private fun cleanUri(raw: String): String =
+        raw.trim().trimEnd(*TRAILING_URI_PUNCTUATION.toCharArray())
+
     private fun extractUri(input: String): String {
         val directMatch = DEEP_LINK_PATTERN.find(input)?.value
         if (directMatch != null) {
-            return directMatch.trim().trimEnd(*TRAILING_URI_PUNCTUATION.toCharArray())
+            return cleanUri(directMatch)
         }
         return cleanedObject(input)
     }
@@ -424,6 +468,27 @@ class MobileActionPlanner : ActionPlanner {
             Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})""")
         val TASK_ID_PATTERN = Regex("task-[A-Za-z0-9_-]+")
         val DEEP_LINK_PATTERN = Regex("""\b(?:https?|mailto|tel|sms|smsto|geo):\S+""", RegexOption.IGNORE_CASE)
+        val APP_INTENT_TRIGGER_PATTERN = Regex("""(打开|打开并|启动|启动并)\s*(?:应用|app|应用程序)?""")
+        val APP_INTENT_PACKAGE_PATTERN = Regex("""\b[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+\b""")
+        val APP_INTENT_ACTION_PATTERN = Regex("""(?:动作|action)\s*[:：]?\s*([A-Za-z0-9_./-]+)""", RegexOption.IGNORE_CASE)
+        val APP_INTENT_ACTIVITY_CLASS_PATTERN =
+            Regex("""(?:类名|activity|界面)\s*[:：]?\s*([A-Za-z0-9_$]+(?:\.[A-Za-z0-9_$]+)*(?:\$[A-Za-z0-9_$]+)?)""", RegexOption.IGNORE_CASE)
+        val APP_INTENT_DATA_PATTERN =
+            Regex("""(?:uri|data)\s*[:：]?\s*((?:https?|mailto|tel|sms|smsto|geo):\S+)""", RegexOption.IGNORE_CASE)
+        val KNOWN_APP_PACKAGES = mapOf(
+            "微信" to "com.tencent.mm",
+            "wechat" to "com.tencent.mm",
+            "支付宝" to "com.eg.android.AlipayGphone",
+            "alipay" to "com.eg.android.AlipayGphone",
+            "抖音" to "com.ss.android.ugc.aweme",
+            "douyin" to "com.ss.android.ugc.aweme",
+            "哔哩哔哩" to "tv.danmaku.bili",
+            "bilibili" to "tv.danmaku.bili",
+            "淘宝" to "com.taobao.taobao",
+            "taobao" to "com.taobao.taobao",
+            "美团" to "com.sankuai.meituan",
+            "meituan" to "com.sankuai.meituan",
+        )
         val TRAILING_URI_PUNCTUATION = ".,;:!?)]}。！）；】"
     }
 }

@@ -32,6 +32,7 @@ object MobileActionFunctions {
     const val READ_CLIPBOARD = "read_clipboard"
     const val SHARE_TEXT = "share_text"
     const val OPEN_DEEP_LINK = "open_deep_link"
+    const val OPEN_APP_INTENT = "open_app_intent"
     const val QUERY_CALENDAR_AVAILABILITY = "query_calendar_availability"
     const val QUERY_FOREGROUND_APP = "query_foreground_app"
     const val QUERY_RECENT_NOTIFICATIONS = "query_recent_notifications"
@@ -50,6 +51,7 @@ object MobileActionFunctions {
         READ_CLIPBOARD,
         SHARE_TEXT,
         OPEN_DEEP_LINK,
+        OPEN_APP_INTENT,
         QUERY_CALENDAR_AVAILABILITY,
         QUERY_FOREGROUND_APP,
         QUERY_RECENT_NOTIFICATIONS,

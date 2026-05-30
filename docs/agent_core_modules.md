@@ -33,8 +33,10 @@ Current status:
   numeric min/max bounds, and regex `pattern` checks.
 - Current tools cover Wi-Fi settings, flashlight settings, map search, web
   search, email draft, calendar draft, contact draft, local reminders,
-  confirmed clipboard text reads, outbound system sharing for text, and
-  external deep-link/open URL navigation.
+  confirmed clipboard text reads, outbound system sharing for text,
+  foreground app reads, recent notification reads, calendar availability
+  reads, app-specific intent navigation, and external deep-link/open URL
+  navigation.
 - Tools that may require runtime permissions declare that requirement in
   `ToolSpec`. The reminder confirmation path requests notification permission
   before execution when Android requires it.
@@ -137,7 +139,8 @@ Current status:
 - Implemented `SkillManifest`, `SkillRequest`, `SkillPlan`, `SkillStep`, and
   `SkillRuntime`.
 - Implemented built-in manifests for email drafts, calendar drafts, map search,
-  information lookup, device settings, background reminders, clipboard context,
+  information lookup, device settings, background reminders, foreground app query,
+  recent notifications query, calendar availability query, clipboard context,
   system text sharing, and external deep-link navigation.
 - Implemented a minimal declarative composition model for ordered skill steps:
   tool steps can declare stable ids, dependencies, and argument bindings; model
@@ -244,8 +247,8 @@ Current status:
   whether the user completed sharing in the destination app.
 - Deep links are now implemented via the new `open_deep_link` tool and can route
   to web URLs and supported URI schemes as a confirmed navigation action.
-- App-specific intent mediation, broader permission flows, and
-  result-confirmation callbacks are still pending.
+- Added `open_app_intent` mediation for explicit application package/class jumps so
+  model output can request targeted app navigation with minimal fields.
 
 ## Safety And Audit
 

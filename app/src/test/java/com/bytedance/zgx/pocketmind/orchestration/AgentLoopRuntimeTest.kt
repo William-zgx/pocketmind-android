@@ -366,6 +366,123 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun foregroundAppQueryActionUsesDedicatedSkill() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.QUERY_FOREGROUND_APP,
+                        title = "查询当前前台应用",
+                        summary = "将读取当前前台应用。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "帮我查一下当前应用是什么",
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.AwaitingUserConfirmation, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.QUERY_FOREGROUND_APP, result.plan.request.toolName)
+        assertEquals(BuiltInSkillRuntime.FOREGROUND_APP_QUERY_SKILL, result.plan.skillRequest?.skillId)
+        assertEquals(SafetyOutcome.RequireConfirmation, result.plan.safetyDecision.outcome)
+    }
+
+    @Test
+    fun recentNotificationsQueryActionUsesDedicatedSkill() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+                        title = "查询最近通知",
+                        summary = "将读取最近通知。",
+                        parameters = mapOf("maxCount" to "5"),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "查看最近5条通知",
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.AwaitingUserConfirmation, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS, result.plan.request.toolName)
+        assertEquals(BuiltInSkillRuntime.RECENT_NOTIFICATIONS_QUERY_SKILL, result.plan.skillRequest?.skillId)
+        assertEquals(SafetyOutcome.RequireConfirmation, result.plan.safetyDecision.outcome)
+    }
+
+    @Test
+    fun calendarAvailabilityQueryActionUsesDedicatedSkill() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = ActionPlanningResult(
+                plan = ActionPlan(
+                    kind = ActionPlanKind.Draft,
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
+                        title = "查询日历忙闲",
+                        summary = "将查询日历忙闲。",
+                        parameters = mapOf(
+                            "start" to "2026-06-01T09:00:00Z",
+                            "end" to "2026-06-01T10:00:00Z",
+                        ),
+                        requiresConfirmation = true,
+                    ),
+                ),
+                usedModel = false,
+                fallbackReason = "test fallback",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "查一下忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z",
+            installedCapabilities = setOf(ModelCapability.Chat, ModelCapability.MobileAction),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.AwaitingUserConfirmation, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY, result.plan.request.toolName)
+        assertEquals(BuiltInSkillRuntime.CALENDAR_AVAILABILITY_QUERY_SKILL, result.plan.skillRequest?.skillId)
+        assertEquals(SafetyOutcome.RequireConfirmation, result.plan.safetyDecision.outcome)
+    }
+
+    @Test
     fun clipboardActionInputUsesClipboardSkillAndRequestsConfirmation() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = true,

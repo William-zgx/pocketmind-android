@@ -466,6 +466,33 @@ private val openDeepLinkSchemaJson = """
     }
 """.trimIndent()
 
+private val openAppIntentSchemaJson = """
+    {
+      "type": "object",
+      "required": ["packageName"],
+      "properties": {
+        "packageName": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z0-9_]+)+$"
+        },
+        "activityClass": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
 private val calendarAvailabilitySchemaJson = """
     {
       "type": "object",
@@ -628,6 +655,16 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
             title = "打开深链",
             description = "打开外部链接或深度链接，用户可在跳转后的应用继续操作。",
             inputSchemaJson = openDeepLinkSchemaJson,
+            capability = ToolCapability.ExternalNavigation,
+            permissions = setOf(ToolPermission.StartsExternalActivity),
+        ),
+    ),
+    ToolDefinition(
+        spec = ToolSpec(
+            name = MobileActionFunctions.OPEN_APP_INTENT,
+            title = "打开应用 Intent",
+            description = "打开指定应用（可选传入 activityClass、action 或 data Uri）进行更精细化跳转。",
+            inputSchemaJson = openAppIntentSchemaJson,
             capability = ToolCapability.ExternalNavigation,
             permissions = setOf(ToolPermission.StartsExternalActivity),
         ),
