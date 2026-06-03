@@ -66,6 +66,10 @@ class ToolRegistryTest {
         assertEquals(ConfirmationPolicy.NotRequired, webSearchSpec.confirmationPolicy)
         assertEquals(ToolResultContinuationPolicy.PublicEvidence, webSearchSpec.resultContinuationPolicy)
         assertTrue(webSearchSpec.inputSchemaJson.contains("query"))
+        assertTrue(webSearchSpec.inputSchemaJson.contains("weather_current"))
+        assertTrue(webSearchSpec.inputSchemaJson.contains("maxResults"))
+        assertTrue(webSearchSpec.inputSchemaJson.contains("freshness"))
+        assertFalse(webSearchSpec.inputSchemaJson.contains("\"local\""))
         assertTrue(webSearchSpec.outputSchemaJson.contains("summaryText"))
         assertTrue(webSearchSpec.outputSchemaJson.contains("resultsJson"))
 
@@ -174,11 +178,21 @@ class ToolRegistryTest {
         assertTrue(recentFilesSpec.inputSchemaJson.contains("\"kind\""))
         assertTrue(recentFilesSpec.inputSchemaJson.contains("\"maxCount\""))
         assertTrue(recentFilesSpec.inputSchemaJson.contains("\"screenshots\""))
-        assertTrue(recentFilesSpec.inputSchemaJson.contains("\"documents\""))
+        assertFalse(recentFilesSpec.inputSchemaJson.contains("\"documents\""))
+        assertFalse(recentFilesSpec.inputSchemaJson.contains("\"downloads\""))
+        assertFalse(recentFilesSpec.inputSchemaJson.contains("\"others\""))
         assertTrue(recentFilesSpec.inputSchemaJson.contains("系统文件选择器"))
         assertTrue(recentFilesSpec.inputSchemaJson.contains("已授权媒体"))
         assertTrue(recentFilesSpec.description.contains("Android 13"))
         assertTrue(recentFilesSpec.description.contains("系统文件选择器"))
+        val recentFilesOutputProperties = JSONObject(recentFilesSpec.outputSchemaJson).getJSONObject("properties")
+        assertTrue(recentFilesOutputProperties.has("mediaAccessScope"))
+        assertTrue(
+            recentFilesOutputProperties
+                .getJSONObject("mediaAccessScope")
+                .getJSONArray("enum")
+                .containsString("user_selected_visual_media"),
+        )
 
         val screenshotOcrSpec = registry.specFor(MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR)
         assertNotNull(screenshotOcrSpec)
@@ -249,6 +263,9 @@ class ToolRegistryTest {
         assertEquals(ToolResultContinuationPolicy.LocalEvidence, foregroundAppSpec.resultContinuationPolicy)
         assertTrue(ToolPermission.ReadsDeviceContext in foregroundAppSpec.permissions)
         assertTrue(ToolPermission.RequiresAndroidRuntimePermission !in foregroundAppSpec.permissions)
+        assertTrue(foregroundAppSpec.description.contains("UsageStats"))
+        assertTrue(foregroundAppSpec.description.contains("估计"))
+        assertTrue(foregroundAppSpec.outputSchemaJson.contains("usage_stats_estimate"))
 
         val deepLinkSpec = registry.specFor(MobileActionFunctions.OPEN_DEEP_LINK)
         assertNotNull(deepLinkSpec)
@@ -1097,11 +1114,48 @@ class ToolRegistryTest {
             ToolRequest(
                 id = "request-4",
                 toolName = MobileActionFunctions.WEB_SEARCH,
-                arguments = mapOf("query" to "Kotlin coroutines Android"),
+                arguments = mapOf(
+                    "query" to "Kotlin coroutines Android",
+                    "searchMode" to "weather_current",
+                    "freshness" to "current",
+                    "maxResults" to "3",
+                ),
                 reason = "test",
             ),
         )
         assertNull(valid)
+
+        val invalidSearchMode = registry.validate(
+            ToolRequest(
+                id = "request-5",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf(
+                    "query" to "Kotlin coroutines Android",
+                    "searchMode" to "local",
+                ),
+                reason = "test",
+            ),
+        )
+        assertNotNull(invalidSearchMode)
+        requireNotNull(invalidSearchMode)
+        assertEquals(ToolStatus.Rejected, invalidSearchMode.status)
+        assertTrue(invalidSearchMode.summary.contains("searchMode"))
+
+        val invalidMaxResults = registry.validate(
+            ToolRequest(
+                id = "request-6",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf(
+                    "query" to "Kotlin coroutines Android",
+                    "maxResults" to "6",
+                ),
+                reason = "test",
+            ),
+        )
+        assertNotNull(invalidMaxResults)
+        requireNotNull(invalidMaxResults)
+        assertEquals(ToolStatus.Rejected, invalidMaxResults.status)
+        assertTrue(invalidMaxResults.summary.contains("maxResults"))
     }
 
     @Test

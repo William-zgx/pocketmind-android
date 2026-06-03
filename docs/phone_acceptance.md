@@ -198,15 +198,17 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 安装或补装 memory model asset 本身不等于 embedding runtime 参与，也不作为当前真机验收通过条件；UI 不应把“资产已安装”误写成“语义检索已启用”。
 - 未安装或未校验动作模型时，动作请求应显示“规则回退”的待确认草稿。
 - 安装并校验动作模型后，支持的动作请求可以显示“动作模型实验”的待确认草稿；执行前仍必须经过用户确认。
-- 低风险只读 `web_search` 不应打开浏览器或展示确认卡；例如“北京天气怎么样”应直接调用 Web 搜索工具，把公开结果作为证据交回模型组织回答。涉及比较、总结或判断时，模型应基于工具事实完成推理，证据不足时可继续调用公开只读工具补充。
+- 低风险只读 `web_search` 不应打开浏览器；公开查询例如“北京天气怎么样”应直接调用 Web 搜索工具，把公开结果作为证据交回模型组织回答。疑似包含手机号、邮箱、地址、身份证、工号、账号、密码、token、API key 或类似个人/密钥内容的查询应先展示确认，不应无确认联网。涉及比较、总结或判断时，模型应基于工具事实完成推理，证据不足时可继续调用公开只读工具补充。
+- 远程模型模式下，明确的内置 Skill 请求应先走本地 preflight，以保护剪贴板、联系人、屏幕、OCR、设置和直接搜索等本地确认/执行路径；未被直接 Skill 命中的复杂公开问题可由远程模型选择工具。例如“北京和上海今天温差多少？”应允许远程模型发起两个 `web_search` 证据请求再综合回答。
 - 远程模型一次返回多个公开只读证据工具调用时，只有全部工具都满足 `PublicEvidence` / `LowReadOnly` / `NotRequired` / 无私密输出 / 无设备或副作用权限，才允许并发执行并聚合结果回模型；例如“北京和上海今天温差多少？”可并发执行两个 `web_search` 后由模型计算温差。批次中混入打开设置、分享、读取剪贴板、文件、联系人、日历、通知、当前屏幕或截图 OCR 等工具时，应全批拒绝，不应执行安全子集。
+- 并发公开证据批次中某个工具返回 retryable 失败时，只应重试失败的 request 一次；成功的 request 不应重复执行，重试后仍失败才把批次失败交回 Agent 观察。
 - 确认动作后，聊天中应追加一条结构化执行结果；外部 Activity 工具只能说明外部界面已打开且最终结果未验证。
 - 取消动作后，不应打开外部 App 或系统页面，Agent run 应进入 `Cancelled` 并写入审计事件。
 - 生成中点击停止后，当前 Agent run 应进入 `Cancelled`，迟到模型输出不应再改变 run 或生成新的待确认动作；最近 Agent 轨迹应刷新为取消状态。
 - 出现可恢复的待确认动作后杀进程并重启 App，应恢复同一个确认 UI；恢复瞬间不应执行工具、不应弹 Android runtime permission，只有再次确认后才继续执行链路。含外发文本、搜索 query、提醒标题/正文、深链 URI、模型输出或私密读取结果的 payload-bearing 待确认动作应 fail closed，而不是恢复可执行参数。
 - 需要 Android runtime permission 的工具应在确认卡提前展示友好权限名和用途；如果用户在系统权限弹窗中拒绝权限，不应执行工具、不应自动重试，应显示结构化权限失败并清除待确认状态，同时保留 raw manifest permission 供审计。
 - 需要 Usage Access 的前台 App 摘要不应触发 Android runtime permission 弹窗；确认卡应说明系统“使用情况访问权限 / Usage Access”设置入口，未授权时不应读取数据、不应自动重试，应返回结构化权限失败。
-- 授予 Usage Access 后再次触发前台 App 摘要，只应返回最小 App metadata；不应展示完整使用历史、通知正文、窗口内容或自动上传到远程模型。
+- 授予 Usage Access 后再次触发前台 App 摘要，只应返回最小 App metadata，并标注为 `usage_stats_estimate` / `estimate`；不应展示完整使用历史、通知正文、窗口内容或自动上传到远程模型。
 - 通过受确认保护的当前屏幕 Accessibility 文本快照工具读取当前屏幕文字时，应只在用户确认后读取当前 Accessibility 文本节点快照；结果应标记为 `LocalOnly`，raw `screenText` 不应进入 trace、audit、持久消息或远程 runtime。
 - 当前屏幕 Accessibility 文本快照不等于截图、OCR、像素读取或语义屏幕理解；无 Accessibility 服务授权或节点读取失败时，应返回结构化失败，不应自动退化为截图/OCR/屏幕扫描。
 - 通过受确认保护的 `capture_current_screenshot_ocr` 识别当前屏幕截图文字时，确认卡之后应出现 Android MediaProjection 前台同意；取消同意应返回结构化 `LocalOnly` 权限失败，不应执行截图或重试。
@@ -293,6 +295,8 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 用户未点击发送前，语音转写不应进入聊天路由，不应新增用户消息，也不应触发本地或远程模型。
 - 语音入口不应读取本地音频文件；音频分享入口仍只读取元数据。
 - 通过受确认保护的 `query_recent_files(kind="screenshots")` 查询最近截图时，只应展示截图候选文件的文件名、MIME、大小、修改时间等元数据；不应读取图片像素、文件路径、URI 或截图内容。
+- Android 14+ 仅授予“选择照片和视频”时，最近图片/截图/视频相关工具结果应标注 `mediaAccessScope=user_selected_visual_media`，不应宣称拥有完整相册访问。
+- Android 13+ 的 `query_recent_files` 不应把 `documents`、`downloads` 或 `others` 暴露为可直接读取的 kind；非媒体文件只能通过系统文件选择器或 Android 分享入口由用户主动提供。
 - 通过受确认保护的 `read_recent_screenshot_ocr` 识别最近截图文字时，App 只应读取最近 1 张截图并在本地生成 OCR 摘录；结果应标记为 `LocalOnly`，不应在 trace/audit/持久消息里保存截图 URI、路径、文件名、大小、修改时间、原始像素或 OCR 原文。
 - 通过受确认保护的 `read_recent_image_ocr` 识别最近图片/照片文字时，App 最多扫描最近 3 张图片并在本地返回第一条有界 OCR 摘录；结果应标记为 `LocalOnly`，不应在 trace/audit/持久消息里保存图片 URI、路径、文件名、大小、修改时间、原始像素或 OCR 原文。
 - OCR 摘录可以保留 ML Kit 识别出的文本块/行顺序；不应输出坐标、框选位置、图片标签、看图描述、像素或语义理解结果。

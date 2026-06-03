@@ -215,6 +215,18 @@ interface ToolAuditDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(event: ToolAuditEventEntity)
+
+    @Query(
+        """
+        DELETE FROM tool_audit_events
+        WHERE id NOT IN (
+            SELECT id FROM tool_audit_events
+            ORDER BY createdAtMillis DESC
+            LIMIT :maxRecords
+        )
+        """,
+    )
+    fun pruneToMostRecent(maxRecords: Int): Int
 }
 
 @Dao

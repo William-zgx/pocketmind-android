@@ -271,6 +271,14 @@ class RoutingAndValidatingToolExecutorTest {
                 reason = "test",
             ),
         )
+        val nonMediaKind = executor.execute(
+            ToolRequest(
+                id = "files-non-media-kind",
+                toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+                arguments = mapOf("kind" to "documents"),
+                reason = "test",
+            ),
+        )
         val invalidRange = executor.execute(
             ToolRequest(
                 id = "files-range",
@@ -296,6 +304,10 @@ class RoutingAndValidatingToolExecutorTest {
         assertEquals(ToolErrorCode.InvalidRequest, blankKind.error?.code)
         assertFalse(blankKind.retryable)
         assertTrue(blankKind.summary.contains("invalid value"))
+        assertEquals(ToolStatus.Rejected, nonMediaKind.status)
+        assertEquals(ToolErrorCode.InvalidRequest, nonMediaKind.error?.code)
+        assertFalse(nonMediaKind.retryable)
+        assertTrue(nonMediaKind.summary.contains("invalid value"))
         assertEquals(ToolStatus.Rejected, invalidRange.status)
         assertEquals(ToolErrorCode.InvalidRequest, invalidRange.error?.code)
         assertFalse(invalidRange.retryable)
@@ -887,8 +899,8 @@ class RoutingAndValidatingToolExecutorTest {
             )
         },
     ) : WebSearchProvider {
-        override fun search(query: String, searchMode: String?): WebSearchReadResult =
-            resultForQuery(query, searchMode)
+        override fun search(request: WebSearchRequest): WebSearchReadResult =
+            resultForQuery(request.query, request.searchMode.schemaValue)
     }
 
     private class StaticBackgroundTaskScheduler : BackgroundTaskScheduler {

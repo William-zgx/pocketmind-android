@@ -12,6 +12,83 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-04 Agent safety/runtime integration 验证
+
+本轮覆盖项：
+
+- Debug 远程配置 receiver 改为非导出，live remote emulator 脚本通过
+  debuggable app uid (`run-as`) 配置测试远程模型，不向源码、文档、报告或日志写入
+  API key。
+- 远程模型只接收 public-evidence eligible 工具目录；联系人、剪贴板、当前屏幕、
+  文件、日历、通知、外部动作等私密或副作用工具不暴露给远程工具规划。
+- `web_search` 对公开查询仍可无确认执行；疑似包含手机号、邮箱、地址、身份证、
+  工号、账号、密码、token、API key 或类似个人/密钥内容的查询会动态回到用户确认
+  路径，确认前不联网。
+- 工具执行统一进入 IO coroutine 边界，executor 异常或 timeout 转为 retryable
+  `ToolResult`；并发 public evidence 批次只重试失败且 retryable 的 request 一次，
+  已成功的 request 不重复执行。
+- 迟到的 external outcome 只能写回 `AwaitingExternalOutcome` run；已经
+  `Completed`、`Failed` 或 `Cancelled` 的 run 不会被旧回调复活。
+- Agent trace/audit 默认不持久化普通工具观察结果摘要或 result data；completion
+  metadata 仍只走 allowlist。
+- 工具输出 schema 中的 `*Json` payload 字段按当前 `ToolResult.data` string-map
+  合同声明为 JSON string，并标注 `contentMediaType=application/json`，不再把
+  字符串字段伪装成 array/object。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest --tests com.bytedance.zgx.pocketmind.safety.SafetyPolicyTest --tests com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeOnlyExposesPublicEvidenceToolsToRemoteRuntime --tests com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remotePublicEvidenceToolCallBatchRetriesOnlyRetryableFailures --tests com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutesAndContinuesWithModel --tests com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutorFailureIsObservedAsToolFailure --tests com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeTest.terminalRunRejectsLateExternalOutcomeConfirmation --tests com.bytedance.zgx.pocketmind.AndroidManifestTest --tests com.bytedance.zgx.pocketmind.AgentRuntimePermissionPolicyTest --tests com.bytedance.zgx.pocketmind.device.ForegroundAppProviderTest --tests com.bytedance.zgx.pocketmind.tool.ToolRegistryTest --tests com.bytedance.zgx.pocketmind.tool.ToolSchemaContractTest --tests com.bytedance.zgx.pocketmind.tool.DeviceContextToolExecutorTest --tests com.bytedance.zgx.pocketmind.tool.RoutingAndValidatingToolExecutorTest --tests com.bytedance.zgx.pocketmind.audit.ToolAuditRepositoryTest --tests com.bytedance.zgx.pocketmind.orchestration.AgentTraceStoreTest.roomStoreDoesNotPersistWebSearchObservationSummaryOrResultData
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest --tests com.bytedance.zgx.pocketmind.tool.ToolSchemaContractTest
+scripts/test_validation_scripts.sh
+bash -n scripts/live_remote_emulator.sh scripts/test_validation_scripts.sh
+git diff --check
+KEY_PREFIX='s''k' FORBIDDEN_REMOTE_MARKERS='e715''d561|deep''seek|api\.deep''seek' rg -n "\b${KEY_PREFIX}-[A-Za-z0-9_-]{16,}\b|${FORBIDDEN_REMOTE_MARKERS}" . --glob '!app/build/**' --glob '!build/**' --glob '!*.iml'
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugAndroidTestKotlin
+```
+
+结果：
+
+- 通过：targeted JVM safety/runtime/device/tool/audit/trace 回归。
+- 通过：`scripts/test_validation_scripts.sh` 和 shell syntax check。
+- 通过：`git diff --check`。
+- 通过：严格 API-key / DeepSeek 配置扫描无命中；仅源码中的任务状态前缀曾触发
+  宽松 `sk-` 模式误报，严格 key pattern 无命中。
+- 通过：完整 `:app:testDebugUnitTest`，834 tests completed。
+- 通过：`:app:compileDebugAndroidTestKotlin`。
+- 未执行：模拟器/真机回归；完整设备回归仍以
+  `scripts/regression_emulator.sh` 生成的 `regression-emulator.properties`
+  `status=passed` 为准。
+
+## 2026-06-04 Device permission boundary 增量验证
+
+本轮覆盖项：
+
+- AndroidManifest 显式声明 Android 14+
+  `READ_MEDIA_VISUAL_USER_SELECTED`，权限策略在 API 34+ 对最近图片、
+  截图、视频和 OCR 建模 selected visual media，与完整图片/视频权限互为可接受授权结果。
+- `AndroidRecentFileProvider` 和最近图片 OCR provider 允许
+  `READ_MEDIA_VISUAL_USER_SELECTED` 只查询用户选择的视觉媒体，并在工具结果中输出
+  `mediaAccessScope`，避免把部分照片访问误写成完整相册访问。
+- `query_recent_files` schema 不再暴露 `documents`、`downloads`、`others`
+  作为可直接执行 kind；Android 13+ 非媒体文件必须通过系统文件选择器或分享入口由用户主动提供。
+- `query_foreground_app` 成功结果输出 `source=usage_stats_estimate` 和
+  `confidence=estimate`，文档说明该结果是 UsageStats 估计，不是窗口管理器真值或屏幕内容。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.AndroidManifestTest' --tests 'com.bytedance.zgx.pocketmind.AgentRuntimePermissionPolicyTest' --tests 'com.bytedance.zgx.pocketmind.device.ForegroundAppProviderTest' --tests 'com.bytedance.zgx.pocketmind.device.RecentFileCollectorTest' --tests 'com.bytedance.zgx.pocketmind.tool.ToolRegistryTest' --tests 'com.bytedance.zgx.pocketmind.tool.ToolSchemaContractTest' --tests 'com.bytedance.zgx.pocketmind.tool.DeviceContextToolExecutorTest' --tests 'com.bytedance.zgx.pocketmind.tool.RoutingAndValidatingToolExecutorTest'
+./gradlew :app:testDebugUnitTest
+```
+
+结果：
+
+- 通过：targeted JVM permission/provider/schema/tool executor 回归。
+- 通过：完整 `:app:testDebugUnitTest`，831 tests completed。
+- 未执行：模拟器/真机回归；本轮只覆盖 JVM 权限边界和工具契约。
+
 ## 2026-06-03 Final code and documentation audit
 
 本轮覆盖项：
@@ -6064,3 +6141,60 @@ git diff --check
 - 通过：`AgentCoreDocumentationTest` 文档契约。
 - 通过：`git diff --check` whitespace 检查。
 - 通过：全量 `./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin`。
+
+## 2026-06-04 Remote model-first planning and typed web evidence
+
+本轮覆盖项：
+
+- 远程模型模式新增 `AgentRunOptions(initialPlanningMode=ModelFirstRemoteTools)`；
+  本地模式仍保持 `RuleFirst`。远程模式先执行 direct built-in Skill preflight，
+  保护本地确认/LocalOnly 工具路径；未被 direct Skill 命中的输入再由模型选择
+  safe planning tools。
+- 远程工具 schema 新增 `RemoteToolScope.ModelPlanning`：公开证据工具可无确认执行；
+  非私密、非 critical 的草稿/导航/分享/本地后台计划类工具只作为模型规划候选，
+  仍必须经过本地 registry、safety 和用户确认。LocalOnly 设备上下文工具不暴露给
+  远程 planning。
+- `web_search` 改成 typed evidence provider。`general` 不再因 query 含天气词自动走
+  Open-Meteo；只有 `weather_current` 进入天气 evidence path。`resultsJson` 使用
+  evidence schema v1，携带 `schemaVersion`、`searchMode`、`retrievedAt`、
+  `freshness`、`sources` 和 bounded `results`。
+- 新增 `ToolExecutionBoundary`，集中处理工具执行异常/timeout 映射和公开证据批次
+  retry，只重试 retryable 失败 request，不重复执行成功 request。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeTest \
+  --tests com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestratorTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeUsesModelFirstPlanningAndExposesSafePlanningToolsToRemoteRuntime'
+
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.tool.WebSearchProviderTest \
+  --tests com.bytedance.zgx.pocketmind.tool.ToolRegistryTest \
+  --tests com.bytedance.zgx.pocketmind.tool.RoutingAndValidatingToolExecutorTest \
+  --tests com.bytedance.zgx.pocketmind.tool.ToolExecutionBoundaryTest
+
+scripts/doctor.sh && scripts/verify_local.sh
+
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：Agent loop / orchestrator / ViewModel 远程模型优先规划 targeted 回归。
+- 通过：Web search typed evidence、Tool Registry、RoutingAndValidating executor、
+  ToolExecutionBoundary targeted 回归。
+- 通过：`scripts/doctor.sh && scripts/verify_local.sh`，包含本地环境检查、脚本校验、
+  debug/release 构建、JVM 单测和 lint。
+- 首次完整 emulator regression（`build/verification/regression-emulator-20260604-013007`）
+  暴露 7 个远程模式 UI timeout，根因是无条件 model-first 跳过了 direct local
+  Skill confirmations。修复为 direct Skill preflight 后重跑完整 regression。
+- 通过：`build/verification/regression-emulator-20260604-013940/regression-emulator.properties`
+  `status=passed`；nested emulator/device reports 均 `status=passed`，
+  `instrumentation=passed`，`actual_android_test_count=26`，且
+  `instrumentation.txt` 非空。

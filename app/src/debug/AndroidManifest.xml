@@ -3,6 +3,6 @@
     <application>
         <receiver
             android:name=".debug.DebugRemoteConfigReceiver"
-            android:exported="true" />
+            android:exported="false" />
     </application>
 </manifest>

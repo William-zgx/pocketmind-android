@@ -45,8 +45,15 @@ apply.
 Remote model tool requests are not executed by the remote endpoint. The app
 parses OpenAI-compatible `tool_calls` locally and revalidates every request
 through the Tool Registry, safety policy, Agent trace, and audit path before
-execution. A single public read-only evidence tool such as `web_search` may run
-without confirmation. Multiple tool calls in one remote model turn may run
+execution. Remote mode exposes a model-planning tool schema set that can include
+public search plus non-private draft, navigation, sharing, or local
+reminder-style tools, but those non-public tools still require local
+confirmation and are not executed by the remote model. Local evidence tools
+that read clipboard, contacts, calendar, files, notifications, screen text, OCR,
+or other private context are not exposed to remote planning. A single public
+read-only evidence tool such as `web_search` may run without confirmation for
+public queries; queries that appear to contain personal data or secrets require
+confirmation before network access. Multiple tool calls in one remote model turn may run
 concurrently only when every requested tool is `PublicEvidence`,
 `LowReadOnly`, `NotRequired`, has no private output keys, and declares no
 device-context, Android permission, MediaProjection, external-navigation,
@@ -67,16 +74,22 @@ These tools are designed to minimize returned data. For example, recent file
 reads return metadata rather than file contents, paths, or URIs; current-screen
 text reads use Accessibility text nodes rather than screenshots or pixels; OCR
 tools avoid persisting image identifiers, paths, raw pixels, and raw OCR text in
-trace or audit stores. Clipboard text, contact matches, calendar busy/free
-windows, foreground-app metadata, current-app notification summaries, recent
-file metadata, OCR excerpts, and current-screen Accessibility snapshots are
-marked `LocalOnly` and `requiresLocalModel=true`; their local payload fields are
+trace or audit stores. Foreground-app reads are labeled as UsageStats
+estimates, and Android 14+ selected-photo grants are labeled as user-selected
+visual media rather than full-library access. Clipboard text, contact matches,
+calendar busy/free windows, foreground-app metadata, current-app notification
+summaries, recent file metadata, OCR excerpts, and current-screen
+Accessibility snapshots are marked `LocalOnly` and `requiresLocalModel=true`;
+their local payload fields are
 declared as private tool outputs so they remain inside local continuation,
 observation, trace-redaction, and Skill public-output boundaries.
 
 Android runtime permissions and special app access are requested only after the
 user confirms the associated tool request. Permission denial is treated as a
 structured tool failure rather than an automatic retry.
+On Android 13 and above, `query_recent_files` does not expose a direct
+`documents`, `downloads`, or `others` query path; non-media files must be
+provided through the system file picker or Android share input.
 
 ## External Intents And Sharing
 
@@ -110,7 +123,9 @@ IP address, URL, user agent, timing, and download size.
 
 Tool audit events store metadata such as event time, event type, tool name,
 status, risk level, permission names, and sanitized summaries. They are
-intentionally not a full prompt or tool-argument log.
+intentionally not a full prompt or tool-argument log. The app prunes the
+Room-backed audit table after writes and keeps only the most recent 500 audit
+events.
 
 Agent trace and pending confirmation recovery are intentionally narrower than a
 full execution replay. Pending rows persist only allowlisted request arguments,

@@ -54,6 +54,7 @@ private const val TOOL_STEP_BUDGET_EXCEEDED_REASON = "Agent run tool step budget
 private const val OBSERVATION_DECISION_BUDGET_EXCEEDED_REASON =
     "Agent run observation decision budget exceeded."
 private const val PENDING_EXTERNAL_OUTCOME_RESTORE_RUN_LIMIT = 20
+private const val TOOL_OBSERVATION_AUDIT_SUMMARY = "Tool observation recorded."
 
 class AgentLoopRuntime(
     private val memoryIndex: MemoryIndex,
@@ -79,6 +80,7 @@ class AgentLoopRuntime(
         actionModelPath: String? = null,
         deviceContext: DeviceContextSnapshot? = null,
         sessionId: String? = null,
+        options: AgentRunOptions = AgentRunOptions(),
     ): AgentLoopResult {
         val createdRun = traceStore.createRun(input, sessionId)
         traceStore.updateState(createdRun.id, AgentRunState.LoadingContext)
@@ -91,19 +93,23 @@ class AgentLoopRuntime(
         traceStore.appendStep(createdRun.id, AgentStep.ContextLoaded(memoryHits, deviceContext))
         traceStore.updateState(createdRun.id, AgentRunState.Planning)
 
-        when (val toolPlan = planToolIfSupported(input, actionModelPath)) {
+        val initialToolPlan = when (options.initialPlanningMode) {
+            InitialPlanningMode.RuleFirst -> planToolIfSupported(input, actionModelPath)
+            InitialPlanningMode.ModelFirstRemoteTools -> planLocalOnlySkillBeforeRemote(input)
+        }
+        when (initialToolPlan) {
             is AgentPlan.UseTool -> {
-                return requestToolConfirmation(createdRun, toolPlan)
+                return requestToolConfirmation(createdRun, initialToolPlan)
             }
 
             is AgentPlan.RejectedTool -> {
-                traceStore.appendStep(createdRun.id, AgentStep.ModelPlanned(toolPlan))
-                traceStore.appendStep(createdRun.id, AgentStep.ToolRejected(toolPlan.result))
-                auditRejectedTool(createdRun.id, toolPlan.result)
+                traceStore.appendStep(createdRun.id, AgentStep.ModelPlanned(initialToolPlan))
+                traceStore.appendStep(createdRun.id, AgentStep.ToolRejected(initialToolPlan.result))
+                auditRejectedTool(createdRun.id, initialToolPlan.result)
                 val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
                 return AgentLoopResult(
                     run = failedRun,
-                    plan = toolPlan,
+                    plan = initialToolPlan,
                     steps = traceStore.steps(createdRun.id),
                 )
             }
@@ -370,6 +376,7 @@ class AgentLoopRuntime(
         outcome: AgentExternalOutcome,
     ): AgentExternalOutcomeResult? {
         val run = traceStore.run(runId) ?: return null
+        if (run.state != AgentRunState.AwaitingExternalOutcome) return null
         val request = toolRequestFor(runId, requestId) ?: return null
         if (latestExternalOutcomeConfirmation(runId, requestId) != null) return null
         val priorResult = latestUnverifiedExternalResult(runId, requestId) ?: return null
@@ -516,12 +523,13 @@ class AgentLoopRuntime(
             )
         }
         val draft = draftForRemoteToolRequest(request)
+        val skillPlan = skillRuntime.plan(run.input, draft, request)
         val plan = buildInitialToolPlan(
             request = request,
             draft = draft,
             plannedByModel = true,
             fallbackReason = "remote tool call",
-            skillPlan = null,
+            skillPlan = skillPlan,
         )
         return when (plan) {
             is AgentPlan.UseTool -> {
@@ -821,7 +829,17 @@ class AgentLoopRuntime(
         )
         val recoveryAction = recoveryActionForObservation(request, observedResult)
         val assistantMessage = messageForObservation(observedResult, retryAttempt, recoveryAction)
-        traceStore.appendStep(runId, AgentStep.AssistantResponded(assistantMessage))
+        traceStore.appendStep(
+            runId,
+            AgentStep.AssistantResponded(
+                traceMessageForObservation(
+                    request = request,
+                    result = observedResult,
+                    retryAttempt = retryAttempt,
+                    recoveryAction = recoveryAction,
+                ),
+            ),
+        )
         if (budgetExceeded) {
             return failObservationBudget(
                 runId = runId,
@@ -873,7 +891,7 @@ class AgentLoopRuntime(
                 request = decision.request,
                 eventType = ToolAuditEventType.ToolRetryScheduled,
                 status = ToolStatus.Failed,
-                summary = "Retry ${decision.attempt} scheduled: ${observedResult.summary}",
+                summary = "Retry ${decision.attempt} scheduled.",
             )
         }
         val finalState = when (decision) {
@@ -1424,6 +1442,11 @@ class AgentLoopRuntime(
             planInitialSequentialSegment(firstActionInput, actionModelPath)
         }
 
+    private fun planLocalOnlySkillBeforeRemote(input: String): AgentPlan? {
+        val skillPlan = skillRuntime.plan(input) ?: return null
+        return buildInitialToolPlanFromSkill(skillPlan)
+    }
+
     private fun planInitialSequentialSegment(
         input: String,
         actionModelPath: String?,
@@ -1659,6 +1682,35 @@ class AgentLoopRuntime(
             ToolStatus.Cancelled -> "工具执行已取消：${result.summary}"
         }
 
+    private fun traceMessageForObservation(
+        request: ToolRequest,
+        result: ToolResult,
+        retryAttempt: Int,
+        recoveryAction: AgentRecoveryAction?,
+    ): String {
+        val metadata = result.reminderAuditMetadata(request.toolName)
+        return when {
+            result.isUnverifiedExternalLaunch() -> UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX
+            metadata.isNotEmpty() -> buildString {
+                append("工具执行结果已记录，结果详情已隐藏。")
+                recoveryAction?.recoveryHintForObservation()?.let { recoveryHint ->
+                    append("\n")
+                    append(recoveryHint)
+                }
+            }
+            result.status == ToolStatus.Failed && retryAttempt > 0 ->
+                "工具执行失败，正在重试（第 $retryAttempt 次），错误详情已隐藏。"
+            result.status == ToolStatus.Failed ->
+                "工具执行失败，错误详情已隐藏。"
+            result.status == ToolStatus.Rejected ->
+                "工具请求已拒绝，详情已隐藏。"
+            result.status == ToolStatus.Cancelled ->
+                "工具执行已取消，详情已隐藏。"
+            else ->
+                "工具执行结果已记录，结果详情已隐藏。"
+        }
+    }
+
     private fun recoveryActionForObservation(
         request: ToolRequest,
         result: ToolResult,
@@ -1732,12 +1784,12 @@ class AgentLoopRuntime(
         }
 
     private fun ToolResult.auditSummaryForObservation(request: ToolRequest): String {
-        val baseSummary = if (isUnverifiedExternalLaunch()) unverifiedExternalLaunchSummary() else summary
         val metadata = reminderAuditMetadata(request.toolName)
-        return if (metadata.isEmpty()) {
-            baseSummary
-        } else {
-            "$baseSummary (${metadata.joinToString(separator = "; ")})"
+        return when {
+            metadata.isNotEmpty() -> metadata.joinToString(separator = "; ")
+            isUnverifiedExternalLaunch() -> UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX
+            summary.startsWith(EXTERNAL_OUTCOME_CONFIRMED_SUMMARY_PREFIX) -> EXTERNAL_OUTCOME_CONFIRMED_SUMMARY_PREFIX
+            else -> TOOL_OBSERVATION_AUDIT_SUMMARY
         }
     }
 
@@ -2385,11 +2437,10 @@ class AgentLoopRuntime(
                 if (value.isNotBlank()) put(key, value)
             }
         }
-        val summary = json.optString("summary").takeIf { it.isNotBlank() } ?: this.summary
         val result = ToolResult(
             requestId = requestId,
             status = ToolStatus.Succeeded,
-            summary = summary,
+            summary = UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX,
             data = data,
         )
         return result.takeIf { it.isUnverifiedExternalLaunch() }

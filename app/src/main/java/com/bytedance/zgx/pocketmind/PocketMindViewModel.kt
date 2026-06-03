@@ -51,19 +51,24 @@ import com.bytedance.zgx.pocketmind.orchestration.AgentObservationDecision
 import com.bytedance.zgx.pocketmind.orchestration.AgentObservationResult
 import com.bytedance.zgx.pocketmind.orchestration.AgentPlan
 import com.bytedance.zgx.pocketmind.orchestration.AgentRecoveryAction
+import com.bytedance.zgx.pocketmind.orchestration.AgentRunOptions
 import com.bytedance.zgx.pocketmind.orchestration.AgentRunState
 import com.bytedance.zgx.pocketmind.orchestration.AgentTraceRunSummary
 import com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestrator
 import com.bytedance.zgx.pocketmind.orchestration.AssistantRouter
 import com.bytedance.zgx.pocketmind.orchestration.AssistantRoute
+import com.bytedance.zgx.pocketmind.orchestration.InitialPlanningMode
 import com.bytedance.zgx.pocketmind.orchestration.PendingExternalOutcomeSnapshot
+import com.bytedance.zgx.pocketmind.orchestration.RemoteToolScope
 import com.bytedance.zgx.pocketmind.runtime.LiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatEvent
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntime
 import com.bytedance.zgx.pocketmind.safety.SafetyOutcome
+import com.bytedance.zgx.pocketmind.tool.TimeoutToolExecutionBoundary
 import com.bytedance.zgx.pocketmind.tool.ToolExecutor
 import com.bytedance.zgx.pocketmind.tool.ToolErrorCode
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
+import com.bytedance.zgx.pocketmind.tool.ToolResult
 import com.bytedance.zgx.pocketmind.tool.failed
 import com.bytedance.zgx.pocketmind.tool.isUnverifiedExternalLaunch
 import com.bytedance.zgx.pocketmind.tool.unverifiedExternalLaunchSummary
@@ -73,9 +78,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -126,6 +128,8 @@ class PocketMindViewModel(
     private var startupRestored = false
     private var nextVoiceInputDraftId = 0L
     private var nextSharedInputDraftId = 0L
+    private val toolExecutionBoundary =
+        TimeoutToolExecutionBoundary(actionExecutor, ioDispatcher)
 
     private val _uiState = MutableStateFlow(createInitialState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -954,6 +958,14 @@ class PocketMindViewModel(
         val remoteConfig = stateBeforeSend.remoteModelConfig
         val remoteHistory = stateBeforeSend.messages.remoteEligibleMessages()
         val includePrivateLocalContext = !useRemoteModel
+        val agentRunOptions = if (useRemoteModel) {
+            AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            )
+        } else {
+            AgentRunOptions()
+        }
         if (useRemoteModel && messagePrivacy == MessagePrivacy.LocalOnly) {
             val userMessage = ChatMessage(
                 role = MessageRole.User,
@@ -1000,6 +1012,7 @@ class PocketMindViewModel(
                     actionModelPath = modelRepository.verifiedActionModelPath(),
                     deviceContext = stateBeforeSend.toDeviceContextSnapshot().takeIf { includePrivateLocalContext },
                     sessionId = stateBeforeSend.activeSessionId,
+                    options = agentRunOptions,
                 )
                 when (route) {
                     is AssistantRoute.Action -> {
@@ -1208,7 +1221,7 @@ class PocketMindViewModel(
                                 history = remoteHistory,
                                 parameters = _uiState.value.generationParameters,
                                 config = remoteConfig,
-                                tools = assistantOrchestrator.availableToolSpecs(),
+                                tools = assistantOrchestrator.availableRemoteToolSpecs(agentRunOptions.remoteToolScope),
                             ).collect { event ->
                                 when (event) {
                                     is RemoteChatEvent.TextDelta -> {
@@ -1678,17 +1691,37 @@ class PocketMindViewModel(
                 statusText = "工具执行中",
             )
         }
-        executeToolRequestAfterRunIsExecuting(
+        launchToolExecutionAfterRunIsExecuting(
             confirmation = confirmation,
             request = request,
         )
     }
 
-    private fun executeToolRequestAfterRunIsExecuting(
+    private fun launchToolExecutionAfterRunIsExecuting(
         confirmation: PendingAgentConfirmation,
         request: ToolRequest,
     ) {
-        var result = actionExecutor.execute(request)
+        activeGenerationRunId = confirmation.runId
+        val job = viewModelScope.launch(ioDispatcher) {
+            executeToolRequestAfterRunIsExecuting(
+                confirmation = confirmation,
+                request = request,
+            )
+        }
+        generationJob = job
+        job.invokeOnCompletion {
+            if (generationJob == job) {
+                generationJob = null
+                activeGenerationRunId = null
+            }
+        }
+    }
+
+    private suspend fun executeToolRequestAfterRunIsExecuting(
+        confirmation: PendingAgentConfirmation,
+        request: ToolRequest,
+    ) {
+        var result = executeToolWithBoundary(request)
         var observation = confirmation.runId?.let { runId ->
             assistantOrchestrator.observeToolResult(runId, result)
         }
@@ -1708,7 +1741,7 @@ class PocketMindViewModel(
             _uiState.update {
                 it.copy(statusText = "工具重试中")
             }
-            result = actionExecutor.execute(retryRequest)
+            result = executeToolWithBoundary(retryRequest)
             observation = confirmation.runId?.let { runId ->
                 assistantOrchestrator.observeToolResult(runId, result)
             }
@@ -1810,6 +1843,9 @@ class PocketMindViewModel(
         }
     }
 
+    private suspend fun executeToolWithBoundary(request: ToolRequest): ToolResult =
+        toolExecutionBoundary.execute(request)
+
     private suspend fun executePublicEvidenceToolBatchAfterRunIsExecuting(
         runId: String,
         plans: List<AgentPlan.UseTool>,
@@ -1840,23 +1876,7 @@ class PocketMindViewModel(
                 statusText = "工具并发执行中",
             )
         }
-        val results = coroutineScope {
-            plans.map { plan ->
-                async {
-                    runCatching {
-                        actionExecutor.execute(plan.request)
-                    }.getOrElse { throwable ->
-                        if (throwable is CancellationException) throw throwable
-                        plan.request.failed(
-                            code = ToolErrorCode.ExecutionFailed,
-                            summary = "Tool execution failed before completion: ${throwable.cleanMessage()}",
-                            retryable = true,
-                            data = mapOf("toolName" to plan.request.toolName),
-                        )
-                    }
-                }
-            }.awaitAll()
-        }
+        val results = executePublicEvidenceToolPlans(plans)
         val observation = assistantOrchestrator.observeToolResults(runId, results)
         if (observation == null) {
             assistantOrchestrator.cancelRun(runId, "批量工具结果无法进入观察流程")
@@ -1966,6 +1986,17 @@ class PocketMindViewModel(
         }
     }
 
+    private suspend fun executePublicEvidenceToolPlans(
+        plans: List<AgentPlan.UseTool>,
+    ): List<ToolResult> =
+        toolExecutionBoundary.executePublicEvidenceBatch(
+            requests = plans.map { plan -> plan.request },
+        ) {
+            _uiState.update {
+                it.copy(statusText = "工具批量重试中")
+            }
+        }
+
     private fun handleNextToolPlan(
         runId: String,
         plan: AgentPlan.UseTool,
@@ -1992,7 +2023,7 @@ class PocketMindViewModel(
                     statusText = "工具执行中",
                 )
             }
-            executeToolRequestAfterRunIsExecuting(
+            launchToolExecutionAfterRunIsExecuting(
                 confirmation = confirmation,
                 request = plan.request,
             )
@@ -2323,7 +2354,7 @@ class PocketMindViewModel(
                         history = remoteHistory,
                         parameters = _uiState.value.generationParameters,
                         config = remoteConfig,
-                        tools = assistantOrchestrator.availableToolSpecs(),
+                        tools = assistantOrchestrator.availableRemoteToolSpecs(RemoteToolScope.ModelPlanning),
                     ).collect { event ->
                         when (event) {
                             is RemoteChatEvent.TextDelta -> {

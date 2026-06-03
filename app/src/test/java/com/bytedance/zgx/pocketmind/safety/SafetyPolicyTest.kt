@@ -1,5 +1,6 @@
 package com.bytedance.zgx.pocketmind.safety
 
+import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import com.bytedance.zgx.pocketmind.tool.ConfirmationPolicy
 import com.bytedance.zgx.pocketmind.tool.RiskLevel
 import com.bytedance.zgx.pocketmind.tool.ToolCapability
@@ -133,6 +134,57 @@ class SafetyPolicyTest {
             assertEquals(spec.name, ConfirmationPolicy.Required, spec.confirmationPolicy)
             assertEquals(spec.name, SafetyOutcome.RequireConfirmation, beforeConfirmation.outcome)
             assertEquals(spec.name, SafetyOutcome.Allow, afterConfirmation.outcome)
+        }
+    }
+
+    @Test
+    fun publicWebSearchQueryCanRunWithoutConfirmation() {
+        val spec = ToolRegistry().specFor(MobileActionFunctions.WEB_SEARCH)
+        requireNotNull(spec)
+
+        val decision = policy.evaluate(
+            spec = spec,
+            request = ToolRequest(
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气怎么样"),
+            ),
+            context = SafetyContext(userConfirmed = false),
+        )
+
+        assertEquals(SafetyOutcome.Allow, decision.outcome)
+    }
+
+    @Test
+    fun sensitiveWebSearchQueryRequiresConfirmationBeforeNetworkAccess() {
+        val spec = ToolRegistry().specFor(MobileActionFunctions.WEB_SEARCH)
+        requireNotNull(spec)
+        val sensitiveQueries = listOf(
+            "搜索我的手机号 13800138000 有没有泄露",
+            "look up my email alex@example.com",
+            "帮我查我的地址附近有什么",
+            "search " + "sk-" + "1234567890abcdef1234567890abcdef",
+        )
+
+        sensitiveQueries.forEach { query ->
+            val beforeConfirmation = policy.evaluate(
+                spec = spec,
+                request = ToolRequest(
+                    toolName = MobileActionFunctions.WEB_SEARCH,
+                    arguments = mapOf("query" to query),
+                ),
+                context = SafetyContext(userConfirmed = false),
+            )
+            val afterConfirmation = policy.evaluate(
+                spec = spec,
+                request = ToolRequest(
+                    toolName = MobileActionFunctions.WEB_SEARCH,
+                    arguments = mapOf("query" to query),
+                ),
+                context = SafetyContext(userConfirmed = true),
+            )
+
+            assertEquals(query, SafetyOutcome.RequireConfirmation, beforeConfirmation.outcome)
+            assertEquals(query, SafetyOutcome.Allow, afterConfirmation.outcome)
         }
     }
 

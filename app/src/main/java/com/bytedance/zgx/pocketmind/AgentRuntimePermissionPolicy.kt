@@ -105,7 +105,14 @@ fun PendingAgentConfirmation.deniedRuntimePermissionsAfterGrantResult(
 ): List<String> =
     runtimePermissionsFor(apiLevel)
         .filterNot { permission ->
-            grantResults[permission] == true || hasRuntimePermission(permission)
+            grantResults[permission] == true ||
+                hasRuntimePermission(permission) ||
+                isCoveredByAlternativeVisualMediaGrant(
+                    permission = permission,
+                    grantResults = grantResults,
+                    apiLevel = apiLevel,
+                    hasRuntimePermission = hasRuntimePermission,
+                )
         }
 
 fun runtimePermissionDenialSummary(permissions: List<String>): String =
@@ -125,15 +132,34 @@ private fun recentFilePermissionRequirementsFor(kind: String, apiLevel: Int): Li
         return listOf(Manifest.permission.READ_EXTERNAL_STORAGE.requirement())
     }
     return when (kind.lowercase()) {
-        "screenshots" -> listOf(Manifest.permission.READ_MEDIA_IMAGES.requirement())
-        "images" -> listOf(Manifest.permission.READ_MEDIA_IMAGES.requirement())
-        "videos" -> listOf(Manifest.permission.READ_MEDIA_VIDEO.requirement())
-        "audio" -> listOf(Manifest.permission.READ_MEDIA_AUDIO.requirement())
-        "all" -> listOf(
-            Manifest.permission.READ_MEDIA_IMAGES.requirement(),
-            Manifest.permission.READ_MEDIA_VIDEO.requirement(),
-            Manifest.permission.READ_MEDIA_AUDIO.requirement(),
+        "screenshots" -> visualMediaPermissionRequirementsFor(
+            mediaPermission = Manifest.permission.READ_MEDIA_IMAGES,
+            apiLevel = apiLevel,
         )
+        "images" -> visualMediaPermissionRequirementsFor(
+            mediaPermission = Manifest.permission.READ_MEDIA_IMAGES,
+            apiLevel = apiLevel,
+        )
+        "videos" -> visualMediaPermissionRequirementsFor(
+            mediaPermission = Manifest.permission.READ_MEDIA_VIDEO,
+            apiLevel = apiLevel,
+        )
+        "audio" -> listOf(Manifest.permission.READ_MEDIA_AUDIO.requirement())
+        "all" ->
+            if (apiLevel < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                listOf(
+                    Manifest.permission.READ_MEDIA_IMAGES.requirement(),
+                    Manifest.permission.READ_MEDIA_VIDEO.requirement(),
+                    Manifest.permission.READ_MEDIA_AUDIO.requirement(),
+                )
+            } else {
+                listOf(
+                    Manifest.permission.READ_MEDIA_IMAGES.requirement(),
+                    Manifest.permission.READ_MEDIA_VIDEO.requirement(),
+                    selectedVisualMediaPermissionRequirement(),
+                    Manifest.permission.READ_MEDIA_AUDIO.requirement(),
+                )
+            }
         else -> emptyList()
     }
 }
@@ -145,7 +171,56 @@ private fun recentImageOcrPermissionRequirementsFor(
     return if (apiLevel < Build.VERSION_CODES.TIRAMISU) {
         listOf(Manifest.permission.READ_EXTERNAL_STORAGE.requirement(rationale = rationale))
     } else {
-        listOf(Manifest.permission.READ_MEDIA_IMAGES.requirement(rationale = rationale))
+        visualMediaPermissionRequirementsFor(
+            mediaPermission = Manifest.permission.READ_MEDIA_IMAGES,
+            apiLevel = apiLevel,
+            rationale = rationale,
+        )
+    }
+}
+
+private fun visualMediaPermissionRequirementsFor(
+    mediaPermission: String,
+    apiLevel: Int,
+    rationale: String? = null,
+): List<RuntimePermissionRequirement> {
+    val mediaRequirement = mediaPermission.requirement(rationale = rationale)
+    if (apiLevel < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        return listOf(mediaRequirement)
+    }
+    return listOf(
+        mediaRequirement,
+        selectedVisualMediaPermissionRequirement(),
+    )
+}
+
+private fun selectedVisualMediaPermissionRequirement(): RuntimePermissionRequirement =
+    Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED.requirement(
+        rationale = "用于在 Android 14 及以上识别用户通过系统照片权限弹窗选择的图片或视频；这不是文档/下载文件读取授权。",
+    )
+
+private fun isCoveredByAlternativeVisualMediaGrant(
+    permission: String,
+    grantResults: Map<String, Boolean>,
+    apiLevel: Int,
+    hasRuntimePermission: (String) -> Boolean,
+): Boolean {
+    if (apiLevel < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
+    val visualMediaPermissions = setOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+    )
+    val hasSelectedVisualGrant =
+        grantResults[Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED] == true ||
+            hasRuntimePermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    val hasFullVisualGrant =
+        visualMediaPermissions.any { mediaPermission ->
+            grantResults[mediaPermission] == true || hasRuntimePermission(mediaPermission)
+        }
+    return when (permission) {
+        in visualMediaPermissions -> hasSelectedVisualGrant
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> hasFullVisualGrant
+        else -> false
     }
 }
 
@@ -164,6 +239,7 @@ private fun String.friendlyPermissionTitle(): String =
         Manifest.permission.READ_EXTERNAL_STORAGE -> "文件读取权限"
         Manifest.permission.READ_MEDIA_IMAGES -> "照片和图片权限"
         Manifest.permission.READ_MEDIA_VIDEO -> "视频权限"
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> "部分照片和视频访问权限"
         Manifest.permission.READ_MEDIA_AUDIO -> "音频权限"
         else -> this
     }
@@ -176,6 +252,7 @@ private fun String.friendlyPermissionRationale(): String =
         Manifest.permission.READ_EXTERNAL_STORAGE -> "用于读取最近文件的最小元数据。"
         Manifest.permission.READ_MEDIA_IMAGES -> "用于读取最近图片或截图的最小元数据。"
         Manifest.permission.READ_MEDIA_VIDEO -> "用于读取最近视频的最小元数据。"
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> "用于读取你通过 Android 照片权限弹窗选择的图片或视频元数据。"
         Manifest.permission.READ_MEDIA_AUDIO -> "用于读取最近音频的最小元数据。"
         else -> "用于执行你确认的本地工具。"
     }

@@ -139,6 +139,35 @@ fun ToolSpec.isPublicEvidenceBatchEligible(): Boolean =
         privateOutputKeys.isEmpty() &&
         permissions.none { permission -> permission in publicEvidenceBatchDisallowedPermissions }
 
+private val remoteModelPlanningCapabilities = setOf(
+    ToolCapability.DeviceSettings,
+    ToolCapability.ExternalNavigation,
+    ToolCapability.ExternalDraft,
+    ToolCapability.ExternalShare,
+    ToolCapability.BackgroundTask,
+)
+
+private val remoteModelPlanningDisallowedPermissions = setOf(
+    ToolPermission.ReadsDeviceContext,
+    ToolPermission.ReadsClipboard,
+    ToolPermission.ReadsCalendar,
+    ToolPermission.ReadsContacts,
+    ToolPermission.ReadsFiles,
+    ToolPermission.ReadsAccessibilityText,
+    ToolPermission.RequiresMediaProjectionConsent,
+)
+
+fun ToolSpec.isRemoteModelPlanningEligible(): Boolean =
+    isPublicEvidenceBatchEligible() ||
+        (
+            privateOutputKeys.isEmpty() &&
+                resultContinuationPolicy != ToolResultContinuationPolicy.LocalEvidence &&
+                riskLevel != RiskLevel.CriticalDeviceOrPayment &&
+                confirmationPolicy == ConfirmationPolicy.Required &&
+                capability in remoteModelPlanningCapabilities &&
+                permissions.none { permission -> permission in remoteModelPlanningDisallowedPermissions }
+            )
+
 fun ToolRequest.succeeded(
     summary: String,
     data: Map<String, String> = emptyMap(),

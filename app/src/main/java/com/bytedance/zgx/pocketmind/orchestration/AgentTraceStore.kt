@@ -19,6 +19,7 @@ import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import com.bytedance.zgx.pocketmind.tool.ToolResult
 import com.bytedance.zgx.pocketmind.tool.ToolStatus
+import com.bytedance.zgx.pocketmind.tool.UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX
 import com.bytedance.zgx.pocketmind.tool.isUnverifiedExternalLaunch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1207,11 +1208,10 @@ private fun AgentTraceStepSummary.restoredUnverifiedExternalResultOrNull(): Tool
             if (value.isNotBlank()) put(key, value)
         }
     }
-    val summary = json.optString("summary").takeIf { it.isNotBlank() } ?: this.summary
     return ToolResult(
         requestId = requestId,
         status = ToolStatus.Succeeded,
-        summary = summary,
+        summary = UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX,
         data = data,
     ).takeIf { result -> result.isUnverifiedExternalLaunch() }
 }
@@ -1261,12 +1261,12 @@ private fun AgentStep.traceSummary(): String =
         is AgentStep.UserConfirmationRequested -> "Requested confirmation for ${request.toolName}."
         is AgentStep.UserConfirmed -> "User confirmed request $requestId."
         is AgentStep.UserRejected -> "User rejected request $requestId."
-        is AgentStep.ToolObserved -> "Observed ${result.status} for ${result.requestId}: ${result.summary.shortTraceText()}"
+        is AgentStep.ToolObserved -> "Observed ${result.status} for ${result.requestId}."
         is AgentStep.ExternalOutcomeConfirmed ->
             "External outcome ${outcome.name} confirmed for $requestId."
         is AgentStep.ContinuationCursorRecorded ->
             "Recorded continuation cursor for ${cursor.sourceRequestId} -> ${cursor.request.toolName}."
-        is AgentStep.ToolRetryScheduled -> "Retry $attempt scheduled for ${request.toolName}: ${reason.shortTraceText()}"
+        is AgentStep.ToolRetryScheduled -> "Retry $attempt scheduled for ${request.toolName}."
         is AgentStep.ObservationDecided -> decision.traceSummary()
         is AgentStep.AssistantResponded -> "Assistant responded: ${text.shortTraceText()}"
         is AgentStep.ToolRejected -> "Rejected tool result ${result.requestId}: ${result.summary.shortTraceText()}"
@@ -1286,14 +1286,14 @@ private fun AgentObservationDecision.traceSummary(): String =
     when (this) {
         AgentObservationDecision.Complete -> "Observation complete."
         is AgentObservationDecision.ContinueWithModel ->
-            "Continue with model: ${reason.shortTraceText()}"
+            "Continue with model (requiresLocalModel=$requiresLocalModel)."
         is AgentObservationDecision.RetryTool ->
-            "Retry ${request.toolName} attempt $attempt: ${reason.shortTraceText()}"
+            "Retry ${request.toolName} attempt $attempt."
         is AgentObservationDecision.PlanNextTool ->
-            "Plan next tool ${plan.request.toolName}: ${reason.shortTraceText()}"
+            "Plan next tool ${plan.request.toolName}."
         is AgentObservationDecision.PlanToolBatch ->
-            "Plan tool batch ${plans.joinToString { plan -> plan.request.toolName }}: ${reason.shortTraceText()}"
-        is AgentObservationDecision.Fail -> "Observation failed: ${reason.shortTraceText()}"
+            "Plan tool batch ${plans.joinToString { plan -> plan.request.toolName }}."
+        is AgentObservationDecision.Fail -> "Observation failed."
         AgentObservationDecision.Cancel -> "Observation cancelled."
     }
 
@@ -1330,7 +1330,6 @@ private fun AgentStep.traceJson(type: String): JSONObject {
         is AgentStep.ToolObserved -> json
             .put("requestId", result.requestId)
             .put("status", result.status.name)
-            .put("summary", result.summary.shortTraceText())
             .put("retryable", result.retryable)
             .also {
                 val metadata = result.data.allowlistedCompletionMetadataJson()
@@ -1343,7 +1342,6 @@ private fun AgentStep.traceJson(type: String): JSONObject {
             .put("requestId", requestId)
             .put("outcome", outcome.name)
             .put("status", result.status.name)
-            .put("summary", result.summary.shortTraceText())
             .also {
                 val metadata = result.data.allowlistedCompletionMetadataJson()
                 if (metadata.length() > 0) {
@@ -1364,7 +1362,6 @@ private fun AgentStep.traceJson(type: String): JSONObject {
             .put("requestId", request.id)
             .put("toolName", request.toolName)
             .put("attempt", attempt)
-            .put("reason", reason.shortTraceText())
 
         is AgentStep.ObservationDecided -> json.put("decision", decision.traceJson())
         is AgentStep.AssistantResponded -> json
@@ -1423,20 +1420,17 @@ private fun AgentObservationDecision.traceJson(): JSONObject {
         is AgentObservationDecision.ContinueWithModel -> json
             .put("type", "ContinueWithModel")
             .put("requiresLocalModel", requiresLocalModel)
-            .put("reason", reason.shortTraceText())
 
         is AgentObservationDecision.RetryTool -> json
             .put("type", "RetryTool")
             .put("requestId", request.id)
             .put("toolName", request.toolName)
             .put("attempt", attempt)
-            .put("reason", reason.shortTraceText())
 
         is AgentObservationDecision.PlanNextTool -> json
             .put("type", "PlanNextTool")
             .put("requestId", plan.request.id)
             .put("toolName", plan.request.toolName)
-            .put("reason", reason.shortTraceText())
 
         is AgentObservationDecision.PlanToolBatch -> json
             .put("type", "PlanToolBatch")
@@ -1452,11 +1446,8 @@ private fun AgentObservationDecision.traceJson(): JSONObject {
                     }
                 },
             )
-            .put("reason", reason.shortTraceText())
 
-        is AgentObservationDecision.Fail -> json
-            .put("type", "Fail")
-            .put("reason", reason.shortTraceText())
+        is AgentObservationDecision.Fail -> json.put("type", "Fail")
 
         AgentObservationDecision.Cancel -> json.put("type", "Cancel")
     }

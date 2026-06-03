@@ -79,6 +79,113 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun modelFirstRemoteToolsSkipsActionRuntimeForNonSkillInput() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = wifiPlanningResult(),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "帮我处理一个需要工具的复杂请求",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+
+        assertEquals(AgentRunState.GeneratingAnswer, result.run.state)
+        assertTrue(result.plan is AgentPlan.Answer)
+        assertEquals(0, actionRuntime.isLikelyActionCallCount)
+        assertEquals(0, actionRuntime.planCallCount)
+    }
+
+    @Test
+    fun modelFirstRemoteToolsKeepsDirectSkillPreflightLocal() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = false,
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "查联系人 Alice",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+
+        assertEquals(AgentRunState.AwaitingUserConfirmation, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.QUERY_CONTACTS, result.plan.request.toolName)
+        assertEquals(0, actionRuntime.isLikelyActionCallCount)
+        assertEquals(0, actionRuntime.planCallCount)
+    }
+
+    @Test
+    fun modelFirstRemoteToolsKeepsDirectPublicEvidenceSkillLocal() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = false,
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "搜一下 Kotlin 协程",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+
+        assertEquals(AgentRunState.ExecutingTool, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.WEB_SEARCH, result.plan.request.toolName)
+        assertEquals(0, actionRuntime.isLikelyActionCallCount)
+        assertEquals(0, actionRuntime.planCallCount)
+    }
+
+    @Test
+    fun defaultRuleFirstStillPlansActionLikeInputBeforeModelAnswer() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = true,
+            planningResult = wifiPlanningResult(),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+
+        val result = runtime.runOnce(
+            input = "打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+
+        assertEquals(AgentRunState.AwaitingUserConfirmation, result.run.state)
+        require(result.plan is AgentPlan.UseTool)
+        assertEquals(MobileActionFunctions.OPEN_WIFI_SETTINGS, result.plan.request.toolName)
+    }
+
+    @Test
     fun localModelWebSearchToolCallExecutesAfterAnswerGenerationWithoutConfirmation() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = false,
@@ -1477,6 +1584,8 @@ class AgentLoopRuntimeTest {
                 summary = "当前前台应用：Mail",
                 data = mapOf(
                     "toolName" to MobileActionFunctions.QUERY_FOREGROUND_APP,
+                    "source" to "usage_stats_estimate",
+                    "confidence" to "estimate",
                     "packageName" to "com.example.mail",
                     "appLabel" to "Mail",
                     "lastTimeUsedMillis" to "1234",
@@ -4483,6 +4592,7 @@ class AgentLoopRuntimeTest {
         val persistedTrace = dao.steps(planned.run.id).joinToString("\n") { step ->
             "${step.summary}\n${step.json}"
         }
+        assertFalse(persistedTrace.contains("搜索结果摘要"))
         assertFalse(persistedTrace.contains("可分享的搜索摘要"))
         assertFalse(persistedTrace.contains("继续打开设置"))
     }
@@ -5407,6 +5517,71 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun terminalRunRejectsLateExternalOutcomeConfirmation() {
+        val auditSink = InMemoryToolAuditSink()
+        var replanCallCount = 0
+        val runtime = externalOutcomeRuntime(
+            auditSink = auditSink,
+            onReplan = {
+                replanCallCount += 1
+                AgentObservationReplan(
+                    request = ToolRequest(
+                        toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        reason = "should not run",
+                    ),
+                    draft = ActionDraft(
+                        functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                        title = "打开 Wi-Fi 设置",
+                        summary = "不应自动规划。",
+                        parameters = emptyMap(),
+                        requiresConfirmation = true,
+                    ),
+                    fallbackReason = "late external completion",
+                )
+            },
+        )
+        val planned = runtime.runOnce(
+            input = "先打开网页，然后打开 Wi-Fi 设置",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        require(planned.plan is AgentPlan.UseTool)
+        runtime.confirmToolRequest(planned.run.id, planned.plan.request.id)
+        val opened = runtime.observeToolResult(
+            runId = planned.run.id,
+            result = ToolResult(
+                requestId = planned.plan.request.id,
+                status = ToolStatus.Succeeded,
+                summary = "已打开深链",
+                data = externalActivityResultData(
+                    toolName = MobileActionFunctions.OPEN_DEEP_LINK,
+                    completionVerified = false,
+                    externalOutcome = "Unknown",
+                    externalOutcomeSource = "Unknown",
+                ),
+            ),
+        )
+        requireNotNull(opened)
+        assertEquals(AgentRunState.AwaitingExternalOutcome, opened.run.state)
+
+        val cancelled = runtime.cancelRun(planned.run.id, "user stopped")
+        requireNotNull(cancelled)
+        assertEquals(AgentRunState.Cancelled, cancelled.run.state)
+
+        val lateOutcome = runtime.recordExternalOutcome(
+            runId = planned.run.id,
+            requestId = planned.plan.request.id,
+            outcome = AgentExternalOutcome.Completed,
+        )
+
+        assertNull(lateOutcome)
+        assertEquals(0, replanCallCount)
+        assertFalse(auditSink.events.any { event ->
+            event.eventType == ToolAuditEventType.ExternalOutcomeConfirmed
+        })
+    }
+
+    @Test
     fun notCompletedExternalOutcomeConfirmationDoesNotPlanNextTool() {
         val auditSink = InMemoryToolAuditSink()
         var replanCallCount = 0
@@ -6054,6 +6229,8 @@ class AgentLoopRuntimeTest {
                     "toolName" to MobileActionFunctions.QUERY_FOREGROUND_APP,
                     "privacy" to MessagePrivacy.LocalOnly.name,
                     "requiresLocalModel" to "true",
+                    "source" to "usage_stats_estimate",
+                    "confidence" to "estimate",
                     "packageName" to "com.example.mail",
                     "appLabel" to "Mail",
                     "lastTimeUsedMillis" to "1234",
@@ -6770,6 +6947,8 @@ class AgentLoopRuntimeTest {
                     "toolName" to MobileActionFunctions.QUERY_FOREGROUND_APP,
                     "privacy" to MessagePrivacy.LocalOnly.name,
                     "requiresLocalModel" to "true",
+                    "source" to "usage_stats_estimate",
+                    "confidence" to "estimate",
                     "packageName" to "com.private.mail",
                     "appLabel" to "Sensitive Mail",
                     "lastTimeUsedMillis" to "1234",
@@ -6878,6 +7057,7 @@ class AgentLoopRuntimeTest {
             "source" to source,
             "maxCount" to maxCount,
             "scannedCount" to "1",
+            "mediaAccessScope" to "full_visual_media",
             "name" to name,
             "mimeType" to "image/jpeg",
             "sizeBytes" to "4096",
@@ -7235,6 +7415,22 @@ class AgentLoopRuntimeTest {
 
     private fun modelToolOutputPlanningResult(output: String): ModelToolOutputParseResult =
         MobileActionPlanner().parseModelToolOutput(output)
+
+    private fun wifiPlanningResult(): ActionPlanningResult =
+        ActionPlanningResult(
+            plan = ActionPlan(
+                kind = ActionPlanKind.Draft,
+                draft = ActionDraft(
+                    functionName = MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                    title = "打开 Wi-Fi 设置",
+                    summary = "将打开系统 Wi-Fi 设置页。",
+                    parameters = emptyMap(),
+                    requiresConfirmation = true,
+                ),
+            ),
+            usedModel = false,
+            fallbackReason = "test fallback",
+        )
 
     private fun readClipboardPlanningResult(): ActionPlanningResult =
         ActionPlanningResult(

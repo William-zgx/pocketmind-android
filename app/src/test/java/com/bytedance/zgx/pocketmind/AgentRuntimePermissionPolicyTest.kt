@@ -157,13 +157,58 @@ class AgentRuntimePermissionPolicyTest {
     }
 
     @Test
-    fun recentNonMediaFilesDoNotPretendToHaveARequestableAndroid13Permission() {
-        val confirmation = confirmationFor(
-            toolName = MobileActionFunctions.QUERY_RECENT_FILES,
-            arguments = mapOf("kind" to "documents"),
+    fun recentVisualMediaModelsSelectedPhotoAccessOnAndroid14Plus() {
+        assertEquals(
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ),
+            confirmationFor(
+                toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+                arguments = mapOf("kind" to "images"),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
         )
+        assertEquals(
+            listOf(
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ),
+            confirmationFor(
+                toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+                arguments = mapOf("kind" to "videos"),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+        )
+        assertEquals(
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ),
+            confirmationFor(MobileActionFunctions.READ_RECENT_IMAGE_OCR)
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+        )
+        assertEquals(
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                Manifest.permission.READ_MEDIA_AUDIO,
+            ),
+            confirmationFor(MobileActionFunctions.QUERY_RECENT_FILES)
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+        )
+    }
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+    @Test
+    fun recentNonMediaFilesDoNotPretendToHaveARequestableAndroid13Permission() {
+        listOf("documents", "downloads", "others").forEach { kind ->
+            val confirmation = confirmationFor(
+                toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+                arguments = mapOf("kind" to kind),
+            )
+
+            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE).isEmpty())
+        }
     }
 
     @Test
@@ -487,6 +532,48 @@ class AgentRuntimePermissionPolicyTest {
                 grantResults = emptyMap(),
                 hasRuntimePermission = { it == permission },
             ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun android14VisualMediaGrantAcceptsEitherFullOrUserSelectedAccess() {
+        val confirmation = confirmationFor(
+            toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+            arguments = mapOf("kind" to "images"),
+        )
+        val imagePermission = Manifest.permission.READ_MEDIA_IMAGES
+        val selectedVisualPermission = Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+
+        assertTrue(
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to true,
+                    selectedVisualPermission to false,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ).isEmpty(),
+        )
+        assertTrue(
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to false,
+                    selectedVisualPermission to true,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ).isEmpty(),
+        )
+        assertEquals(
+            listOf(imagePermission, selectedVisualPermission),
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to false,
+                    selectedVisualPermission to false,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ),
         )
     }
 

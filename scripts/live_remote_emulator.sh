@@ -59,13 +59,17 @@ fail() {
   exit 1
 }
 
+debug_receiver_broadcast() {
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell run-as "$PACKAGE_NAME" am broadcast \
+    -n "$DEBUG_CONFIG_RECEIVER" \
+    "$@"
+}
+
 clear_remote_config() {
   if [[ -z "${SELECTED_SERIAL:-}" || ! -x "$ADB_BIN" ]]; then
     return
   fi
-  "$ADB_BIN" -s "$SELECTED_SERIAL" shell am broadcast \
-    -n "$DEBUG_CONFIG_RECEIVER" \
-    --ez clearRemoteConfig true >/dev/null 2>&1 || true
+  debug_receiver_broadcast --ez clearRemoteConfig true >/dev/null 2>&1 || true
 }
 
 select_emulator() {
@@ -109,8 +113,7 @@ mkdir -p "$ARTIFACT_DIR"
 "${ADB[@]}" install -r "$DEBUG_APK" >/dev/null
 
 set +x
-"${ADB[@]}" shell am broadcast \
-  -n "$DEBUG_CONFIG_RECEIVER" \
+debug_receiver_broadcast \
   --es baseUrl "$LIVE_REMOTE_BASE_URL" \
   --es modelName "$LIVE_REMOTE_MODEL" \
   --es apiKey "$LIVE_REMOTE_API_KEY" \

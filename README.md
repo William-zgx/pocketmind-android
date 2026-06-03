@@ -19,13 +19,18 @@ Google AI Edge LiteRT-LM.
 - Experimental local mobile action planning with deterministic rule fallback and explicit confirmation.
 - Schema-driven tool validation plus Agent run tracing for plan-confirm-observe execution, safety checks, read-only bounded retry, and persistent audit events.
 - Public read-only search results are treated as Agent evidence: `web_search`
-  does not open a browser, and the runtime returns public facts to the model for
-  comparison, summarization, or another public read-only lookup when needed.
+  does not open a browser, uses typed `general` / `weather_current` evidence
+  requests, and returns public facts with source/freshness metadata to the model
+  for comparison, summarization, or another public read-only lookup when needed.
+  Queries that appear to contain personal data or secrets require confirmation
+  before network access.
 - Remote OpenAI-compatible `tool_calls` support both single calls and guarded
-  public-evidence batches. Multiple calls in one model turn are executed in
-  parallel only when every tool is public, read-only, no-confirmation,
-  non-private, and side-effect free; mixed batches fail closed before any tool
-  is run.
+  public-evidence batches. In remote mode, direct built-in Skills still run as
+  local preflight, while non-Skill requests can be planned by the model using
+  safe planning tools; non-public execution still returns to local validation
+  and confirmation. Multiple calls in one model turn are executed in parallel
+  only when every tool is public, read-only, no-confirmation, non-private, and
+  side-effect free; mixed batches fail closed before any tool is run.
 - Value-free Skill checkpoint persistence records only run/request/step ids,
   manifest identity, output keys, and private-output refs for pending Skill
   confirmations; raw continuation outputs and executable payload values stay
@@ -36,12 +41,15 @@ Google AI Edge LiteRT-LM.
   failures, provider failures, structured error codes, and LocalOnly device
   context outputs.
 - Minimal device context snapshots plus confirmed clipboard, calendar, contact,
-  current-app notification summary, foreground-app, recent-file metadata, and
+  current-app notification summary, foreground-app usage-stats estimates,
+  recent-file metadata, and
   recent-screenshot OCR, recent-image OCR, one-shot current-screen screenshot
   OCR, and a confirmed current-screen Accessibility text snapshot path for
   controlled context access.
 - Confirmed Android runtime permission requests for tools that need calendar,
-  contact, media, or reminder notification posting access.
+  contact, media, or reminder notification posting access, including Android
+  14+ selected visual media access when the user grants only chosen photos or
+  videos.
 - Runtime permission denial is observed as a structured tool failure without
   executing or automatically retrying the tool.
 - Confirmed external navigation for safe HTTPS deep links, package-level app
@@ -108,12 +116,20 @@ Android emulator `10.0.2.2`.
 API keys are stored with Android Keystore-backed encryption and are removed
 when the user clears the key field.
 When the remote model requests tools, PocketMind still routes the request
-through the local Agent runtime. A single low-risk public evidence tool such as
-`web_search` can execute without confirmation, and a batch of such public
-evidence tools can run concurrently. Any batch containing private local reads,
-runtime-permission tools, external navigation, sharing, drafts, scheduling, or
-other side-effect tools is rejected as a whole rather than executing a safe
-subset.
+through the local Agent runtime. Remote mode first lets explicit built-in
+Skills handle local-owned commands such as clipboard, contacts, screen text,
+OCR, settings, and direct search; prompts that are not recognized as direct
+Skills can then be planned by the remote model with the safe model-planning
+tool schema. A single low-risk public evidence tool such as `web_search` can
+execute without confirmation for public queries, and a batch of such public
+evidence tools can run concurrently. Queries that appear to contain personal
+data or secrets are moved back to the confirmation path before network access.
+External navigation, sharing, drafts, and local reminder-style tools may be
+visible to the remote model as planning options, but are still validated
+locally and require the same confirmation gates as local-model requests. Any
+batch containing private local reads, runtime-permission tools, external
+navigation, sharing, drafts, scheduling, or other side-effect tools is rejected
+as a whole rather than executing a safe subset.
 
 Memory recall is currently a lightweight on-device token/hash index over saved
 sessions, with a conservative in-memory alias index for explicit
@@ -179,7 +195,8 @@ The same entry also exposes recent persisted tool audit events for review. The
 audit list shows only event time, event type, tool name, status, risk,
 permission names, and a parameter-free generated summary; it does not show tool
 arguments, prompts, remote responses, raw clipboard text, Authorization
-headers, or API keys.
+headers, or API keys. The local audit table is pruned to the most recent 500
+events.
 Clipboard requests such as “读取剪贴板” become confirmed `read_clipboard`
 tool calls. After confirmation, clipboard text is used only for the immediate
 local follow-up answer and is redacted from trace, audit, and persisted chat
@@ -198,9 +215,11 @@ Requests to OCR multiple screenshots are rejected. After confirmation,
 PocketMind reads only the most recent screenshot through Android media
 permissions, extracts a bounded local OCR text excerpt, and does not persist
 the image URI, path, raw pixels, or OCR text in trace/audit. The permission
-boundary is `READ_MEDIA_IMAGES` on Android 13+ or legacy storage read permission
-on older Android versions; this is not current-screen capture, visual
-understanding, arbitrary media OCR, or multi-screenshot OCR. The OCR excerpt
+boundary is `READ_MEDIA_IMAGES` on Android 13+, plus
+`READ_MEDIA_VISUAL_USER_SELECTED` on Android 14+ when the system grants only
+selected photos/videos, or legacy storage read permission on older Android
+versions; this is not current-screen capture, visual understanding, arbitrary
+media OCR, or multi-screenshot OCR. The OCR excerpt
 may preserve recognized block and line order from ML Kit, but it does not add
 coordinates, labels, captions, or image semantics. Remote model mode
 stops before automatic continuation and asks the user to switch local or
@@ -211,10 +230,12 @@ scans up to 3 recent images through Android media permissions, extracts the
 first bounded local OCR text excerpt, and uses the same LocalOnly, trace/audit
 redaction, and remote-mode protection as screenshot OCR. Plain “最近图片”
 requests use a skill-first, metadata-only `query_recent_files(kind="images")`
-path and do not read image pixels or OCR text. Requests for all/many/more than
-3 images, implementation/API/permission discussion, negated reads, or
-visual/semantic image understanding such as describing what is in an image are
-rejected from image OCR routing.
+path and do not read image pixels or OCR text. Android 13+ non-media recent
+files (`documents`, `downloads`, `others`) are not directly queryable by this
+tool; those files must come from the system picker or share input. Requests for
+all/many/more than 3 images, implementation/API/permission discussion,
+negated reads, or visual/semantic image understanding such as describing what
+is in an image are rejected from image OCR routing.
 Requests such as “最近通知” become confirmed `query_recent_notifications`
 tool calls. The tool reads only PocketMind/current-app active notification
 metadata, defaults to 5 entries, caps requests at 20, and returns LocalOnly

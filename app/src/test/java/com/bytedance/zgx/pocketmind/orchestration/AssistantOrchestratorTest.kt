@@ -122,6 +122,26 @@ class AssistantOrchestratorTest {
     }
 
     @Test
+    fun remotePlanningToolScopeIncludesSafeActionDraftsAndExcludesLocalEvidence() {
+        val orchestrator = AssistantOrchestrator(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = NeverActionRuntime(),
+        )
+
+        val publicEvidenceTools = orchestrator.availableRemoteToolSpecs(RemoteToolScope.PublicEvidenceOnly)
+        val planningTools = orchestrator.availableRemoteToolSpecs(RemoteToolScope.ModelPlanning)
+
+        assertTrue(publicEvidenceTools.any { tool -> tool.name == MobileActionFunctions.WEB_SEARCH })
+        assertTrue(publicEvidenceTools.none { tool -> tool.name == MobileActionFunctions.COMPOSE_EMAIL })
+        assertTrue(planningTools.any { tool -> tool.name == MobileActionFunctions.WEB_SEARCH })
+        assertTrue(planningTools.any { tool -> tool.name == MobileActionFunctions.COMPOSE_EMAIL })
+        assertTrue(planningTools.any { tool -> tool.name == MobileActionFunctions.SEARCH_MAPS })
+        assertTrue(planningTools.none { tool -> tool.name == MobileActionFunctions.READ_CLIPBOARD })
+        assertTrue(planningTools.none { tool -> tool.name == MobileActionFunctions.QUERY_CONTACTS })
+        assertTrue(planningTools.none { tool -> tool.name == MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR })
+    }
+
+    @Test
     fun remoteModelUnknownToolRequestFailsRun() {
         val orchestrator = AssistantOrchestrator(
             memoryIndex = MemoryRepository(),

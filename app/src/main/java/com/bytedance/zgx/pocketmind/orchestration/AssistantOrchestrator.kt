@@ -12,6 +12,8 @@ import com.bytedance.zgx.pocketmind.tool.ToolResult
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.ToolSpec
+import com.bytedance.zgx.pocketmind.tool.isPublicEvidenceBatchEligible
+import com.bytedance.zgx.pocketmind.tool.isRemoteModelPlanningEligible
 
 sealed class AssistantRoute {
     data class Chat(
@@ -48,6 +50,7 @@ interface AssistantRouter : AutoCloseable {
         actionModelPath: String? = null,
         deviceContext: DeviceContextSnapshot? = null,
         sessionId: String? = null,
+        options: AgentRunOptions = AgentRunOptions(),
     ): AssistantRoute
 
     fun requestRecoveryAction(action: AgentRecoveryAction, sessionId: String? = null): AssistantRoute
@@ -93,6 +96,14 @@ interface AssistantRouter : AutoCloseable {
     fun deleteRunsForSession(sessionId: String): Int = 0
 
     fun availableToolSpecs(): List<ToolSpec> = emptyList()
+
+    fun availableRemoteToolSpecs(scope: RemoteToolScope = RemoteToolScope.PublicEvidenceOnly): List<ToolSpec> =
+        availableToolSpecs().filter { spec ->
+            when (scope) {
+                RemoteToolScope.PublicEvidenceOnly -> spec.isPublicEvidenceBatchEligible()
+                RemoteToolScope.ModelPlanning -> spec.isRemoteModelPlanningEligible()
+            }
+        }
 }
 
 class AssistantOrchestrator(
@@ -127,6 +138,7 @@ class AssistantOrchestrator(
         actionModelPath: String?,
         deviceContext: DeviceContextSnapshot?,
         sessionId: String?,
+        options: AgentRunOptions,
     ): AssistantRoute =
         agentLoopRuntime.runOnce(
             input = input,
@@ -135,6 +147,7 @@ class AssistantOrchestrator(
             actionModelPath = actionModelPath,
             deviceContext = deviceContext,
             sessionId = sessionId,
+            options = options,
         ).toAssistantRoute()
 
     override fun requestRecoveryAction(action: AgentRecoveryAction, sessionId: String?): AssistantRoute =
@@ -202,6 +215,14 @@ class AssistantOrchestrator(
 
     override fun availableToolSpecs(): List<ToolSpec> =
         toolRegistry.specs()
+
+    override fun availableRemoteToolSpecs(scope: RemoteToolScope): List<ToolSpec> =
+        availableToolSpecs().filter { spec ->
+            when (scope) {
+                RemoteToolScope.PublicEvidenceOnly -> spec.isPublicEvidenceBatchEligible()
+                RemoteToolScope.ModelPlanning -> spec.isRemoteModelPlanningEligible()
+            }
+        }
 
     override fun close() {
         (actionPlanningRuntime as? AutoCloseable)?.close()

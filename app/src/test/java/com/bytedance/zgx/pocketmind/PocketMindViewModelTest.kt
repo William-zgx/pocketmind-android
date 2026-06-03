@@ -53,6 +53,7 @@ import com.bytedance.zgx.pocketmind.orchestration.AgentObservationResult
 import com.bytedance.zgx.pocketmind.orchestration.AgentPlan
 import com.bytedance.zgx.pocketmind.orchestration.AgentRecoveryAction
 import com.bytedance.zgx.pocketmind.orchestration.AgentRun
+import com.bytedance.zgx.pocketmind.orchestration.AgentRunOptions
 import com.bytedance.zgx.pocketmind.orchestration.AgentRunState
 import com.bytedance.zgx.pocketmind.orchestration.AgentTraceRunSummary
 import com.bytedance.zgx.pocketmind.orchestration.AgentTraceStepSummary
@@ -60,7 +61,9 @@ import com.bytedance.zgx.pocketmind.orchestration.AssistantRoute
 import com.bytedance.zgx.pocketmind.orchestration.AssistantRouter
 import com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestrator
 import com.bytedance.zgx.pocketmind.orchestration.InMemoryAgentTraceStore
+import com.bytedance.zgx.pocketmind.orchestration.InitialPlanningMode
 import com.bytedance.zgx.pocketmind.orchestration.PendingExternalOutcomeSnapshot
+import com.bytedance.zgx.pocketmind.orchestration.RemoteToolScope
 import com.bytedance.zgx.pocketmind.runtime.LiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatEvent
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntime
@@ -2236,6 +2239,45 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModeUsesModelFirstPlanningAndExposesSafePlanningToolsToRemoteRuntime() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-filter",
+                promptForModel = "北京天气怎么样？",
+                memoryHits = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("北京天气怎么样？")
+        advanceUntilIdle()
+
+        val tools = remoteRuntime.calls.single().tools
+        assertEquals(InitialPlanningMode.ModelFirstRemoteTools, assistantRouter.lastRouteOptions?.initialPlanningMode)
+        assertEquals(RemoteToolScope.ModelPlanning, assistantRouter.lastRouteOptions?.remoteToolScope)
+        assertTrue(tools.isNotEmpty())
+        assertTrue(tools.any { spec -> spec.name == MobileActionFunctions.WEB_SEARCH })
+        assertTrue(tools.any { spec -> spec.name == MobileActionFunctions.COMPOSE_EMAIL })
+        assertTrue(tools.any { spec -> spec.name == MobileActionFunctions.SEARCH_MAPS })
+        assertTrue(tools.any { spec -> spec.name == MobileActionFunctions.SHARE_TEXT })
+        assertTrue(tools.none { spec -> spec.privateOutputKeys.isNotEmpty() })
+        assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.READ_CLIPBOARD })
+        assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.QUERY_CONTACTS })
+        assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR })
+    }
+
+    @Test
     fun remotePublicEvidenceToolCallBatchExecutesAndContinuesWithModel() = runTest(dispatcher) {
         val requests = listOf(
             ToolRequest(
@@ -2345,6 +2387,111 @@ class PocketMindViewModelTest {
         assertEquals("北京和上海今天温差约 3 度。", sessionStore.messages.last().text)
         assertEquals(MessagePrivacy.RemoteEligible, sessionStore.messages.last().privacy)
         assertEquals("就绪 · 远程", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun remotePublicEvidenceToolCallBatchRetriesOnlyRetryableFailures() = runTest(dispatcher) {
+        val requests = listOf(
+            ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京 今天 天气"),
+                reason = "remote tool call",
+            ),
+            ToolRequest(
+                id = "call-shanghai",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "上海 今天 天气"),
+                reason = "remote tool call",
+            ),
+        )
+        val plans = requests.map { request ->
+            AgentPlan.UseTool(
+                request = request,
+                draft = ActionDraft(
+                    functionName = MobileActionFunctions.WEB_SEARCH,
+                    title = "Web 搜索",
+                    summary = "将使用 Web 搜索工具查询并整理结果：${request.arguments["query"]}",
+                    parameters = request.arguments,
+                ),
+                plannedByModel = true,
+                fallbackReason = "remote tool batch",
+                safetyDecision = SafetyDecision(
+                    outcome = SafetyOutcome.Allow,
+                    reason = "Read-only web search can execute without confirmation.",
+                ),
+            )
+        }
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-tool-batch-retry",
+                promptForModel = "北京和上海今天温差多少？",
+                memoryHits = emptyList(),
+            ),
+            modelToolBatchObservation = AgentModelObservationResult(
+                run = AgentRun("run-remote-tool-batch-retry", "北京和上海今天温差多少？", AgentRunState.ExecutingTool, 1L, 2L),
+                decision = AgentObservationDecision.PlanToolBatch(
+                    plans = plans,
+                    reason = "Remote model requested 2 parallel public evidence tool calls.",
+                ),
+                steps = emptyList(),
+            ),
+            toolBatchObservation = AgentObservationResult(
+                run = AgentRun("run-remote-tool-batch-retry", "北京和上海今天温差多少？", AgentRunState.GeneratingAnswer, 1L, 3L),
+                result = ToolResult(
+                    requestId = "public-evidence-batch",
+                    status = ToolStatus.Succeeded,
+                    summary = "工具执行结果：已完成 2 个公开只读工具调用。",
+                    data = mapOf("toolName" to "public_evidence_batch", "toolCount" to "2"),
+                ),
+                assistantMessage = "工具执行结果：已完成 2 个公开只读工具调用。",
+                decision = AgentObservationDecision.ContinueWithModel(
+                    requiresLocalModel = false,
+                    reason = "Parallel public evidence tools completed.",
+                ),
+                continuationPromptForModel = "请综合北京和上海的天气结果计算温差。",
+                steps = emptyList(),
+            ),
+            modelObservation = AgentModelObservationResult(
+                run = AgentRun("run-remote-tool-batch-retry", "北京和上海今天温差多少？", AgentRunState.Completed, 1L, 4L),
+                decision = AgentObservationDecision.Complete,
+                steps = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime(
+            eventBatches = listOf(
+                listOf(RemoteChatEvent.ToolCalls(requests)),
+                listOf(RemoteChatEvent.TextDelta("已综合两地天气。")),
+            ),
+        )
+        val executor = RetryableFailureThenSuccessToolExecutor(failOnceRequestId = "call-shanghai")
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            actionExecutor = executor,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("北京和上海今天温差多少？")
+        advanceUntilIdle()
+
+        assertEquals(3, executor.executedRequests.size)
+        assertEquals(1, executor.executedRequests.count { request -> request.id == "call-beijing" })
+        assertEquals(2, executor.executedRequests.count { request -> request.id == "call-shanghai" })
+        assertEquals(1, assistantRouter.observeToolBatchCallCount)
+        assertEquals(
+            setOf(ToolStatus.Succeeded),
+            assistantRouter.lastObservedResults.map { result -> result.status }.toSet(),
+        )
+        assertEquals("已综合两地天气。", sessionStore.messages.last().text)
     }
 
     @Test
@@ -5085,6 +5232,36 @@ class PocketMindViewModelTest {
         }
     }
 
+    private class RetryableFailureThenSuccessToolExecutor(
+        private val failOnceRequestId: String,
+    ) : ToolExecutor {
+        val executedRequests: MutableList<ToolRequest> = Collections.synchronizedList(mutableListOf())
+        private val attemptsByRequestId = mutableMapOf<String, Int>()
+
+        override fun execute(request: ToolRequest): ToolResult {
+            executedRequests += request
+            val attempt = synchronized(attemptsByRequestId) {
+                val nextAttempt = attemptsByRequestId.getOrDefault(request.id, 0) + 1
+                attemptsByRequestId[request.id] = nextAttempt
+                nextAttempt
+            }
+            return if (request.id == failOnceRequestId && attempt == 1) {
+                ToolResult(
+                    requestId = request.id,
+                    status = ToolStatus.Failed,
+                    summary = "temporary network unavailable",
+                    retryable = true,
+                )
+            } else {
+                ToolResult(
+                    requestId = request.id,
+                    status = ToolStatus.Succeeded,
+                    summary = "executed",
+                )
+            }
+        }
+    }
+
     private class ThrowingToolExecutor(
         private val throwable: Throwable,
     ) : ToolExecutor {
@@ -5208,6 +5385,8 @@ class PocketMindViewModelTest {
             private set
         var lastRouteSessionId: String? = null
             private set
+        var lastRouteOptions: AgentRunOptions? = null
+            private set
         var lastRecoverySessionId: String? = null
             private set
         var lastRestorePendingSessionId: String? = null
@@ -5226,9 +5405,11 @@ class PocketMindViewModelTest {
             actionModelPath: String?,
             deviceContext: com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot?,
             sessionId: String?,
+            options: AgentRunOptions,
         ): AssistantRoute {
             routeCallCount += 1
             lastRouteSessionId = sessionId
+            lastRouteOptions = options
             routeFailure?.let { throw it }
             val route = routeResult ?:
                 AssistantRoute.Chat(

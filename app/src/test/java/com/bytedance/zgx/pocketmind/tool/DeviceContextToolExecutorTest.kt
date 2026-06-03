@@ -62,6 +62,8 @@ class DeviceContextToolExecutorTest {
         assertEquals(MobileActionFunctions.QUERY_FOREGROUND_APP, result.data["toolName"])
         assertEquals(MessagePrivacy.LocalOnly.name, result.data["privacy"])
         assertEquals("true", result.data["requiresLocalModel"])
+        assertEquals("usage_stats_estimate", result.data["source"])
+        assertEquals("estimate", result.data["confidence"])
         assertEquals("com.example.mail", result.data["packageName"])
         assertEquals("Mail", result.data["appLabel"])
         assertEquals("1234", result.data["lastTimeUsedMillis"])
@@ -305,13 +307,14 @@ class DeviceContextToolExecutorTest {
         assertEquals(5, provider.lastMaxCount)
         assertEquals("all", result.data["kind"])
         assertEquals("5", result.data["maxCount"])
+        assertEquals("granted_media_only", result.data["mediaAccessScope"])
     }
 
     @Test
     fun recentScreenshotsSuccessStaysLocalOnlyAndMinimalJson() {
         val provider = RecordingRecentFileProvider(
             RecentFileReadResult.Available(
-                listOf(
+                items = listOf(
                     com.bytedance.zgx.pocketmind.device.RecentFileItem(
                         id = 42L,
                         name = "Screenshot_20260531.png",
@@ -321,6 +324,7 @@ class DeviceContextToolExecutorTest {
                         lastModifiedMillis = 7_000L,
                     ),
                 ),
+                mediaAccessScope = "user_selected_visual_media",
             ),
         )
         val executor = RecentFilesToolExecutor(provider)
@@ -344,6 +348,7 @@ class DeviceContextToolExecutorTest {
         assertEquals("true", result.data["requiresLocalModel"])
         assertEquals("screenshots", result.data["kind"])
         assertEquals("1", result.data["maxCount"])
+        assertEquals("user_selected_visual_media", result.data["mediaAccessScope"])
         val files = JSONArray(result.data.getValue("filesJson"))
         val file = files.getJSONObject(0)
         assertEquals(setOf("name", "mimeType", "kind", "sizeBytes", "lastModifiedMillis"), file.keysSet())
@@ -532,6 +537,7 @@ class DeviceContextToolExecutorTest {
                     truncated = true,
                 ),
                 scannedCount = 1,
+                mediaAccessScope = "user_selected_visual_media",
             ),
         )
         val executor = RecentScreenshotOcrToolExecutor(provider)
@@ -557,6 +563,7 @@ class DeviceContextToolExecutorTest {
         assertEquals("true", result.data["truncated"])
         assertEquals("true", result.data["ocrTextIncluded"])
         assertEquals("false", result.data["rawPayloadIncluded"])
+        assertEquals("user_selected_visual_media", result.data["mediaAccessScope"])
         assertEquals("ocr_text_local_only_no_uri_path_or_pixels_persisted", result.data["metadataPolicy"])
         assertFalse(result.data.containsKey("id"))
         assertFalse(result.data.containsKey("path"))
@@ -579,6 +586,7 @@ class DeviceContextToolExecutorTest {
                     truncated = false,
                 ),
                 scannedCount = 2,
+                mediaAccessScope = "full_visual_media",
             ),
         )
         val executor = RecentScreenshotOcrToolExecutor(provider)
@@ -601,6 +609,7 @@ class DeviceContextToolExecutorTest {
         assertEquals("照片标题\n\n照片里的文字", result.data["ocrText"])
         assertEquals("false", result.data["truncated"])
         assertEquals("true", result.data["ocrTextIncluded"])
+        assertEquals("full_visual_media", result.data["mediaAccessScope"])
         assertEquals("ocr_text_local_only_no_uri_path_or_pixels_persisted", result.data["metadataPolicy"])
         assertFalse(result.data.containsKey("id"))
         assertFalse(result.data.containsKey("path"))

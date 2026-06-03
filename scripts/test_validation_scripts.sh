@@ -93,6 +93,15 @@ case "${1:-}" in
       am\ start\ -W\ -n*)
         echo "Status: ok"
         ;;
+      run-as\ com.bytedance.zgx.pocketmind\ am\ broadcast\ -n\ com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver*)
+        echo "Broadcast completed: result=0"
+        ;;
+      input\ tap*|input\ text*|input\ keyevent*)
+        echo "OK"
+        ;;
+      uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote.xml"
+        ;;
       *)
         echo "unexpected shell command: $*" >&2
         exit 2
@@ -114,6 +123,29 @@ case "${1:-}" in
     ;;
   install|uninstall)
     echo "Success"
+    ;;
+  exec-out)
+    shift
+    case "$*" in
+      "screencap -p")
+        printf 'fake-png\n'
+        ;;
+      *)
+        echo "unexpected exec-out command: $*" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  pull)
+    source="${2:-}"
+    destination="${3:-}"
+    if [[ "$source" != "/sdcard/pocketmind-live-remote.xml" || -z "$destination" ]]; then
+      echo "unexpected pull command: $*" >&2
+      exit 2
+    fi
+    mkdir -p "$(dirname "$destination")"
+    printf '<hierarchy><node text="%s" /></hierarchy>\n' "${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}" > "$destination"
+    echo "1 file pulled"
     ;;
   *)
     echo "unexpected adb command: $*" >&2
@@ -438,6 +470,38 @@ DEFAULT_INSTRUMENTATION_OUTPUT="$(awk -F= '$1 == "instrumentation_output_file" {
   fail "Expected default nested instrumentation output to be non-empty"
 ARTIFACT_DIR="$SAVED_ARTIFACT_DIR"
 export ARTIFACT_DIR
+
+reset_logs
+LIVE_REMOTE_TEST_TOKEN="$TMP_DIR/live-remote-token-from-env"
+expect_success \
+  "live remote emulator uses app uid for debug receiver broadcasts" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
+  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  scripts/live_remote_emulator.sh
+grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
+  fail "Expected live remote helper to assemble the debug APK"
+receiver_broadcast_count="$(
+  grep -c -- "shell run-as com.bytedance.zgx.pocketmind am broadcast -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+)"
+[[ "$receiver_broadcast_count" -ge 2 ]] ||
+  fail "Expected live remote helper to configure and clear the debug receiver through run-as"
+if grep -q -- "-s emulator-5554 shell am broadcast" "$FAKE_ADB_LOG"; then
+  fail "Live remote helper must not broadcast to the debug receiver from the shell uid"
+fi
+grep -q -- "--ez clearState true" "$FAKE_ADB_LOG" ||
+  fail "Expected live remote helper to request state clearing during setup"
+grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
+  fail "Expected live remote helper to clear remote config on exit"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "base_url=<redacted>"
+if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.properties"; then
+  fail "Live remote report must not persist the remote API key"
+fi
 
 REGRESSION_COUNT_FIXTURE="$TMP_DIR/android-test-count-fixture"
 mkdir -p "$REGRESSION_COUNT_FIXTURE/java/example"

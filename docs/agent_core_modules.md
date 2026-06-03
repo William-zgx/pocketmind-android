@@ -47,6 +47,11 @@ Current status:
   satisfy `privacy=LocalOnly` and `requiresLocalModel=true`; schema-valid but
   remote-eligible private output is converted into a non-retryable
   `InvalidResult`.
+- `ToolResult.data` remains a string map for Android/runtime compatibility, so
+  payload fields such as `resultsJson`, `filesJson`, `contactsJson`,
+  `tasksJson`, `policyJson`, and `blocksJson` are declared as JSON-encoded
+  strings with `contentMediaType=application/json` instead of pretending to be
+  arrays or objects in the schema.
 - `ToolSpec.resultContinuationPolicy` separates the tool safety contract from
   answer synthesis. `PublicEvidence` tools such as `web_search` may return
   public evidence to the model; `LocalEvidence` tools such as contacts,
@@ -61,7 +66,21 @@ Current status:
   and declares no device-context, runtime-permission, MediaProjection,
   scheduling, notification, external-navigation, external-share, or other
   side-effect permission. Today this keeps `web_search` batchable and keeps
-  local/private or action tools out of remote batch execution.
+  local/private or action tools out of remote batch execution. Public
+  `web_search` queries can run without confirmation, but the safety policy
+  dynamically moves queries that look like personal data or secrets back to the
+  confirmation path before network access.
+- `web_search` now uses a typed evidence request rather than query-text
+  heuristics. `searchMode=general` stays on the general public search endpoint
+  even when the query contains weather words; `searchMode=weather_current` is
+  the only mode that calls Open-Meteo. The result keeps the legacy top-level
+  `summaryText`/`resultsJson` shape, but `resultsJson` is evidence schema v1
+  with `schemaVersion`, `query`, `searchMode`, `retrievedAt`, `freshness`,
+  `sources`, and bounded `results`.
+- `ToolExecutionBoundary` owns app-side tool timeout/exception mapping and
+  public-evidence batch retry. ViewModel code keeps UI/job/run lifecycle, while
+  thrown executor errors become retryable `ExecutionFailed` results and a
+  public-evidence batch retries only failed retryable request ids once.
 - For tools that declare `privateOutputKeys`, failed, rejected, and cancelled
   results are still not required to satisfy the success schema, but the Tool
   Registry sanitizes their non-success contract: data is rebuilt from a small
@@ -272,6 +291,18 @@ Current status:
   registry validation, safety evaluation, trace/audit recording, and explicit
   user confirmation before any Android tool execution. The legacy remote
   `send()` text stream remains available for pure chat compatibility.
+- Remote mode uses `AgentRunOptions(initialPlanningMode=ModelFirstRemoteTools)`
+  for the initial turn, with a direct built-in Skill preflight. Explicit
+  built-in Skills still produce local confirmations or local no-confirmation
+  tool execution first, protecting clipboard, contacts, files, screen text, OCR,
+  settings, and direct search workflows. If the input is not claimed by a direct
+  Skill, the remote model can decide whether to call tools through
+  `RemoteToolScope.ModelPlanning`. That scope exposes only remote-safe planning
+  specs: public evidence tools plus non-private, non-critical
+  draft/navigation/share/background-planning tools that still require local
+  confirmation. Local evidence tools such as clipboard, contacts, files,
+  calendar details, notifications, screen text, and OCR remain outside remote
+  planning.
 - Remote OpenAI-compatible chat may also return multiple `tool_calls` in one
   model turn. The runtime treats this as a batch only when every request is a
   public evidence eligible tool such as `web_search`; it validates the whole
@@ -279,10 +310,11 @@ Current status:
   subset, records `PlanToolBatch`, and aggregates successful public results
   into one continuation prompt for model synthesis. This solves comparison and
   multi-evidence questions generically rather than hard-coding weather or city
-  logic in the tool layer. Batch tool execution fail-closes through ordinary
-  tool observation: thrown executor errors become failed `ToolResult`s, invalid
-  or local-only batch results fail the run, and cancelled results cancel the
-  Agent run instead of being reported as generic failures.
+  logic in the tool layer. Batch tool execution retries retryable per-request
+  failures once before observation, then fail-closes through ordinary tool
+  observation: thrown executor errors become failed `ToolResult`s, invalid or
+  local-only batch results fail the run, and cancelled results cancel the Agent
+  run instead of being reported as generic failures.
 - Local model answers can also hand back an explicit, whole-output
   `call:function{...}` request. That protocol is parsed strictly: ordinary
   answers are left alone, malformed calls and unknown tools fail closed, and
@@ -547,10 +579,17 @@ Tests:
 - `AgentLoopRuntimeTest.replannedToolCannotReuseExistingRequestId`
 - `AgentLoopRuntimeTest.remoteModelMultiplePublicEvidenceToolCallsPlanBatchWithoutConfirmation`
 - `AgentLoopRuntimeTest.remoteModelMixedToolBatchIsRejectedAsWholeBeforeAnyToolRequest`
+- `AgentLoopRuntimeTest.modelFirstRemoteToolsSkipsActionRuntimeForNonSkillInput`
+- `AgentLoopRuntimeTest.modelFirstRemoteToolsKeepsDirectSkillPreflightLocal`
+- `AgentLoopRuntimeTest.modelFirstRemoteToolsKeepsDirectPublicEvidenceSkillLocal`
+- `AgentLoopRuntimeTest.defaultRuleFirstStillPlansActionLikeInputBeforeModelAnswer`
+- `AssistantOrchestratorTest.remotePlanningToolScopeIncludesSafeActionDraftsAndExcludesLocalEvidence`
 - `AgentLoopRuntimeTest.publicEvidenceToolBatchResultsAggregateAndContinueToModel`
 - `AgentLoopRuntimeTest.publicEvidenceToolBatchCancelledResultCancelsRun`
+- `ToolExecutionBoundaryTest`
 - `PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutesAndContinuesWithModel`
 - `PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutorFailureIsObservedAsToolFailure`
+- `PocketMindViewModelTest.remoteModeUsesModelFirstPlanningAndExposesSafePlanningToolsToRemoteRuntime`
 - `AgentLoopRuntimeTest.skillFirstClipboardSummaryShareBypassesActionPlannerAndRequestsConfirmation`
 - `AgentLoopRuntimeTest.skillFirstClipboardContextBypassesActionPlannerAndRequestsConfirmation`
 - `AgentLoopRuntimeTest.skillFirstPlanStillUsesRegistryAndRejectsInvalidToolArguments`
@@ -924,26 +963,32 @@ Current status:
   outputs and trace redaction share the same local-only policy source.
 - Foreground app summaries may require Usage Access. Without the grant the tool
   returns a structured permission failure with the recovery settings action;
-  successful reads remain `LocalOnly` minimal app metadata, not usage history
-  or screen content.
+  successful reads remain `LocalOnly` minimal app metadata with
+  `source=usage_stats_estimate` and `confidence=estimate`, not a window manager
+  truth source, usage history, or screen content.
 - `query_recent_files` supports a `screenshots` kind that filters recent image
   metadata likely belonging to screenshot folders or names. It remains
   metadata-only and returns the same minimal fields as other recent-file reads.
   The MediaStore cursor stops once the requested number of matching metadata
   rows is collected, so the provider does not continue reading later file
   metadata after `maxCount` is satisfied. On Android 13 and above, non-media
-  file kinds such as `documents`, `downloads`, and `others` require system file
-  picker authorization instead of broad MediaStore runtime permissions; those
-  denials are surfaced as non-retryable for the same MediaStore tool.
+  file kinds such as `documents`, `downloads`, and `others` have no executable
+  direct-read authorization path for this MediaStore tool; the schema excludes
+  them and those files must be user-provided through the system file picker or
+  share input. Android 14+ selected photo/video grants are reported with
+  `mediaAccessScope=user_selected_visual_media` instead of being treated as
+  full-library access.
 - `read_recent_screenshot_ocr` is a separate skill-first, confirmed tool for
   explicit "识别最近 1 张截图文字" / recent screenshot OCR requests. It rejects
   multi-screenshot OCR requests, reads only the most recent screenshot pixels
-  after confirmation through `READ_MEDIA_IMAGES` or legacy storage permission,
-  extracts a bounded local OCR text excerpt, marks the result `LocalOnly`,
-  treats `ocrText` as private Skill output, and does not persist or expose the
-  MediaStore id, URI, path, original image, or raw pixels. OCR formatting
-  preserves recognized block/line order when ML Kit provides it, while still
-  omitting coordinates, image labels, captions, pixels, and visual semantics.
+  after confirmation through `READ_MEDIA_IMAGES`, Android 14+
+  `READ_MEDIA_VISUAL_USER_SELECTED` selected visual media access, or legacy
+  storage permission, extracts a bounded local OCR text excerpt, marks the
+  result `LocalOnly`, treats `ocrText` as private Skill output, and does not
+  persist or expose the MediaStore id, URI, path, original image, or raw
+  pixels. OCR formatting preserves recognized block/line order when ML Kit
+  provides it, while still omitting coordinates, image labels, captions,
+  pixels, and visual semantics.
   File metadata returned with the OCR result (`name`, `mimeType`, `sizeBytes`,
   and `lastModifiedMillis`) is treated as private output alongside `ocrText`.
   Remote mode treats the OCR continuation like other protected local context and
@@ -953,8 +998,10 @@ Current status:
 - `read_recent_image_ocr` is a separate skill-first, confirmed tool for
   explicit "识别最近图片/照片文字" requests. It scans up to 3 recent images, returns
   the first bounded local OCR text excerpt, marks the result `LocalOnly`, and
-  reuses the same trace/audit redaction, remote-mode protection, and private
-  Skill output boundary as screenshot OCR. Plain
+  reports whether the image candidate set came from full visual media or
+  Android 14+ user-selected visual media. It reuses the same trace/audit
+  redaction, remote-mode protection, and private Skill output boundary as
+  screenshot OCR. Plain
   `query_recent_files(kind="images")` remains metadata-only and does not read
   pixels. The parser rejects all/many/more-than-3 image OCR, implementation/API
   or permission discussion, negated reads, and visual/semantic image
@@ -1157,6 +1204,9 @@ Current status:
 - Audit events store request metadata, status, risk, permission names, and a
   short sanitized summary. They intentionally do not store tool arguments,
   prompts, remote responses, or secrets.
+- The Room-backed audit repository prunes old rows after each insert and keeps
+  only the most recent 500 audit events by `createdAtMillis`, preventing audit
+  metadata from growing without bound on-device.
 - Recent persisted audit events are now visible from the background task
   activity entry. The UI is intentionally metadata-only: time, event type, tool
   name, status, risk, permission names, and a parameter-free generated summary.
@@ -1211,6 +1261,7 @@ Tests:
 - `ToolRegistryTest.privateDeviceReadToolsMustRequireConfirmation`
 - `ToolAuditEventTest`
 - `ToolAuditRepositoryTest.unverifiedExternalLaunchAuditDoesNotClaimExecutionSuccess`
+- `ToolAuditRepositoryTest.recordPrunesOldAuditEventsToRetentionLimit`
 - `SessionRepositoryTest`
 - `AgentLoopRuntimeTest.confirmedToolResultIsObservedAndCompletesRun`
 - `AgentTraceStoreTest.roomStoreClearPendingConfirmationsForRunDeletesPersistedPendingAndCheckpoint`

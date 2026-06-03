@@ -43,7 +43,7 @@ items below.
   `scripts/verify_emulator.sh`. Current release-candidate validation should
   use `scripts/regression_emulator.sh` and record the runner-reported
   `instrumentation_test_count`; current `app/src/androidTest` source contains
-  23 `@Test` methods across 9 instrumentation test classes.
+  26 `@Test` methods across 10 instrumentation test classes.
 
 ## Remaining
 

@@ -139,7 +139,52 @@ class WebSearchToolExecutor(
                 data = mapOf("toolName" to request.toolName),
             )
         }
-        return when (val result = provider.search(query, request.arguments["searchMode"])) {
+        val searchMode = WebSearchMode.fromSchemaValue(request.arguments["searchMode"])
+            ?: return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "不支持的搜索模式：${request.arguments["searchMode"]}",
+                retryable = false,
+                data = mapOf("toolName" to request.toolName),
+            )
+        val freshnessArgument = request.arguments["freshness"]
+        val freshness = WebSearchFreshness.fromSchemaValue(freshnessArgument)
+            ?: if (freshnessArgument.isNullOrBlank()) {
+                searchMode.defaultFreshness
+            } else {
+                return request.failed(
+                    code = ToolErrorCode.InvalidRequest,
+                    summary = "不支持的搜索时效：$freshnessArgument",
+                    retryable = false,
+                    data = mapOf("toolName" to request.toolName),
+                )
+            }
+        val maxResultsArgument = request.arguments["maxResults"]
+        val maxResults = maxResultsArgument?.toIntOrNull()
+            ?: if (maxResultsArgument.isNullOrBlank()) {
+                3
+            } else {
+                return request.failed(
+                    code = ToolErrorCode.InvalidRequest,
+                    summary = "搜索结果数量必须是整数：$maxResultsArgument",
+                    retryable = false,
+                    data = mapOf("toolName" to request.toolName),
+                )
+            }
+        if (maxResults !in 1..5) {
+            return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "搜索结果数量必须在 1 到 5 之间：$maxResults",
+                retryable = false,
+                data = mapOf("toolName" to request.toolName),
+            )
+        }
+        val searchRequest = WebSearchRequest(
+            query = query,
+            searchMode = searchMode,
+            freshness = freshness,
+            maxResults = maxResults,
+        )
+        return when (val result = provider.search(searchRequest)) {
             is WebSearchReadResult.Available ->
                 request.succeeded(
                     summary = "已完成 Web 搜索：${result.summaryText}",
@@ -147,6 +192,10 @@ class WebSearchToolExecutor(
                         "toolName" to request.toolName,
                         "query" to result.query,
                         "source" to result.source,
+                        "searchMode" to result.searchMode.schemaValue,
+                        "retrievedAt" to result.retrievedAt.toString(),
+                        "freshness" to result.freshness.schemaValue,
+                        "maxResults" to result.maxResults.toString(),
                         "summaryText" to result.summaryText,
                         "resultsJson" to result.resultsJson,
                     ),
@@ -265,8 +314,10 @@ class ForegroundAppToolExecutor(
         return when (val result = provider.currentForegroundApp()) {
             is ForegroundAppReadResult.Available ->
                 request.succeeded(
-                    summary = "当前前台应用：${result.appInfo.appLabel}",
+                    summary = "当前前台应用估计：${result.appInfo.appLabel}",
                     data = request.localOnlyData() + mapOf(
+                        "source" to result.appInfo.source,
+                        "confidence" to result.appInfo.confidence,
                         "packageName" to result.appInfo.packageName,
                         "appLabel" to result.appInfo.appLabel,
                         "lastTimeUsedMillis" to result.appInfo.lastTimeUsedMillis.toString(),
@@ -421,6 +472,7 @@ class RecentFilesToolExecutor(
                     data = request.localOnlyData() + mapOf(
                         "kind" to kind.ifBlank { "all" },
                         "maxCount" to maxCount.toString(),
+                        "mediaAccessScope" to result.mediaAccessScope,
                         "fileCount" to result.items.size.toString(),
                         "filesJson" to result.items.toRecentFilesJsonString(),
                     ),
@@ -533,6 +585,7 @@ class RecentScreenshotOcrToolExecutor(
                             "source" to config.kind,
                             "maxCount" to maxCount.toString(),
                             "scannedCount" to result.scannedCount.toString(),
+                            "mediaAccessScope" to result.mediaAccessScope,
                             "ocrTextIncluded" to false.toString(),
                             "rawPayloadIncluded" to false.toString(),
                             "metadataPolicy" to "no_uri_path_or_pixels_persisted",
@@ -545,6 +598,7 @@ class RecentScreenshotOcrToolExecutor(
                             "source" to config.kind,
                             "maxCount" to maxCount.toString(),
                             "scannedCount" to result.scannedCount.toString(),
+                            "mediaAccessScope" to result.mediaAccessScope,
                             "name" to item.name,
                             "mimeType" to item.mimeType,
                             "kind" to item.kind,
