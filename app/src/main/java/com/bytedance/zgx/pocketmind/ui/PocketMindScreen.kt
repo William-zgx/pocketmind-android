@@ -115,6 +115,7 @@ import com.bytedance.zgx.pocketmind.GenerationParameters
 import com.bytedance.zgx.pocketmind.GenerationStats
 import com.bytedance.zgx.pocketmind.InferenceMode
 import com.bytedance.zgx.pocketmind.InstalledModelSummary
+import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
 import com.bytedance.zgx.pocketmind.LongTermMemorySummary
 import com.bytedance.zgx.pocketmind.MessageRole
 import com.bytedance.zgx.pocketmind.ModelCapability
@@ -1589,6 +1590,7 @@ private fun CurrentModelPanel(
                 )
             }
             if (!usingRemote) {
+                LocalTokenLimitBlock(state.localMaxTotalTokens)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BackendChip(
                         modifier = Modifier.testTag("backend_gpu_chip"),
@@ -2884,7 +2886,7 @@ private fun SectionTitle(
     }
 }
 
-private fun currentModelStatus(state: ChatUiState): String {
+internal fun currentModelStatus(state: ChatUiState): String {
     if (state.inferenceMode == InferenceMode.Remote) {
         val modelName = state.remoteModelConfig.modelName.ifBlank { "远程模型" }
         val ready = when {
@@ -2903,7 +2905,25 @@ private fun currentModelStatus(state: ChatUiState): String {
         state.modelPath != null -> "待加载"
         else -> state.statusText
     }
-    return "$modelName · ${state.backend.name} · $ready"
+    return "$modelName · ${state.backend.name} · " +
+        "${LocalModelTokenLimits.compactDisplayText(state.localMaxTotalTokens)} · $ready"
+}
+
+@Composable
+private fun LocalTokenLimitBlock(maxTotalTokens: Int) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = LocalModelTokenLimits.totalDisplayText(maxTotalTokens),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = LocalModelTokenLimits.inputDisplayText() +
+                " · ${LocalModelTokenLimits.outputDisplayText()}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 private fun capabilityLabel(capability: ModelCapability): String =

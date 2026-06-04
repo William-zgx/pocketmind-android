@@ -127,6 +127,8 @@ class PocketMindViewModel(
 ) : ViewModel() {
     private val runtimeLock = Mutex()
     private var generationJob: Job? = null
+    private var sessionRestoreJob: Job? = null
+    private var sessionRestoreGeneration: Long = 0L
     private var activeGenerationRunId: String? = null
     private var downloadMonitorJob: Job? = null
     private var activeDownloadId: Long? = null
@@ -873,44 +875,60 @@ class PocketMindViewModel(
 
     fun createNewSession() {
         if (_uiState.value.isBusy) return
-        sessionRepository.createNewSession()
+        val messages = sessionRepository.createNewSession()
+        val activeSessionId = sessionRepository.activeSessionId
+        val restoreGeneration = nextSessionRestoreGeneration()
         _uiState.update {
             it.copy(
                 sessions = sessionRepository.summaries(),
-                activeSessionId = sessionRepository.activeSessionId,
-                messages = emptyList(),
+                activeSessionId = activeSessionId,
+                messages = messages,
                 pendingConfirmation = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
+                isReady = if (runtime.isLoaded) false else it.isReady,
                 statusText = if (!runtime.isLoaded) "新会话" else "正在开启新会话",
             )
         }
         restorePendingAgentConfirmationIfAny(clearMissing = true)
         restorePendingExternalOutcomeIfAny(clearMissing = true)
         if (runtime.isLoaded) {
-            recreateConversationForActiveSession("新会话")
+            recreateConversationForMessages(
+                successPrefix = "新会话",
+                sessionId = activeSessionId,
+                messages = messages,
+                restoreGeneration = restoreGeneration,
+            )
         }
     }
 
     fun selectSession(sessionId: String) {
         if (_uiState.value.isBusy || _uiState.value.activeSessionId == sessionId) return
         val messages = sessionRepository.selectSession(sessionId) ?: return
+        val activeSessionId = sessionRepository.activeSessionId
+        val restoreGeneration = nextSessionRestoreGeneration()
         _uiState.update {
             it.copy(
-                activeSessionId = sessionRepository.activeSessionId,
+                activeSessionId = activeSessionId,
                 messages = messages,
                 pendingConfirmation = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
+                isReady = if (runtime.isLoaded) false else it.isReady,
                 statusText = if (!runtime.isLoaded) "已切换会话" else "正在恢复会话",
             )
         }
         restorePendingAgentConfirmationIfAny(clearMissing = true)
         restorePendingExternalOutcomeIfAny(clearMissing = true)
         if (runtime.isLoaded) {
-            recreateConversationForActiveSession("已恢复会话")
+            recreateConversationForMessages(
+                successPrefix = "已恢复会话",
+                sessionId = activeSessionId,
+                messages = messages,
+                restoreGeneration = restoreGeneration,
+            )
         }
     }
 
@@ -918,23 +936,31 @@ class PocketMindViewModel(
         if (_uiState.value.isBusy) return
         val deletedSessionId = sessionRepository.activeSessionId
         val messages = sessionRepository.deleteActiveSession() ?: return
+        val activeSessionId = sessionRepository.activeSessionId
+        val restoreGeneration = nextSessionRestoreGeneration()
         assistantOrchestrator.deleteRunsForSession(deletedSessionId)
         _uiState.update {
             it.copy(
                 sessions = sessionRepository.summaries(),
-                activeSessionId = sessionRepository.activeSessionId,
+                activeSessionId = activeSessionId,
                 messages = messages,
                 pendingConfirmation = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
+                isReady = if (runtime.isLoaded) false else it.isReady,
                 statusText = if (!runtime.isLoaded) "已删除会话" else "正在恢复会话",
             )
         }
         restorePendingAgentConfirmationIfAny(clearMissing = true)
         restorePendingExternalOutcomeIfAny(clearMissing = true)
         if (runtime.isLoaded) {
-            recreateConversationForActiveSession("已删除会话")
+            recreateConversationForMessages(
+                successPrefix = "已删除会话",
+                sessionId = activeSessionId,
+                messages = messages,
+                restoreGeneration = restoreGeneration,
+            )
         }
     }
 
@@ -1316,7 +1342,11 @@ class PocketMindViewModel(
                                 }
                             }
                         } else {
-                            runtime.send(route.promptForModel).collect { chunk ->
+                            collectLocalRuntimeResponse(
+                                promptForModel = route.promptForModel,
+                                history = stateBeforeSend.messages,
+                                parameters = _uiState.value.generationParameters,
+                            ) { chunk ->
                                 partial.append(chunk)
                                 _uiState.updateLastAssistant(partial.toString())
                             }
@@ -2449,7 +2479,11 @@ class PocketMindViewModel(
                         }
                     }
                 } else {
-                    runtime.send(promptForModel).collect { chunk ->
+                    collectLocalRuntimeResponse(
+                        promptForModel = promptForModel,
+                        history = stateAtStart.messages.dropLast(1),
+                        parameters = _uiState.value.generationParameters,
+                    ) { chunk ->
                         partial.append(chunk)
                         _uiState.updateLastAssistant(partial.toString())
                     }
@@ -2956,43 +2990,93 @@ class PocketMindViewModel(
     }
 
     private fun recreateConversationForActiveSession(successPrefix: String) {
-        _uiState.update {
-            it.copy(
-                isBusy = true,
-                isReady = false,
-                statusText = "正在恢复会话",
+        val sessionId = sessionRepository.activeSessionId
+        val history = sessionRepository.activeMessages()
+        val restoreGeneration = nextSessionRestoreGeneration()
+        recreateConversationForMessages(
+            successPrefix = successPrefix,
+            sessionId = sessionId,
+            messages = history,
+            restoreGeneration = restoreGeneration,
+        )
+    }
+
+    private suspend fun collectLocalRuntimeResponse(
+        promptForModel: String,
+        history: List<ChatMessage>,
+        parameters: GenerationParameters,
+        onChunk: (String) -> Unit,
+    ) {
+        runtimeLock.withLock {
+            runtime.recreateConversationForSend(
+                history = history,
+                prompt = promptForModel,
+                parameters = parameters,
             )
+            runtime.send(promptForModel).collect { chunk ->
+                onChunk(chunk)
+            }
         }
-        viewModelScope.launch(ioDispatcher) {
+    }
+
+    private fun recreateConversationForMessages(
+        successPrefix: String,
+        sessionId: String,
+        messages: List<ChatMessage>,
+        restoreGeneration: Long,
+    ) {
+        sessionRestoreJob?.cancel()
+        _uiState.update {
+            if (it.activeSessionId == sessionId) {
+                it.copy(
+                    isReady = false,
+                    statusText = "正在恢复会话",
+                )
+            } else {
+                it
+            }
+        }
+        sessionRestoreJob = viewModelScope.launch(ioDispatcher) {
             val result = runCatching {
                 runtimeLock.withLock {
                     runtime.recreateConversation(
-                        history = sessionRepository.activeMessages(),
+                        history = messages,
                         parameters = _uiState.value.generationParameters,
                     )
                 }
             }
             result.fold(
                 onSuccess = {
-                    _uiState.update {
-                        it.copy(
-                            isBusy = false,
-                            isReady = true,
-                            statusText = "$successPrefix · ${it.backend.label()}",
-                        )
+                    _uiState.update { current ->
+                        if (current.activeSessionId == sessionId && restoreGeneration == sessionRestoreGeneration) {
+                            current.copy(
+                                isReady = true,
+                                statusText = "$successPrefix · ${current.backend.label()}",
+                            )
+                        } else {
+                            current
+                        }
                     }
                 },
                 onFailure = { throwable ->
-                    _uiState.update {
-                        it.copy(
-                            isBusy = false,
-                            isReady = false,
-                            statusText = "恢复会话失败：${throwable.cleanMessage()}",
-                        )
+                    _uiState.update { current ->
+                        if (current.activeSessionId == sessionId && restoreGeneration == sessionRestoreGeneration) {
+                            current.copy(
+                                isReady = false,
+                                statusText = "恢复会话失败：${throwable.cleanMessage()}",
+                            )
+                        } else {
+                            current
+                        }
                     }
                 },
             )
         }
+    }
+
+    private fun nextSessionRestoreGeneration(): Long {
+        sessionRestoreGeneration += 1
+        return sessionRestoreGeneration
     }
 
     private fun createInitialState(): ChatUiState {

@@ -206,6 +206,7 @@ data class ChatUiState(
     val remoteModelConfig: RemoteModelConfig = RemoteModelConfig(),
     val backend: BackendChoice = BackendChoice.GPU,
     val generationParameters: GenerationParameters = GenerationParameters(),
+    val localMaxTotalTokens: Int = LocalModelTokenLimits.MAX_TOTAL_TOKENS,
     val statusText: String = "未加载模型",
     val isArm64Supported: Boolean = true,
     val availableModelStorageBytes: Long = 0L,

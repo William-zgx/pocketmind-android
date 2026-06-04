@@ -260,6 +260,14 @@ Current status:
   call `observeModelResult()` after generation, so successful answers finish as
   `Completed` instead of being recovered as stale `GeneratingAnswer` failures on
   the next process start.
+- The local LiteRT engine configuration now sets `EngineConfig.maxNumTokens`
+  from `LocalModelTokenLimits.MAX_TOTAL_TOKENS`. For the current Gemma 4
+  `.litertlm` chat assets this is intentionally capped at an app-level 8k
+  total window so conversation restore stays responsive on device. PocketMind
+  budgets local context before each local send: roughly 6k tokens for
+  system/history/current input and 2k tokens reserved for output because the
+  Kotlin Conversation API exposes no separate max-output-token knob. The UI
+  shows the total token window, input budget, and output reserve.
 - Model generation and parse failures now close the active run immediately via
   `failModelGeneration(runId, reason)`. The entry point only applies while the
   run is still `GeneratingAnswer`, appends a failure decision to trace, refreshes
@@ -613,6 +621,7 @@ Tests:
 - `AgentLoopRuntimeTest.publicEvidenceToolBatchResultsAggregateAndContinueToModel`
 - `AgentLoopRuntimeTest.publicEvidenceToolBatchCancelledResultCancelsRun`
 - `ToolExecutionBoundaryTest`
+- `LiteRtRuntimeConfigTest.engineConfigUsesExplicitLocalContextWindow`
 - `PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutesAndContinuesWithModel`
 - `PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutorFailureIsObservedAsToolFailure`
 - `PocketMindViewModelTest.remoteModeUsesModelFirstPlanningAndExposesSafePlanningToolsToRemoteRuntime`

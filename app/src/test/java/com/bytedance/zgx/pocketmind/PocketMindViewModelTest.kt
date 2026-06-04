@@ -87,11 +87,13 @@ import com.bytedance.zgx.pocketmind.tool.UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREF
 import java.io.File
 import java.util.Collections
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -1977,6 +1979,42 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun selectingSessionRestoresLocalConversationWithoutGlobalBusy() = runTest {
+        val ioDispatcher = StandardTestDispatcher(testScheduler)
+        val selectedMessage = ChatMessage(MessageRole.User, "切换后的会话")
+        val runtime = FakeLiteRtRuntime().apply { isLoaded = true }
+        val sessionStore = FakeSessionStore(
+            initialSessions = linkedMapOf(
+                "session-1" to listOf(ChatMessage(MessageRole.User, "旧会话")),
+                "session-2" to listOf(selectedMessage),
+            ),
+            initialActiveSessionId = "session-1",
+        )
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            runtime = runtime,
+            ioDispatcher = ioDispatcher,
+        )
+
+        viewModel.selectSession("session-2")
+
+        assertEquals("session-2", viewModel.uiState.value.activeSessionId)
+        assertEquals(listOf(selectedMessage), viewModel.uiState.value.messages)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertFalse(viewModel.uiState.value.isReady)
+        assertEquals("正在恢复会话", viewModel.uiState.value.statusText)
+        assertEquals(0, runtime.recreateCallCount)
+
+        advanceUntilIdle()
+
+        assertEquals(1, runtime.recreateCallCount)
+        assertEquals(listOf(selectedMessage), runtime.recreatedHistories.single())
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertTrue(viewModel.uiState.value.isReady)
+        assertEquals("已恢复会话 · CPU", viewModel.uiState.value.statusText)
+    }
+
+    @Test
     fun localDeviceContextToolReadinessUsesLatestAuthorizationSnapshot() = runTest(dispatcher) {
         val assistantRouter = FakeAssistantRouter()
         val viewModel = createViewModel(
@@ -2401,6 +2439,7 @@ class PocketMindViewModelTest {
         viewModel.sendMessage("普通问题")
 
         assertTrue(viewModel.uiState.value.isGenerating)
+        assertEquals(listOf("本地生成 prompt"), localRuntime.preparedForSendPrompts)
         assertEquals(listOf("本地生成 prompt"), localRuntime.prompts)
 
         viewModel.stopGeneration()
@@ -5412,6 +5451,7 @@ class PocketMindViewModelTest {
         backgroundTaskScheduler: BackgroundTaskScheduler = FakeBackgroundTaskScheduler(),
         toolAuditLog: ToolAuditLog = FakeToolAuditLog(),
         assistantRouter: AssistantRouter = FakeAssistantRouter(),
+        ioDispatcher: CoroutineDispatcher = dispatcher,
         actionExecutor: ToolExecutor = object : ToolExecutor {
             override fun execute(request: ToolRequest): ToolResult =
                 ToolResult(
@@ -5437,7 +5477,7 @@ class PocketMindViewModelTest {
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantRouter,
             isArm64DeviceProvider = { true },
-            ioDispatcher = dispatcher,
+            ioDispatcher = ioDispatcher,
         )
 
     private fun assertRemoteProtectedSharedInput(
@@ -5596,7 +5636,11 @@ class PocketMindViewModelTest {
         private val hangDuringSend: Boolean = false,
     ) : LiteRtRuntime {
         val prompts = mutableListOf<String>()
+        val recreatedHistories = mutableListOf<List<ChatMessage>>()
+        val preparedForSendPrompts = mutableListOf<String>()
         var stopCallCount: Int = 0
+            private set
+        var recreateCallCount: Int = 0
             private set
         override var isLoaded: Boolean = false
 
@@ -5613,7 +5657,18 @@ class PocketMindViewModelTest {
             history: List<ChatMessage>,
             parameters: GenerationParameters,
         ) {
+            recreateCallCount += 1
+            recreatedHistories += history
             isLoaded = true
+        }
+
+        override fun recreateConversationForSend(
+            history: List<ChatMessage>,
+            prompt: String,
+            parameters: GenerationParameters,
+        ) {
+            preparedForSendPrompts += prompt
+            recreateConversation(history, parameters)
         }
 
         override fun send(prompt: String): Flow<String> {

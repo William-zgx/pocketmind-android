@@ -10,6 +10,10 @@ Google AI Edge LiteRT-LM.
 ## Features
 
 - On-device streaming chat with LiteRT-LM models.
+- The local LiteRT runtime configures the current `.litertlm` chat assets at
+  an app-level total window of `8k` input+output tokens for responsive
+  on-device conversation restore, keeps a `6k` input budget, reserves `2k`
+  output tokens, and displays the input/output/token boundary in the model UI.
 - First-run setup for the recommended on-device chat model.
 - Optional higher-quality chat model presets.
 - Custom `.litertlm` download links and local file import.

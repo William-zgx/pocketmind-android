@@ -1,5 +1,10 @@
 package com.bytedance.zgx.pocketmind.ui
 
+import com.bytedance.zgx.pocketmind.BackendChoice
+import com.bytedance.zgx.pocketmind.ChatUiState
+import com.bytedance.zgx.pocketmind.InferenceMode
+import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
+import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,5 +62,35 @@ class PocketMindScreenDisplayTest {
         assertTrue(collapsed.text.endsWith("..."))
         assertTrue(collapsed.text.length <= ACTION_SUMMARY_COLLAPSE_CHARS)
         assertEquals(longText, expanded.text)
+    }
+
+    @Test
+    fun localModelStatusDisplaysConfiguredContextWindow() {
+        val status = currentModelStatus(
+            ChatUiState(
+                modelPath = "/tmp/model.litertlm",
+                backend = BackendChoice.GPU,
+                localMaxTotalTokens = LocalModelTokenLimits.MAX_TOTAL_TOKENS,
+            ),
+        )
+
+        assertTrue(status.contains("GPU"))
+        assertTrue(status.contains("Token 8k"))
+        assertTrue(status.endsWith("待加载"))
+    }
+
+    @Test
+    fun remoteModelStatusDoesNotShowLocalContextWindow() {
+        val status = currentModelStatus(
+            ChatUiState(
+                inferenceMode = InferenceMode.Remote,
+                remoteModelConfig = RemoteModelConfig(modelName = "remote-test-model"),
+                isReady = true,
+            ),
+        )
+
+        assertTrue(status.contains("remote-test-model"))
+        assertTrue(status.contains("远程"))
+        assertTrue(!status.contains("上下文"))
     }
 }
