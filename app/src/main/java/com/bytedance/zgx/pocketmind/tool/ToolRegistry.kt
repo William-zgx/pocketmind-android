@@ -63,6 +63,18 @@ class ToolRegistry private constructor(
         return null
     }
 
+    fun validatePublicEvidenceBatchRequest(request: ToolRequest): ToolResult? {
+        validate(request)?.let { return it }
+        val spec = specFor(request.toolName)
+            ?: return request.rejected("Unknown tool: ${request.toolName}")
+        if (!spec.isPublicEvidenceBatchEligible()) {
+            return request.rejected(
+                "Tool ${request.toolName} is not eligible for parallel public evidence execution.",
+            )
+        }
+        return null
+    }
+
     fun validateResult(request: ToolRequest, result: ToolResult): ToolResult? {
         if (result.status != ToolStatus.Succeeded) {
             val definition = definitionsByName[request.toolName] ?: return null
@@ -314,6 +326,7 @@ private data class ToolArgumentValidator(
                     pattern = propertyJson.optStringOrNull("pattern")?.let(::Regex),
                     enum = propertyJson.optStringSetOrNull("enum")?.toSet(),
                     format = propertyJson.optStringOrNull("format"),
+                    contentMediaType = propertyJson.optStringOrNull("contentMediaType"),
                     minimum = propertyJson.optDoubleOrNull("minimum"),
                     maximum = propertyJson.optDoubleOrNull("maximum"),
                     exclusiveMinimum = propertyJson.optDoubleOrNull("exclusiveMinimum"),
@@ -387,6 +400,7 @@ private data class ToolResultDataValidator(
                     pattern = propertyJson.optStringOrNull("pattern")?.let(::Regex),
                     enum = propertyJson.optStringSetOrNull("enum")?.toSet(),
                     format = propertyJson.optStringOrNull("format"),
+                    contentMediaType = propertyJson.optStringOrNull("contentMediaType"),
                     minimum = propertyJson.optDoubleOrNull("minimum"),
                     maximum = propertyJson.optDoubleOrNull("maximum"),
                     exclusiveMinimum = propertyJson.optDoubleOrNull("exclusiveMinimum"),
@@ -416,6 +430,7 @@ private data class PropertyRule(
     val pattern: Regex?,
     val enum: Set<String>?,
     val format: String?,
+    val contentMediaType: String?,
     val minimum: Double?,
     val maximum: Double?,
     val exclusiveMinimum: Double?,
@@ -443,7 +458,8 @@ private data class PropertyRule(
                         if (pattern != null && !pattern.matches(value)) {
                             "Tool $toolName $valueKind $valueName does not match required pattern"
                         } else {
-                            validateStringFormat(toolName, valueKind, valueName, value)
+                            validateStringContentMediaType(toolName, valueKind, valueName, value)
+                                ?: validateStringFormat(toolName, valueKind, valueName, value)
                         }
                     }
                 }
@@ -540,6 +556,26 @@ private data class PropertyRule(
                     onSuccess = { null },
                     onFailure = { "Tool $toolName $valueKind $valueName must be an ISO-8601 date-time" },
                 )
+
+            else -> null
+        }
+
+    private fun validateStringContentMediaType(
+        toolName: String,
+        valueKind: String,
+        valueName: String,
+        value: String,
+    ): String? =
+        when (contentMediaType) {
+            null -> null
+            "application/json" -> runCatching {
+                val tokener = org.json.JSONTokener(value)
+                tokener.nextValue()
+                require(tokener.nextClean() == 0.toChar())
+            }.fold(
+                onSuccess = { null },
+                onFailure = { "Tool $toolName $valueKind $valueName must contain valid JSON" },
+            )
 
             else -> null
         }
@@ -949,10 +985,12 @@ private val shareTextSchemaJson = """
       "properties": {
         "text": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": $MAX_SHARE_TEXT_CHARS
         },
         "title": {
-          "type": "string"
+          "type": "string",
+          "maxLength": $MAX_SHARE_TITLE_CHARS
         }
       },
       "additionalProperties": false
@@ -1447,7 +1485,7 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
         spec = ToolSpec(
             name = MobileActionFunctions.WEB_SEARCH,
             title = "Web 搜索",
-            description = "执行只读网络信息查询并返回摘要和结构化结果，不打开浏览器；疑似个人信息或密钥查询需要用户确认后才联网。",
+            description = "执行只读网络信息查询并返回摘要和结构化结果，不打开浏览器；多主体比较、差值、汇总或交叉核验问题可对每个主体发起独立 web_search 工具调用，由宿主并发执行公开只读批次后再综合；疑似个人信息或密钥查询需要用户确认后才联网。",
             inputSchemaJson = webSearchInputSchemaJson,
             outputSchemaJson = webSearchOutputSchemaJson,
             capability = ToolCapability.WebSearch,
@@ -1816,7 +1854,7 @@ private val toolDefinitionsByName: Map<String, ToolDefinition> = listOf(
             inputSchemaJson = cancelReminderSchemaJson,
             outputSchemaJson = cancelReminderOutputSchemaJson,
             capability = ToolCapability.BackgroundTask,
-            permissions = emptySet(),
+            permissions = setOf(ToolPermission.SchedulesBackgroundWork),
             riskLevel = RiskLevel.MediumDraftOrNavigation,
             confirmationPolicy = ConfirmationPolicy.Required,
             pendingArgumentAllowlist = setOf("taskId"),

@@ -526,6 +526,32 @@ class SharedInputTest {
     }
 
     @Test
+    fun metadataOnlyDocumentAndGenericAttachmentsSayBodyWasNotRead() {
+        val input = SharedInput(
+            text = "",
+            attachments = listOf(
+                SharedAttachment(
+                    kind = SharedAttachmentKind.Document,
+                    mimeType = "application/pdf",
+                    displayName = "report.pdf",
+                    sizeBytes = 12_000L,
+                ),
+                SharedAttachment(
+                    kind = SharedAttachmentKind.Other,
+                    mimeType = "*/*",
+                    displayName = "archive.bin",
+                    sizeBytes = 4_096L,
+                ),
+            ),
+        )
+
+        val prompt = input.toPrompt()
+
+        assertTrue(prompt.contains("文档正文未读取；当前仅有元数据。"))
+        assertTrue(prompt.contains("附件正文未读取；当前仅有元数据。"))
+    }
+
+    @Test
     fun mapsMimeTypesToAttachmentKinds() {
         assertEquals(SharedAttachmentKind.Image, sharedAttachmentKindFor("image/jpeg"))
         assertEquals(SharedAttachmentKind.Image, sharedAttachmentKindFor(" IMAGE/PNG "))
@@ -548,6 +574,75 @@ class SharedInputTest {
         assertEquals(SharedAttachmentKind.Document, sharedAttachmentKindFor("text/plain"))
         assertEquals(SharedAttachmentKind.Document, sharedAttachmentKindFor("text/plain; charset=utf-8"))
         assertEquals(SharedAttachmentKind.Other, sharedAttachmentKindFor("application/octet-stream"))
+    }
+
+    @Test
+    fun resolvesAttachmentMimeTypeFromDisplayNameWhenProviderTypeIsMissingOrGeneric() {
+        assertEquals(
+            "image/jpeg",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = null,
+                displayName = "Receipt.JPG",
+            ),
+        )
+        assertEquals(
+            "application/pdf",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "application/octet-stream",
+                displayName = "report.pdf",
+            ),
+        )
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = " application/octet-stream; charset=binary ",
+                displayName = "/tmp/private/brief.DOCX",
+            ),
+        )
+        assertEquals(
+            "image/png",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "image/png",
+                displayName = "not-image.txt",
+                intentMimeType = "application/octet-stream",
+            ),
+        )
+    }
+
+    @Test
+    fun resolvesAttachmentMimeTypeFromExtensionBeforeWildcardOrAbstractTypes() {
+        assertEquals(
+            "application/pdf",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "image/*",
+                displayName = "report.pdf",
+                intentMimeType = "application/*",
+            ),
+        )
+        assertEquals(
+            "text/plain",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "*/*",
+                displayName = "notes.txt",
+                intentMimeType = "application/octet-stream",
+            ),
+        )
+        assertEquals(
+            "application/json",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "application/*",
+                displayName = "config.JSON",
+                intentMimeType = "text/*",
+            ),
+        )
+        assertEquals(
+            "image/*",
+            resolveSharedAttachmentMimeType(
+                resolverMimeType = "image/*",
+                displayName = "unknown-file",
+                intentMimeType = null,
+            ),
+        )
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.bytedance.zgx.pocketmind
 
+import android.Manifest
 import android.app.DownloadManager
 import android.net.Uri
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bytedance.zgx.pocketmind.action.ActionDraft
@@ -24,6 +26,7 @@ import com.bytedance.zgx.pocketmind.data.ModelVerificationStatus
 import com.bytedance.zgx.pocketmind.data.RemoteModelStore
 import com.bytedance.zgx.pocketmind.data.RemoteModelRepository
 import com.bytedance.zgx.pocketmind.data.SessionStore
+import com.bytedance.zgx.pocketmind.device.DeviceContextAuthorizationSnapshot
 import com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot
 import com.bytedance.zgx.pocketmind.device.DeviceContextToolReadiness
 import com.bytedance.zgx.pocketmind.device.DeviceContextToolReadinessState
@@ -64,12 +67,15 @@ import com.bytedance.zgx.pocketmind.runtime.LiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatEvent
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntime
 import com.bytedance.zgx.pocketmind.safety.SafetyOutcome
+import com.bytedance.zgx.pocketmind.safety.SafetyPolicy
 import com.bytedance.zgx.pocketmind.tool.TimeoutToolExecutionBoundary
 import com.bytedance.zgx.pocketmind.tool.ToolExecutor
 import com.bytedance.zgx.pocketmind.tool.ToolErrorCode
+import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import com.bytedance.zgx.pocketmind.tool.ToolResult
 import com.bytedance.zgx.pocketmind.tool.failed
+import com.bytedance.zgx.pocketmind.tool.isPublicEvidenceBatchEligible
 import com.bytedance.zgx.pocketmind.tool.isUnverifiedExternalLaunch
 import com.bytedance.zgx.pocketmind.tool.unverifiedExternalLaunchSummary
 import java.io.File
@@ -95,6 +101,7 @@ private const val STALE_AGENT_RUN_STARTUP_REASON =
     "App restarted before this Agent step completed."
 private const val USER_STOPPED_AGENT_RUN_REASON =
     "User stopped this Agent run."
+private const val PUBLIC_EVIDENCE_BATCH_TOOL_NAME = "public_evidence_batch"
 private val VOICE_WAVEFORM_MULTIPLIERS =
     listOf(0.42f, 0.74f, 1f, 0.56f, 0.88f, 0.63f, 0.95f, 0.5f, 0.8f)
 
@@ -128,8 +135,14 @@ class PocketMindViewModel(
     private var startupRestored = false
     private var nextVoiceInputDraftId = 0L
     private var nextSharedInputDraftId = 0L
-    private val toolExecutionBoundary =
-        TimeoutToolExecutionBoundary(actionExecutor, ioDispatcher)
+    private var deviceContextAuthorizationSnapshot = DeviceContextAuthorizationSnapshot()
+    private val toolRegistry = ToolRegistry()
+    private val outboundSafetyPolicy = SafetyPolicy()
+    private val toolExecutionBoundary = TimeoutToolExecutionBoundary(
+        executor = actionExecutor,
+        dispatcher = ioDispatcher,
+        publicEvidenceBatchRequestValidator = toolRegistry::validatePublicEvidenceBatchRequest,
+    )
 
     private val _uiState = MutableStateFlow(createInitialState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -321,6 +334,10 @@ class PocketMindViewModel(
         }
     }
 
+    fun updateDeviceContextAuthorizationSnapshot(snapshot: DeviceContextAuthorizationSnapshot) {
+        deviceContextAuthorizationSnapshot = snapshot
+    }
+
     fun cancelBackgroundTask(taskId: String) {
         if (_uiState.value.isBusy) return
         backgroundTaskScheduler.cancelScheduledTask(taskId)
@@ -474,6 +491,7 @@ class PocketMindViewModel(
             it.copy(
                 voiceCapture = VoiceCaptureUiState(
                     isListening = true,
+                    isTranscribing = false,
                     level = 0.18f,
                     waveformLevels = seedVoiceWaveformLevels(level = 0.18f),
                 ),
@@ -509,7 +527,7 @@ class PocketMindViewModel(
             .trim()
             .take(MAX_VOICE_TRANSCRIPT_CHARS)
         _uiState.update {
-            if (!it.voiceCapture.isListening) {
+            if (!it.voiceCapture.isActive) {
                 it
             } else {
                 it.copy(voiceCapture = it.voiceCapture.copy(partialText = cleaned))
@@ -519,11 +537,15 @@ class PocketMindViewModel(
 
     fun finishVoiceInputCapture(message: String = "正在转写") {
         _uiState.update {
-            if (!it.voiceCapture.isListening) {
+            if (!it.voiceCapture.isActive) {
                 it
             } else {
                 it.copy(
-                    voiceCapture = it.voiceCapture.copy(isListening = false, level = 0f),
+                    voiceCapture = it.voiceCapture.copy(
+                        isListening = false,
+                        isTranscribing = true,
+                        level = 0.12f,
+                    ),
                     statusText = message,
                 )
             }
@@ -916,9 +938,17 @@ class PocketMindViewModel(
         }
     }
 
-    fun sendMessage(
+    fun sendMessage(prompt: String) {
+        sendMessageInternal(prompt = prompt, explicitMessagePrivacy = null)
+    }
+
+    fun sendMessage(prompt: String, messagePrivacy: MessagePrivacy) {
+        sendMessageInternal(prompt = prompt, explicitMessagePrivacy = messagePrivacy)
+    }
+
+    private fun sendMessageInternal(
         prompt: String,
-        messagePrivacy: MessagePrivacy = MessagePrivacy.RemoteEligible,
+        explicitMessagePrivacy: MessagePrivacy?,
     ) {
         val trimmed = prompt.trim()
         if (trimmed.isNotEmpty() && _uiState.value.pendingConfirmation != null) {
@@ -955,8 +985,14 @@ class PocketMindViewModel(
         _uiState.update { it.copy(longTermMemories = loadLongTermMemories()) }
         val stateBeforeSend = _uiState.value
         val useRemoteModel = stateBeforeSend.inferenceMode == InferenceMode.Remote
+        val effectiveMessagePrivacy =
+            explicitMessagePrivacy ?: if (useRemoteModel) {
+                MessagePrivacy.RemoteEligible
+            } else {
+                MessagePrivacy.LocalOnly
+            }
         val remoteConfig = stateBeforeSend.remoteModelConfig
-        val remoteHistory = stateBeforeSend.messages.remoteEligibleMessages()
+        val remoteHistory = remoteHistoryForRemoteSend(stateBeforeSend.messages)
         val includePrivateLocalContext = !useRemoteModel
         val agentRunOptions = if (useRemoteModel) {
             AgentRunOptions(
@@ -966,7 +1002,7 @@ class PocketMindViewModel(
         } else {
             AgentRunOptions()
         }
-        if (useRemoteModel && messagePrivacy == MessagePrivacy.LocalOnly) {
+        if (useRemoteModel && effectiveMessagePrivacy == MessagePrivacy.LocalOnly) {
             val userMessage = ChatMessage(
                 role = MessageRole.User,
                 text = trimmed,
@@ -987,6 +1023,29 @@ class PocketMindViewModel(
             }
             return
         }
+        if (useRemoteModel &&
+            effectiveMessagePrivacy == MessagePrivacy.RemoteEligible &&
+            outboundSafetyPolicy.containsSensitivePersonalOrSecretContent(trimmed)
+        ) {
+            val userMessage = ChatMessage(
+                role = MessageRole.User,
+                text = trimmed,
+                privacy = MessagePrivacy.LocalOnly,
+            )
+            replaceActiveSessionMessages(
+                stateBeforeSend.messages + userMessage + ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = "这条内容疑似包含个人信息或密钥。当前为远程模型模式，我不会把它发送到远程模型；请切换到本地模型，或删去敏感内容后再发送。",
+                    privacy = MessagePrivacy.LocalOnly,
+                ),
+                persistNow = true,
+            )
+            rebuildMemoryIndex()
+            _uiState.update {
+                it.copy(statusText = "已保护敏感内容")
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 isBusy = true,
@@ -1003,7 +1062,7 @@ class PocketMindViewModel(
                 val userMessage = ChatMessage(
                     role = MessageRole.User,
                     text = trimmed,
-                    privacy = messagePrivacy,
+                    privacy = effectiveMessagePrivacy,
                 )
                 val route = assistantOrchestrator.route(
                     input = trimmed,
@@ -1124,7 +1183,7 @@ class PocketMindViewModel(
                         val assistantMessage = ChatMessage(
                             role = MessageRole.Assistant,
                             text = "需要先安装$capabilityName，才能完成这个请求。请到模型管理安装基础能力包。",
-                            privacy = messagePrivacy,
+                            privacy = effectiveMessagePrivacy,
                         )
                         replaceActiveSessionMessages(
                             stateBeforeSend.messages + userMessage + assistantMessage,
@@ -1148,11 +1207,11 @@ class PocketMindViewModel(
                         activeGenerationRunId = route.runId
                         val responsePrivacy = if (
                             !useRemoteModel &&
-                            (messagePrivacy == MessagePrivacy.LocalOnly || route.memoryHits.isNotEmpty())
+                            (effectiveMessagePrivacy == MessagePrivacy.LocalOnly || route.memoryHits.isNotEmpty())
                         ) {
                             MessagePrivacy.LocalOnly
                         } else {
-                            messagePrivacy
+                            effectiveMessagePrivacy
                         }
                         val chatUserMessage = if (responsePrivacy == MessagePrivacy.LocalOnly) {
                             userMessage.copy(privacy = MessagePrivacy.LocalOnly)
@@ -1216,12 +1275,20 @@ class PocketMindViewModel(
                         val partial = StringBuilder()
                         var remoteToolObservation: AgentModelObservationResult? = null
                         if (useRemoteModel) {
+                            val remoteTools = assistantOrchestrator.availableRemoteToolSpecs(agentRunOptions.remoteToolScope)
+                            route.runId?.let { runId ->
+                                assistantOrchestrator.recordRemoteToolsExposed(
+                                    runId = runId,
+                                    scope = agentRunOptions.remoteToolScope,
+                                    toolNames = remoteTools.mapTo(linkedSetOf()) { tool -> tool.name },
+                                )
+                            }
                             remoteRuntime.sendWithTools(
                                 prompt = route.promptForModel,
                                 history = remoteHistory,
                                 parameters = _uiState.value.generationParameters,
                                 config = remoteConfig,
-                                tools = assistantOrchestrator.availableRemoteToolSpecs(agentRunOptions.remoteToolScope),
+                                tools = remoteTools,
                             ).collect { event ->
                                 when (event) {
                                     is RemoteChatEvent.TextDelta -> {
@@ -1323,7 +1390,11 @@ class PocketMindViewModel(
                                 )
                             }
                             route.runId?.let { runId ->
-                                val modelObservation = assistantOrchestrator.observeModelResult(runId, partial.toString())
+                                val modelObservation = assistantOrchestrator.observeModelResult(
+                                    runId = runId,
+                                    text = partial.toString(),
+                                    allowInlineToolCalls = !useRemoteModel,
+                                )
                                 val nextToolPlan =
                                     (modelObservation?.decision as? AgentObservationDecision.PlanNextTool)?.plan
                                 if (nextToolPlan != null) {
@@ -1441,32 +1512,14 @@ class PocketMindViewModel(
             }
             return
         }
-        val prompt = sharedInput.toPrompt()
-        if (prompt.isBlank()) return
-        if (_uiState.value.isReady && !_uiState.value.isBusy && generationJob?.isActive != true) {
-            sendMessage(prompt, messagePrivacy = MessagePrivacy.LocalOnly)
-            return
-        }
-
-        replaceActiveSessionMessages(
-            _uiState.value.messages + ChatMessage(
-                role = MessageRole.User,
-                text = prompt,
-                privacy = MessagePrivacy.LocalOnly,
-            ) + ChatMessage(
-                role = MessageRole.Assistant,
-                text = "已接收分享内容。请先准备模型后再发送，当前只会读取受限文本、JSON/XML/YAML/RTF/PDF/Office 文档摘录、OCR 摘录和附件元数据。",
-                privacy = MessagePrivacy.LocalOnly,
-            ),
-            persistNow = true,
-        )
-        rebuildMemoryIndex()
-        _uiState.update {
-            it.copy(statusText = "已接收分享内容")
-        }
+        stageSharedInputDraft(sharedInput, statusText = "已接收分享内容")
     }
 
     fun stageSharedInput(sharedInput: SharedInput) {
+        stageSharedInputDraft(sharedInput, statusText = "已选择附件")
+    }
+
+    private fun stageSharedInputDraft(sharedInput: SharedInput, statusText: String) {
         if (sharedInput.isEmpty) return
         val prompt = sharedInput.toPrompt()
         if (prompt.isBlank()) return
@@ -1478,7 +1531,7 @@ class PocketMindViewModel(
                     summary = sharedInput.composerSummary(),
                     privacy = MessagePrivacy.LocalOnly,
                 ),
-                statusText = "已选择附件",
+                statusText = statusText,
             )
         }
     }
@@ -1641,10 +1694,10 @@ class PocketMindViewModel(
             }
             return
         }
-        val request = confirmation.toolRequest ?: ToolRequest(
-            toolName = confirmation.draft.functionName,
-            arguments = confirmation.draft.parameters,
-            reason = confirmation.draft.summary,
+        val request = pendingConfirmation.toolRequest ?: ToolRequest(
+            toolName = pendingConfirmation.draft.functionName,
+            arguments = pendingConfirmation.draft.parameters,
+            reason = pendingConfirmation.draft.summary,
         )
         val confirmedRun = try {
             confirmation.runId?.let { runId ->
@@ -1668,6 +1721,7 @@ class PocketMindViewModel(
                 _uiState.value.messages + ChatMessage(
                     MessageRole.Assistant,
                     "工具确认失败，未执行动作。",
+                    privacy = MessagePrivacy.LocalOnly,
                 ),
                 persistNow = true,
             )
@@ -1692,7 +1746,7 @@ class PocketMindViewModel(
             )
         }
         launchToolExecutionAfterRunIsExecuting(
-            confirmation = confirmation,
+            confirmation = pendingConfirmation,
             request = request,
         )
     }
@@ -1726,7 +1780,7 @@ class PocketMindViewModel(
             assistantOrchestrator.observeToolResult(runId, result)
         }
         var assistantText = observation?.assistantMessage ?: result.statusSummaryForUi()
-        var observationPrivacy = observation.privacyForObservation()
+        var observationPrivacy = observation.privacyForObservation(fallbackToolName = request.toolName)
         var messagesWithObservation = _uiState.value.messages + ChatMessage(
             role = MessageRole.Assistant,
             text = assistantText,
@@ -1746,7 +1800,7 @@ class PocketMindViewModel(
                 assistantOrchestrator.observeToolResult(runId, result)
             }
             assistantText = observation?.assistantMessage ?: result.statusSummaryForUi()
-            observationPrivacy = observation.privacyForObservation()
+            observationPrivacy = observation.privacyForObservation(fallbackToolName = retryRequest.toolName)
             messagesWithObservation = _uiState.value.messages + ChatMessage(
                 role = MessageRole.Assistant,
                 text = assistantText,
@@ -1819,6 +1873,7 @@ class PocketMindViewModel(
                 runId = observation.run.id,
                 promptForModel = continuationPrompt,
                 responsePrivacy = observationPrivacy,
+                remoteToolScope = observation.continuationRemoteToolScope,
             )
             return
         }
@@ -1894,7 +1949,7 @@ class PocketMindViewModel(
             }
             return
         }
-        val observationPrivacy = observation.privacyForObservation()
+        val observationPrivacy = observation.privacyForObservation(fallbackToolName = PUBLIC_EVIDENCE_BATCH_TOOL_NAME)
         val messagesWithObservation = _uiState.value.messages + ChatMessage(
             role = MessageRole.Assistant,
             text = observation.assistantMessage,
@@ -1964,6 +2019,7 @@ class PocketMindViewModel(
                 runId = observation.run.id,
                 promptForModel = continuationPrompt,
                 responsePrivacy = observationPrivacy,
+                remoteToolScope = observation.continuationRemoteToolScope,
             )
             return
         }
@@ -2137,10 +2193,10 @@ class PocketMindViewModel(
             }
             return
         }
-        val request = confirmation.toolRequest ?: ToolRequest(
-            toolName = confirmation.draft.functionName,
-            arguments = confirmation.draft.parameters,
-            reason = confirmation.draft.summary,
+        val request = pendingConfirmation.toolRequest ?: ToolRequest(
+            toolName = pendingConfirmation.draft.functionName,
+            arguments = pendingConfirmation.draft.parameters,
+            reason = pendingConfirmation.draft.summary,
         )
         val deniedSummary = runtimePermissionDenialSummary(deniedPermissions)
         val deniedPermissionNames = deniedPermissions.distinct().joinToString()
@@ -2161,6 +2217,7 @@ class PocketMindViewModel(
             _uiState.value.messages + ChatMessage(
                 role = MessageRole.Assistant,
                 text = observation?.assistantMessage ?: "工具执行失败：${result.summary}",
+                privacy = MessagePrivacy.LocalOnly,
             ),
             persistNow = true,
         )
@@ -2188,10 +2245,10 @@ class PocketMindViewModel(
             }
             return
         }
-        val request = confirmation.toolRequest ?: ToolRequest(
-            toolName = confirmation.draft.functionName,
-            arguments = confirmation.draft.parameters,
-            reason = confirmation.draft.summary,
+        val request = pendingConfirmation.toolRequest ?: ToolRequest(
+            toolName = pendingConfirmation.draft.functionName,
+            arguments = pendingConfirmation.draft.parameters,
+            reason = pendingConfirmation.draft.summary,
         )
         val deniedSummary = specialAccessDenialSummary(deniedRequirements)
         val result = request.failed(
@@ -2212,6 +2269,7 @@ class PocketMindViewModel(
             _uiState.value.messages + ChatMessage(
                 role = MessageRole.Assistant,
                 text = observation?.assistantMessage ?: "工具执行失败：${result.summary}",
+                privacy = MessagePrivacy.LocalOnly,
             ),
             persistNow = true,
         )
@@ -2238,10 +2296,10 @@ class PocketMindViewModel(
             }
             return
         }
-        val request = confirmation.toolRequest ?: ToolRequest(
-            toolName = confirmation.draft.functionName,
-            arguments = confirmation.draft.parameters,
-            reason = confirmation.draft.summary,
+        val request = pendingConfirmation.toolRequest ?: ToolRequest(
+            toolName = pendingConfirmation.draft.functionName,
+            arguments = pendingConfirmation.draft.parameters,
+            reason = pendingConfirmation.draft.summary,
         )
         val result = request.failed(
             code = ToolErrorCode.PermissionDenied,
@@ -2282,11 +2340,12 @@ class PocketMindViewModel(
         runId: String?,
         promptForModel: String,
         responsePrivacy: MessagePrivacy,
+        remoteToolScope: RemoteToolScope,
     ) {
         val stateAtStart = _uiState.value
         val useRemoteModel = stateAtStart.inferenceMode == InferenceMode.Remote
         val remoteConfig = stateAtStart.remoteModelConfig
-        val remoteHistory = stateAtStart.messages.dropLast(1).remoteEligibleMessages()
+        val remoteHistory = remoteHistoryForRemoteSend(stateAtStart.messages.dropLast(1))
         activeGenerationRunId = runId
         val job = viewModelScope.launch(ioDispatcher) {
             try {
@@ -2349,12 +2408,20 @@ class PocketMindViewModel(
                 val partial = StringBuilder()
                 var modelObservation: AgentModelObservationResult? = null
                 if (useRemoteModel) {
+                    val remoteTools = assistantOrchestrator.availableRemoteToolSpecs(remoteToolScope)
+                    runId?.let { id ->
+                        assistantOrchestrator.recordRemoteToolsExposed(
+                            runId = id,
+                            scope = remoteToolScope,
+                            toolNames = remoteTools.mapTo(linkedSetOf()) { tool -> tool.name },
+                        )
+                    }
                     remoteRuntime.sendWithTools(
                         prompt = promptForModel,
                         history = remoteHistory,
                         parameters = _uiState.value.generationParameters,
                         config = remoteConfig,
-                        tools = assistantOrchestrator.availableRemoteToolSpecs(RemoteToolScope.ModelPlanning),
+                        tools = remoteTools,
                     ).collect { event ->
                         when (event) {
                             is RemoteChatEvent.TextDelta -> {
@@ -2396,7 +2463,11 @@ class PocketMindViewModel(
                         )
                     }
                     modelObservation = runId?.let { id ->
-                        assistantOrchestrator.observeModelResult(id, partial.toString())
+                        assistantOrchestrator.observeModelResult(
+                            runId = id,
+                            text = partial.toString(),
+                            allowInlineToolCalls = !useRemoteModel,
+                        )
                     }
                 } else {
                     val remotePlan = (modelObservation?.decision as? AgentObservationDecision.PlanNextTool)?.plan
@@ -2519,13 +2590,13 @@ class PocketMindViewModel(
             }
             return
         }
-        val request = confirmation.toolRequest ?: ToolRequest(
-            toolName = confirmation.draft.functionName,
-            arguments = confirmation.draft.parameters,
-            reason = confirmation.draft.summary,
+        val request = pendingConfirmation.toolRequest ?: ToolRequest(
+            toolName = pendingConfirmation.draft.functionName,
+            arguments = pendingConfirmation.draft.parameters,
+            reason = pendingConfirmation.draft.summary,
         )
-        val observation = if (confirmation.runId != null) {
-            assistantOrchestrator.cancelToolRequest(confirmation.runId, request.id)
+        val observation = if (pendingConfirmation.runId != null) {
+            assistantOrchestrator.cancelToolRequest(pendingConfirmation.runId, request.id)
         } else {
             null
         }
@@ -2539,15 +2610,36 @@ class PocketMindViewModel(
         }
     }
 
-    private fun AgentObservationResult?.privacyForObservation(): MessagePrivacy =
-        if (this?.continuationRequiresLocalModel == true) {
-            MessagePrivacy.LocalOnly
-        } else {
-            val declaredPrivacy = this?.result?.data?.get("privacy")
-                ?: return MessagePrivacy.RemoteEligible
-            runCatching { MessagePrivacy.valueOf(declaredPrivacy) }
+    private fun remoteHistoryForRemoteSend(messages: List<ChatMessage>): List<ChatMessage> =
+        messages.remoteEligibleMessages()
+            .filterNot { message ->
+                outboundSafetyPolicy.containsSensitivePersonalOrSecretContent(message.text)
+            }
+
+    private fun AgentObservationResult?.privacyForObservation(
+        fallbackToolName: String? = null,
+    ): MessagePrivacy {
+        if (this == null) return privacyForPublicEvidenceToolName(fallbackToolName)
+        if (continuationRequiresLocalModel) return MessagePrivacy.LocalOnly
+
+        result.data["privacy"]?.let { declaredPrivacy ->
+            return runCatching { MessagePrivacy.valueOf(declaredPrivacy) }
                 .getOrDefault(MessagePrivacy.LocalOnly)
         }
+
+        return privacyForPublicEvidenceToolName(result.data["toolName"] ?: fallbackToolName)
+    }
+
+    private fun privacyForPublicEvidenceToolName(toolName: String?): MessagePrivacy {
+        val isInternalPublicEvidenceBatch = toolName == PUBLIC_EVIDENCE_BATCH_TOOL_NAME
+        val isRegisteredPublicEvidence =
+            toolName != null && toolRegistry.specFor(toolName)?.isPublicEvidenceBatchEligible() == true
+        return if (isInternalPublicEvidenceBatch || isRegisteredPublicEvidence) {
+            MessagePrivacy.RemoteEligible
+        } else {
+            MessagePrivacy.LocalOnly
+        }
+    }
 
     private fun ToolRequest.protectedContinuationContentName(): String =
         when (toolName) {
@@ -3122,7 +3214,8 @@ class PocketMindViewModel(
     }
 
     private fun handleExplicitPreferenceCommand(trimmed: String) {
-        syncTaskStateMemories()
+        val memoryEnabled = _uiState.value.memoryEnabled
+        if (memoryEnabled) syncTaskStateMemories()
         val userMessage = ChatMessage(
             role = MessageRole.User,
             text = trimmed,
@@ -3132,11 +3225,11 @@ class PocketMindViewModel(
             _uiState.value.messages + userMessage,
             persistNow = true,
         )
-        val persisted = persistExplicitPreferenceMemory(userMessage)
-        val assistantText = if (persisted) {
-            "已记住这条本地偏好。你可以在长期记忆中查看或删除。"
-        } else {
-            "本地记忆暂不可用，未保存这条偏好。"
+        val persisted = memoryEnabled && persistExplicitPreferenceMemory(userMessage)
+        val assistantText = when {
+            persisted -> "已记住这条本地偏好。你可以在长期记忆中查看或删除。"
+            !memoryEnabled -> "本地记忆已关闭，未保存这条偏好。"
+            else -> "本地记忆暂不可用，未保存这条偏好。"
         }
         replaceActiveSessionMessages(
             _uiState.value.messages + ChatMessage(
@@ -3151,13 +3244,18 @@ class PocketMindViewModel(
             state.copy(
                 memoryHits = emptyList(),
                 longTermMemories = loadLongTermMemories(),
-                statusText = if (persisted) "长期记忆已更新" else "本地记忆暂不可用",
+                statusText = when {
+                    persisted -> "长期记忆已更新"
+                    !memoryEnabled -> "本地记忆已关闭"
+                    else -> "本地记忆暂不可用"
+                },
             )
         }
     }
 
     private fun handleExplicitUserFactCommand(trimmed: String) {
-        syncTaskStateMemories()
+        val memoryEnabled = _uiState.value.memoryEnabled
+        if (memoryEnabled) syncTaskStateMemories()
         val userMessage = ChatMessage(
             role = MessageRole.User,
             text = trimmed,
@@ -3167,11 +3265,11 @@ class PocketMindViewModel(
             _uiState.value.messages + userMessage,
             persistNow = true,
         )
-        val persisted = persistExplicitUserFactMemory(userMessage)
-        val assistantText = if (persisted) {
-            "已记住这条本地事实。你可以在长期记忆中查看或删除。"
-        } else {
-            "本地记忆暂不可用，未保存这条事实。"
+        val persisted = memoryEnabled && persistExplicitUserFactMemory(userMessage)
+        val assistantText = when {
+            persisted -> "已记住这条本地事实。你可以在长期记忆中查看或删除。"
+            !memoryEnabled -> "本地记忆已关闭，未保存这条事实。"
+            else -> "本地记忆暂不可用，未保存这条事实。"
         }
         replaceActiveSessionMessages(
             _uiState.value.messages + ChatMessage(
@@ -3186,13 +3284,17 @@ class PocketMindViewModel(
             state.copy(
                 memoryHits = emptyList(),
                 longTermMemories = loadLongTermMemories(),
-                statusText = if (persisted) "长期记忆已更新" else "本地记忆暂不可用",
+                statusText = when {
+                    persisted -> "长期记忆已更新"
+                    !memoryEnabled -> "本地记忆已关闭"
+                    else -> "本地记忆暂不可用"
+                },
             )
         }
     }
 
     private fun handleExplicitMemoryForgetCommand(trimmed: String) {
-        syncTaskStateMemories()
+        if (_uiState.value.memoryEnabled) syncTaskStateMemories()
         val userMessage = ChatMessage(
             role = MessageRole.User,
             text = trimmed,
@@ -3494,64 +3596,58 @@ class PocketMindViewModel(
             toolReadiness = deviceContextToolReadiness(),
         )
 
-    private fun deviceContextToolReadiness(): List<DeviceContextToolReadiness> =
-        listOf(
+    private fun deviceContextToolReadiness(): List<DeviceContextToolReadiness> {
+        val authorization = deviceContextAuthorizationSnapshot
+        return listOf(
             DeviceContextToolReadiness(
                 toolName = MobileActionFunctions.READ_CLIPBOARD,
                 state = DeviceContextToolReadinessState.Available,
                 reason = "requires explicit tool confirmation before reading clipboard text",
             ),
-            DeviceContextToolReadiness(
+            runtimePermissionReadiness(
                 toolName = MobileActionFunctions.QUERY_CONTACTS,
-                state = DeviceContextToolReadinessState.RequiresRuntimePermission,
-                reason = "contacts are read only after confirmation and Android permission grant",
-                runtimePermissions = listOf("READ_CONTACTS"),
+                permissions = listOf(Manifest.permission.READ_CONTACTS),
+                availableReason = "contacts can be read after explicit tool confirmation",
+                missingReason = "contacts are read only after confirmation and Android permission grant",
             ),
-            DeviceContextToolReadiness(
+            runtimePermissionReadiness(
                 toolName = MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
-                state = DeviceContextToolReadinessState.RequiresRuntimePermission,
-                reason = "calendar availability is read only after confirmation and Android permission grant",
-                runtimePermissions = listOf("READ_CALENDAR"),
+                permissions = listOf(Manifest.permission.READ_CALENDAR),
+                availableReason = "calendar availability can be read after explicit tool confirmation",
+                missingReason = "calendar availability is read only after confirmation and Android permission grant",
             ),
-            DeviceContextToolReadiness(
+            specialAccessReadiness(
                 toolName = MobileActionFunctions.QUERY_FOREGROUND_APP,
-                state = DeviceContextToolReadinessState.RequiresSpecialAccess,
-                reason = "foreground app metadata requires Usage Access special access",
                 specialAccessId = SPECIAL_ACCESS_USAGE_STATS,
+                availableReason = "foreground app metadata can be estimated after explicit tool confirmation",
+                missingReason = "foreground app metadata requires Usage Access special access",
             ),
             DeviceContextToolReadiness(
                 toolName = MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
                 state = DeviceContextToolReadinessState.Available,
                 reason = "returns bounded current-app notification summaries after confirmation",
             ),
-            DeviceContextToolReadiness(
-                toolName = MobileActionFunctions.QUERY_RECENT_FILES,
-                state = DeviceContextToolReadinessState.RequiresRuntimePermission,
-                reason = "recent media metadata may require Android media permissions or picker authorization",
-                runtimePermissions = listOf("READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO"),
-            ),
+            recentFilesReadiness(authorization),
             DeviceContextToolReadiness(
                 toolName = MobileActionFunctions.QUERY_BACKGROUND_TASKS,
                 state = DeviceContextToolReadinessState.Available,
                 reason = "reads local scheduled task metadata only after confirmation",
             ),
-            DeviceContextToolReadiness(
+            visualMediaReadiness(
                 toolName = MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR,
-                state = DeviceContextToolReadinessState.RequiresRuntimePermission,
-                reason = "reads one recent screenshot for local OCR only after confirmation and media permission",
-                runtimePermissions = listOf("READ_MEDIA_IMAGES"),
+                availableReason = "reads one recent screenshot for local OCR only after confirmation",
+                missingReason = "reads one recent screenshot for local OCR only after confirmation and media permission",
             ),
-            DeviceContextToolReadiness(
+            visualMediaReadiness(
                 toolName = MobileActionFunctions.READ_RECENT_IMAGE_OCR,
-                state = DeviceContextToolReadinessState.RequiresRuntimePermission,
-                reason = "scans recent images for local OCR only after confirmation and media permission",
-                runtimePermissions = listOf("READ_MEDIA_IMAGES"),
+                availableReason = "scans recent images for local OCR only after confirmation",
+                missingReason = "scans recent images for local OCR only after confirmation and media permission",
             ),
-            DeviceContextToolReadiness(
+            specialAccessReadiness(
                 toolName = MobileActionFunctions.READ_CURRENT_SCREEN_TEXT,
-                state = DeviceContextToolReadinessState.RequiresSpecialAccess,
-                reason = "current screen text uses Accessibility text nodes, not screenshots or OCR",
                 specialAccessId = SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT,
+                availableReason = "current screen Accessibility text can be read after explicit tool confirmation",
+                missingReason = "current screen text uses Accessibility text nodes, not screenshots or OCR",
             ),
             DeviceContextToolReadiness(
                 toolName = MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR,
@@ -3560,10 +3656,137 @@ class PocketMindViewModel(
                 specialAccessId = CurrentScreenshotOcrContract.CONSENT_REASON,
             ),
         )
+    }
+
+    private fun runtimePermissionReadiness(
+        toolName: String,
+        permissions: List<String>,
+        availableReason: String,
+        missingReason: String,
+    ): DeviceContextToolReadiness {
+        val missingPermissions = permissions
+            .filterNot(deviceContextAuthorizationSnapshot::hasRuntimePermission)
+        return DeviceContextToolReadiness(
+            toolName = toolName,
+            state = if (missingPermissions.isEmpty()) {
+                DeviceContextToolReadinessState.Available
+            } else {
+                DeviceContextToolReadinessState.RequiresRuntimePermission
+            },
+            reason = if (missingPermissions.isEmpty()) availableReason else missingReason,
+            runtimePermissions = missingPermissions.map { it.androidPermissionName() },
+        )
+    }
+
+    private fun specialAccessReadiness(
+        toolName: String,
+        specialAccessId: String,
+        availableReason: String,
+        missingReason: String,
+    ): DeviceContextToolReadiness {
+        val available = deviceContextAuthorizationSnapshot.hasSpecialAccess(specialAccessId)
+        return DeviceContextToolReadiness(
+            toolName = toolName,
+            state = if (available) {
+                DeviceContextToolReadinessState.Available
+            } else {
+                DeviceContextToolReadinessState.RequiresSpecialAccess
+            },
+            reason = if (available) availableReason else missingReason,
+            specialAccessId = if (available) null else specialAccessId,
+        )
+    }
+
+    private fun recentFilesReadiness(
+        authorization: DeviceContextAuthorizationSnapshot,
+    ): DeviceContextToolReadiness {
+        val available = authorization.hasAnyRecentFileMediaAccess()
+        return DeviceContextToolReadiness(
+            toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+            state = if (available) {
+                DeviceContextToolReadinessState.Available
+            } else {
+                DeviceContextToolReadinessState.RequiresRuntimePermission
+            },
+            reason = if (available) {
+                "recent media metadata can use currently granted media scopes; documents/downloads/other files require the system file picker"
+            } else {
+                "recent media metadata requires Android media permission; documents/downloads/other files require the system file picker"
+            },
+            runtimePermissions = if (available) emptyList() else recentFileRuntimePermissionHints(),
+        )
+    }
+
+    private fun visualMediaReadiness(
+        toolName: String,
+        availableReason: String,
+        missingReason: String,
+    ): DeviceContextToolReadiness {
+        val available = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            deviceContextAuthorizationSnapshot.hasRuntimePermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+        } else {
+            deviceContextAuthorizationSnapshot.hasVisualMediaAccess(Manifest.permission.READ_MEDIA_IMAGES)
+        }
+        return DeviceContextToolReadiness(
+            toolName = toolName,
+            state = if (available) {
+                DeviceContextToolReadinessState.Available
+            } else {
+                DeviceContextToolReadinessState.RequiresRuntimePermission
+            },
+            reason = if (available) availableReason else missingReason,
+            runtimePermissions = if (available) emptyList() else visualMediaPermissionHints(),
+        )
+    }
+
+    private fun DeviceContextAuthorizationSnapshot.hasAnyRecentFileMediaAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return hasRuntimePermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        return hasVisualMediaAccess(Manifest.permission.READ_MEDIA_IMAGES) ||
+            hasVisualMediaAccess(Manifest.permission.READ_MEDIA_VIDEO) ||
+            hasRuntimePermission(Manifest.permission.READ_MEDIA_AUDIO)
+    }
+
+    private fun DeviceContextAuthorizationSnapshot.hasVisualMediaAccess(
+        fullMediaPermission: String,
+    ): Boolean =
+        hasRuntimePermission(fullMediaPermission) ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                hasRuntimePermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
+
+    private fun recentFileRuntimePermissionHints(): List<String> =
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.READ_EXTERNAL_STORAGE.androidPermissionName())
+        } else {
+            buildList {
+                add(Manifest.permission.READ_MEDIA_IMAGES.androidPermissionName())
+                add(Manifest.permission.READ_MEDIA_VIDEO.androidPermissionName())
+                add(Manifest.permission.READ_MEDIA_AUDIO.androidPermissionName())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED.androidPermissionName())
+                }
+            }
+        }
+
+    private fun visualMediaPermissionHints(): List<String> =
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.READ_EXTERNAL_STORAGE.androidPermissionName())
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            listOf(
+                Manifest.permission.READ_MEDIA_IMAGES.androidPermissionName(),
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED.androidPermissionName(),
+            )
+        } else {
+            listOf(Manifest.permission.READ_MEDIA_IMAGES.androidPermissionName())
+        }
+
+    private fun String.androidPermissionName(): String =
+        substringAfterLast('.')
 
     private fun PendingAgentConfirmation.matchesExecution(other: PendingAgentConfirmation): Boolean =
         runId == other.runId &&
-            toolRequest?.id == other.toolRequest?.id &&
+            toolRequest == other.toolRequest &&
             draft.functionName == other.draft.functionName &&
             draft.parameters == other.draft.parameters
 }

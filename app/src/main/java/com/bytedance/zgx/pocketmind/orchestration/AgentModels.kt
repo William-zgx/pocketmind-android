@@ -76,6 +76,11 @@ sealed class AgentStep {
         val plan: AgentPlan,
     ) : AgentStep()
 
+    data class RemoteToolsExposed(
+        val scope: RemoteToolScope,
+        val toolNames: List<String>,
+    ) : AgentStep()
+
     data class ToolRequested(
         val request: ToolRequest,
         val draft: ActionDraft,
@@ -191,6 +196,7 @@ data class AgentObservationResult(
     val recoveryAction: AgentRecoveryAction? = null,
     val continuationPromptForModel: String? = null,
     val continuationRequiresLocalModel: Boolean = false,
+    val continuationRemoteToolScope: RemoteToolScope = RemoteToolScope.PublicEvidenceOnly,
     val retryRequest: ToolRequest? = null,
     val retryAttempt: Int = 0,
     val steps: List<AgentStep>,

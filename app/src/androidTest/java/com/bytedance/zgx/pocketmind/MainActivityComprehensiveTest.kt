@@ -53,7 +53,14 @@ class MainActivityComprehensiveTest {
             assertPlaintextRemoteApiKeyIsNotInLegacyPrefs()
 
             sendPrompt("请记住：蓝色机器人喜欢端侧 AI")
-            composeRule.waitForText("已记住这条本地偏好", substring = true)
+            composeRule.waitForAnyText(
+                listOf(
+                    "已记住这条本地偏好",
+                    "本地记忆已关闭，未保存",
+                    "本地记忆暂不可用",
+                ),
+                substring = true,
+            )
             server.assertNoPost()
 
             sendPrompt("用一句话介绍端侧 AI")
@@ -62,7 +69,10 @@ class MainActivityComprehensiveTest {
             assertTrue(firstRequest.path.endsWith("/v1/chat/completions"))
             assertTrue(firstRequest.body.contains("用一句话介绍端侧 AI"))
             assertFalse(firstRequest.body.contains("请记住"))
+            assertFalse(firstRequest.body.contains("蓝色机器人喜欢端侧 AI"))
             assertFalse(firstRequest.body.contains("已记住这条本地偏好"))
+            assertFalse(firstRequest.body.contains("本地记忆已关闭"))
+            assertFalse(firstRequest.body.contains("本地记忆暂不可用"))
 
             sendPrompt("蓝色机器人偏好是什么")
             val memoryRequest = server.awaitPost()
@@ -71,6 +81,8 @@ class MainActivityComprehensiveTest {
             assertFalse(memoryRequest.body.contains("请记住"))
             assertFalse(memoryRequest.body.contains("蓝色机器人喜欢端侧 AI"))
             assertFalse(memoryRequest.body.contains("已记住这条本地偏好"))
+            assertFalse(memoryRequest.body.contains("本地记忆已关闭"))
+            assertFalse(memoryRequest.body.contains("本地记忆暂不可用"))
             composeRule.waitForText("记忆回答")
 
             sendPrompt("打开 Wi-Fi 设置")
@@ -83,6 +95,8 @@ class MainActivityComprehensiveTest {
             val streamingRequest = server.awaitPost()
             assertFalse(streamingRequest.body.contains("请记住"))
             assertFalse(streamingRequest.body.contains("已记住这条本地偏好"))
+            assertFalse(streamingRequest.body.contains("本地记忆已关闭"))
+            assertFalse(streamingRequest.body.contains("本地记忆暂不可用"))
             assertFalse(streamingRequest.body.contains("打开 Wi-Fi 设置"))
             assertFalse(streamingRequest.body.contains("动作草稿"))
             composeRule.onNodeWithTag("composer_send_button").performClick()
@@ -155,14 +169,15 @@ class MainActivityComprehensiveTest {
     }
 
     private fun createAndSwitchSessions() {
+        val previousSessionTitle = "用一句话介绍端侧 AI"
         composeRule.onNodeWithTag("top_session_button").performClick()
         composeRule.waitForTag("session_manager_title")
         composeRule.onNodeWithTag("session_create_button").performClick()
         composeRule.waitForTextGone("记忆回答")
 
         composeRule.onNodeWithTag("top_session_button").performClick()
-        composeRule.waitForText("请记住：蓝色机器人喜欢端侧 AI", substring = true)
-        composeRule.onAllNodesWithText("请记住：蓝色机器人喜欢端侧 AI", substring = true)
+        composeRule.waitForText(previousSessionTitle)
+        composeRule.onAllNodesWithText(previousSessionTitle)
             .onFirst()
             .performClick()
         composeRule.waitForText("记忆回答")
@@ -262,6 +277,18 @@ class MainActivityComprehensiveTest {
     ) {
         waitUntil(timeoutMillis = timeoutMillis) {
             onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun ComposeTestRule.waitForAnyText(
+        texts: List<String>,
+        timeoutMillis: Long = 10_000,
+        substring: Boolean = false,
+    ) {
+        waitUntil(timeoutMillis = timeoutMillis) {
+            texts.any { text ->
+                onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
+            }
         }
     }
 

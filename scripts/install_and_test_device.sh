@@ -110,6 +110,10 @@ instrumentation_output_failed() {
   grep -qE '^(FAILURES!!!|INSTRUMENTATION_STATUS_CODE: -2|INSTRUMENTATION_RESULT: shortMsg=|INSTRUMENTATION_STATUS: stack=|Error in )' <<<"$1"
 }
 
+instrumentation_output_succeeded() {
+  sed 's/\r$//' <<<"$1" | grep -qE '^OK( \([0-9]+ tests?\))?$'
+}
+
 instrumentation_test_count_for() {
   local output="$1"
   local count
@@ -141,6 +145,10 @@ printf '%s\n' "$TEST_OUTPUT" > "$INSTRUMENTATION_OUTPUT_FILE"
 printf '%s\n' "$TEST_OUTPUT"
 INSTRUMENTATION_TEST_COUNT="$(instrumentation_test_count_for "$TEST_OUTPUT")"
 if [[ "$TEST_STATUS" -eq 0 ]] && instrumentation_output_failed "$TEST_OUTPUT"; then
+  TEST_STATUS=1
+fi
+if [[ "$TEST_STATUS" -eq 0 ]] && ! instrumentation_output_succeeded "$TEST_OUTPUT"; then
+  echo "Instrumentation output did not include a final OK/success marker." >&2
   TEST_STATUS=1
 fi
 if [[ "$TEST_STATUS" -ne 0 ]]; then

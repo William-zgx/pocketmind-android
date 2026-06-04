@@ -137,7 +137,8 @@ class MainActivitySkillUiTest {
             composeRule.onNodeWithText(
                 "将请求 Android MediaProjection 前台同意，单次截取当前屏幕并在本地提取 OCR 文本；不会保存图片、像素、URI、路径或窗口标题。",
             ).assertIsDisplayed()
-            composeRule.onNodeWithText("captureMode: current_screen").assertIsDisplayed()
+            composeRule.onNodeWithText("captureMode").assertIsDisplayed()
+            composeRule.onNodeWithText("current_screen").assertIsDisplayed()
             composeRule.assertTagAbsent("runtime_permission_requirements")
             composeRule.assertTagAbsent("special_access_requirements")
             composeRule.assertTextAbsent("已从当前屏幕单次截图提取")

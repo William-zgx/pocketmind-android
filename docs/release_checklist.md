@@ -86,6 +86,10 @@ release ticket or PR.
 - [ ] Manual acceptance in `docs/phone_acceptance.md` is sampled for model
   setup, remote-mode privacy, tool confirmation, permissions, background
   reminders, sharing, and multimodal entry points.
+- [ ] Manual acceptance records voice input, the Android system document picker,
+  and MediaProjection consent separately from scripted regression; these
+  system-mediated flows are not marked passed solely from scripts, mocked
+  intents, or direct reader/ViewModel calls.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.

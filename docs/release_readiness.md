@@ -38,12 +38,12 @@ items below.
   on physical device `fb6272c` for smoke launch validation on
   2026-06-03. This is not a replacement for the final release-candidate
   device/instrumentation gate.
-- Historical prepared-emulator regression has passed on
-  `focus_agent_api36_arm64` / `emulator-5554` (API 36, `arm64-v8a`) with
-  `scripts/verify_emulator.sh`. Current release-candidate validation should
-  use `scripts/regression_emulator.sh` and record the runner-reported
-  `instrumentation_test_count`; current `app/src/androidTest` source contains
-  26 `@Test` methods across 10 instrumentation test classes.
+- Current release-candidate emulator regression passed with
+  `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
+  `emulator-5554` (API 36, `arm64-v8a`):
+  `build/verification/regression-emulator-20260604-040806/regression-emulator.properties`
+  records `status=passed`, nested emulator/device reports passed, and
+  `instrumentation_test_count=26` matching the 26 AndroidTest source count.
 
 ## Remaining
 

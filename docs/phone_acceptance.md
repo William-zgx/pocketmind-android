@@ -18,7 +18,7 @@ adb devices -l
 
 小米 / HyperOS / MIUI 设备如果出现 `INSTALL_FAILED_USER_RESTRICTED`，需要在开发者选项里打开“USB 安装 / 通过 USB 安装”，并在手机弹出的安装确认里点允许。
 
-## 自动验收
+## 自动回归
 
 本地 JVM/lint/build 验证不要求连接设备，也不要求 `adb` 在 PATH：
 
@@ -143,6 +143,14 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 清空模拟器内保存的远程配置。默认提示不包含预期 token，验收通过必须来自远程助手
 回复中的 `POCKETMIND_LIVE_OK`。
 
+## 必须手工验收的系统入口
+
+自动回归通过只证明脚本、构建、JVM 单测和 instrumentation 覆盖的路径通过；必须手工验收的系统入口要单独记录，不能用脚本通过、直接调用 ViewModel/reader、mock intent 或 UI 文案存在替代。
+
+- 语音输入必须在设备上点麦克风入口，观察 Android 系统语音识别、收音/转写条、取消/完成状态和最终文本进入输入框。
+- 系统文档选择器必须从输入区附件按钮打开，观察本地模式摘录/metadata-only 行为，以及远程模式下 picker 前置保护提示明确说明未读取分享文本、附件元数据、文件流、文本摘录或 OCR 摘录。
+- 当前屏幕截图 OCR 必须在确认卡后观察 Android MediaProjection 前台同意弹窗；取消和同意后的单次消费行为不能用直接调用 OCR provider 替代。
+
 ## 手动模型验收
 
 1. 使用 `CLEAN_DEVICE=1 scripts/install_and_test_device.sh` 或手动清除数据后打开“PocketMind”，确认首屏会展示基础能力包准备向导。
@@ -182,13 +190,14 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 配置 API Key 后重启 App，应仍可读取配置；SharedPreferences 中不应保存明文 key。
 - 远程回答应逐步显示流式片段，取消生成后 UI 应回到可继续输入状态。
 - 远程错误不应展示响应体、Authorization 或 API Key 内容。
+- 远程模型模式下，当前输入如果包含手机号、邮箱、身份证、token/API key 或明确个人地址/密码/工号等敏感模式，应在本地拦截为 `LocalOnly` 提示，不应进入远程请求。
 
 ## 记忆与动作验收
 
 - 开启记忆后，历史会话相关问题应能注入“本地记忆”上下文；关闭后不应显示记忆命中。普通会话召回仍由已保存会话历史重建，不写入长期记忆表。
 - 输入本地记忆控制命令“记住：我喜欢简洁的中文回答”后，后续相关问题应能从显式持久化的偏好记忆中召回；已显式持久化的偏好/任务状态记录应出现在长期记忆列表。
 - 默认轻量 token/hash 记忆可以通过保守的本地 alias 召回显式回答偏好和结构化活跃任务状态，例如“brief replies”召回“我偏好简洁回答”、“有哪些提醒”召回活跃 Reminder 任务；alias 不应写入 Room、长期记忆列表、`buildContext`、远程 prompt 或普通会话记录。
-- 远程模型模式下，`记住：...` / `remember ...` 仍应只在本地更新长期偏好，不应调用远程模型，也不应把控制命令、偏好内容或本地确认消息写入后续远程 history。
+- 远程模型模式下，`记住：...` / `remember ...` 仍应只走本地控制路径，不应调用远程模型，也不应把控制命令、偏好内容或本地确认消息写入后续远程 history。记忆关闭时这些命令应以 `LocalOnly` 状态说明未保存，且不得写入新的长期记忆；`忘记`、单条删除和清空仍应删除已有记录。
 - 仍处于运行中的后台任务应自动写入可遗忘的任务状态长期记忆，只包含任务类型、状态、触发时间和不透明任务记录 id；提醒标题、正文、工具参数、prompt 或远程响应不应进入长期记忆。任务取消、完成、失败或删除后，对应自动任务状态记忆应被移除。
 - 重复执行同一句“记住：我喜欢简洁的中文回答”后，长期记忆列表不应出现重复偏好。
 - 长期记忆应支持单条遗忘和清空；删除后不应再从对应显式持久化记录召回，清空不代表删除普通会话历史。
@@ -202,7 +211,7 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 远程模型模式下，明确的内置 Skill 请求应先走本地 preflight，以保护剪贴板、联系人、屏幕、OCR、设置和直接搜索等本地确认/执行路径；未被直接 Skill 命中的复杂公开问题可由远程模型选择工具。例如“北京和上海今天温差多少？”应允许远程模型发起两个 `web_search` 证据请求再综合回答。
 - 远程模型一次返回多个公开只读证据工具调用时，只有全部工具都满足 `PublicEvidence` / `LowReadOnly` / `NotRequired` / 无私密输出 / 无设备或副作用权限，才允许并发执行并聚合结果回模型；例如“北京和上海今天温差多少？”可并发执行两个 `web_search` 后由模型计算温差。批次中混入打开设置、分享、读取剪贴板、文件、联系人、日历、通知、当前屏幕或截图 OCR 等工具时，应全批拒绝，不应执行安全子集。
 - 并发公开证据批次中某个工具返回 retryable 失败时，只应重试失败的 request 一次；成功的 request 不应重复执行，重试后仍失败才把批次失败交回 Agent 观察。
-- 确认动作后，聊天中应追加一条结构化执行结果；外部 Activity 工具只能说明外部界面已打开且最终结果未验证。
+- 确认动作后，聊天中只应追加安全摘要；结构化工具详情、allowlisted completion metadata 和审计状态应通过 Agent trace / audit 入口查看。外部 Activity 工具只能说明外部界面已打开且最终结果未验证。
 - 取消动作后，不应打开外部 App 或系统页面，Agent run 应进入 `Cancelled` 并写入审计事件。
 - 生成中点击停止后，当前 Agent run 应进入 `Cancelled`，迟到模型输出不应再改变 run 或生成新的待确认动作；最近 Agent 轨迹应刷新为取消状态。
 - 出现可恢复的待确认动作后杀进程并重启 App，应恢复同一个确认 UI；恢复瞬间不应执行工具、不应弹 Android runtime permission，只有再次确认后才继续执行链路。含外发文本、搜索 query、提醒标题/正文、深链 URI、模型输出或私密读取结果的 payload-bearing 待确认动作应 fail closed，而不是恢复可执行参数。
@@ -211,7 +220,7 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 授予 Usage Access 后再次触发前台 App 摘要，只应返回最小 App metadata，并标注为 `usage_stats_estimate` / `estimate`；不应展示完整使用历史、通知正文、窗口内容或自动上传到远程模型。
 - 通过受确认保护的当前屏幕 Accessibility 文本快照工具读取当前屏幕文字时，应只在用户确认后读取当前 Accessibility 文本节点快照；结果应标记为 `LocalOnly`，raw `screenText` 不应进入 trace、audit、持久消息或远程 runtime。
 - 当前屏幕 Accessibility 文本快照不等于截图、OCR、像素读取或语义屏幕理解；无 Accessibility 服务授权或节点读取失败时，应返回结构化失败，不应自动退化为截图/OCR/屏幕扫描。
-- 通过受确认保护的 `capture_current_screenshot_ocr` 识别当前屏幕截图文字时，确认卡之后应出现 Android MediaProjection 前台同意；取消同意应返回结构化 `LocalOnly` 权限失败，不应执行截图或重试。
+- 通过受确认保护的 `capture_current_screenshot_ocr` 识别当前屏幕截图文字时，确认卡之后应出现 Android MediaProjection 前台同意；同意 token 只能由当前 pending tool requestId 在短 TTL 内消费一次，requestId 不匹配、过期或取消同意应返回结构化 `LocalOnly` 权限失败，不应执行截图或重试。
 - 授予 MediaProjection 前台同意后，App 只应单次截取当前屏幕并在本地生成有界 OCR 摘录；结果应标记为 `LocalOnly` / `requiresLocalModel=true`，只包含 `ocrTextIncluded`、`truncated` 和 OCR 文本摘录，不应在 trace/audit/持久消息里保存图片像素、URI、路径、文件名、窗口标题、坐标或视觉描述。
 - “打开链接 https://example.com” 应先出现确认；确认后只打开 HTTPS 链接，`http`、`file`、`content`、`javascript` 和自定义 scheme 应被拒绝。
 - “启动微信” 或指定合法包名的 App 启动请求应通过 Skill-first 先出现确认；确认后只打开应用启动页，不接受任意 activity/action/data/extras。
@@ -257,7 +266,7 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 声明式 `ToolStep -> ToolStep` 只可跨重启恢复低语义结构化参数形成的待确认 UI，例如 `schedule_reminder.taskId -> cancel_reminder.taskId`；恢复后仍必须再次确认才执行，且 `schedule_reminder` 的 title/body/delayMinutes 不应作为待确认 payload 跨重启恢复。
 - “总结剪贴板并分享” 到第二个 `share_text` 确认卡后杀进程并重启 App，如果该确认卡包含模型生成的外发 payload，应 fail closed，不应恢复摘要参数、自动打开分享面板、重跑旧 `read_clipboard`，或让旧 request id 继续推进。
 - “总结当前屏幕文字并分享” 到第二个 `share_text` 确认卡后杀进程并重启 App，也应 fail closed，不应恢复摘要参数、自动打开分享面板、重跑旧 `read_current_screen_text`，或让旧 request id 继续推进。
-- 多步 Skill 的 pending checkpoint 只能持久化 run/request/step id、manifest identity、输出 key 名和 private-output refs；pending row 只可保存当前工具 `ToolSpec` allowlist 允许的结构化参数。不得写入 `SkillRunContinuation.outputs` 值、模型输出、剪贴板/OCR/屏幕文本、内容型工具参数明文或原始用户输入。checkpoint 与 redacted `SkillPlan` 或当前工具 registry 不匹配时应 fail closed。
+- 多步 Skill 的 pending checkpoint 只能持久化 run/request/step id、manifest identity、输出 key 名和 private-output refs；pending row 只可保存当前工具 `ToolSpec` allowlist 允许的结构化参数。不得写入 `SkillRunContinuation.outputs` 值、模型输出、剪贴板/OCR/屏幕文本、内容型工具参数明文或原始用户输入。checkpoint 与 redacted `SkillPlan` 或当前工具 registry 不匹配时应 fail closed；如果 pending 工具参数来自前序 Skill 输出且参数目标不在 pending allowlist 中，应在重启恢复时说明 pending 不可恢复，不应恢复缺参数确认卡。
 - 多步 Skill 在任一待确认工具处取消后，不应继续执行后续工具；已读取的私密工具输出不应出现在公开 trace、audit 或 UI 摘要里。
 - Skill manifest 输入 schema 契约由 JVM 覆盖：有效自然语言输入会以 `input` 字段进入对应 Skill；缺失、空白或额外 Skill 输入字段不应生成确认卡，也不应调用工具。模拟器/真机仍用于验证确认卡和多步 UI 链路。
 
@@ -288,10 +297,13 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 分享或选择用户主动提供的 PDF 文档时，App 可以生成用户可见、有界、本地 PDF 文本层摘录；没有可读文本层时，可以渲染前几页并生成有界的本地扫描页 OCR 摘录。摘录只进入本地 shared-input prompt，不代表版式理解、表格/坐标提取、图片语义理解或完整 PDF 解析。
 - 分享或选择用户主动提供的 `.docx` / `.xlsx` / `.pptx` Office Open XML 文件时，App 可以生成用户可见、有界、本地文本层摘录；摘录只进入本地 shared-input prompt，不代表完整文档解析、版式理解或语义理解。
 - 分享或选择用户主动提供的 `image/*` 附件时，App 可以在本地生成用户可见、有界的 OCR 文本摘录；摘录只进入本地 shared-input prompt，不代表图片语义理解。
+- 当 Android provider 返回空 MIME 或 `application/octet-stream` 时，应使用显示文件名扩展名保守推断常见图片、文本、PDF、RTF 和 Office Open XML 类型；推断成功后仍只允许对应的有界本地摘录，未知或不支持扩展名继续 metadata-only。
 - 分享或选择音频、视频、旧版 Office、二进制和其他非文本附件时，App 只应读取 MIME 类型、文件名和大小等元数据，不应读取文件正文、像素或二进制内容。
-- 自动生成的 shared-input 文本、OCR 摘录、文本/RTF/PDF/Office 摘录和附件元数据应标记为 `LocalOnly`；远程模式不应自动上传这些内容，应在 ShareIntentReader 边界就避免读取分享文本值、附件元数据、文件流、文本摘录或 OCR，并提示用户手动粘贴愿意发送的内容。
-- 如果模型已就绪，分享 prompt 可直接进入普通聊天路由；如果模型未就绪，应落到会话里并提示先准备模型。
+- 自动生成的 shared-input 文本、OCR 摘录、文本/RTF/PDF/Office 摘录和附件元数据应标记为 `LocalOnly`；远程模式不应自动上传这些内容，应在 ShareIntentReader 边界就避免读取分享文本值、附件元数据、文件流、文本摘录或 OCR。输入区附件 picker 的远程保护提示也必须明确说明未读取附件元数据、文件流、文本摘录或 OCR，并提示用户手动粘贴愿意发送的内容。
+- 本地模式下，即使模型已就绪，外部分享或附件选择生成的分享 prompt 也只能先进入输入区待发送草稿；用户点击发送后才可进入普通聊天路由。模型未就绪时，点击发送后应落到会话里并提示先准备模型。
+- `LocalOnly` 分享/OCR/屏幕文本会话内容不应进入自动记忆召回，也不应原文派生会话列表标题；显式长期记忆仍必须通过用户明确 remember/fact 路径。
 - 点击语音输入入口应拉起 Android 系统语音识别；转写成功后，文本只应出现在输入框。
+- 收音期间应显示非弹窗式语音条，收到声音时波形应随 RMS 音量更新；停止说话后到最终 `onResults`/`onError` 前，语音条应保持“正在转写”状态而不是提前消失。
 - 用户未点击发送前，语音转写不应进入聊天路由，不应新增用户消息，也不应触发本地或远程模型。
 - 语音入口不应读取本地音频文件；音频分享入口仍只读取元数据。
 - 通过受确认保护的 `query_recent_files(kind="screenshots")` 查询最近截图时，只应展示截图候选文件的文件名、MIME、大小、修改时间等元数据；不应读取图片像素、文件路径、URI 或截图内容。

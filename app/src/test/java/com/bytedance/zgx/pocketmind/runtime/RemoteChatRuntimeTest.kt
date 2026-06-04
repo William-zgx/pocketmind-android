@@ -48,6 +48,8 @@ class RemoteChatRuntimeTest {
         assertEquals("system", messages.getJSONObject(0).getString("role"))
         assertTrue(messages.getJSONObject(0).getString("content").contains("PocketMind"))
         assertTrue(messages.getJSONObject(0).getString("content").contains("用户当前输入一致的语言"))
+        assertTrue(messages.getJSONObject(0).getString("content").contains("优先调用合适工具获取证据"))
+        assertTrue(messages.getJSONObject(0).getString("content").contains("多个独立工具调用"))
         assertEquals("history-5", messages.getJSONObject(1).getString("content"))
         assertEquals("你好", messages.getJSONObject(21).getString("content"))
     }
@@ -88,6 +90,8 @@ class RemoteChatRuntimeTest {
         assertEquals("function", tool.getString("type"))
         assertEquals(MobileActionFunctions.WEB_SEARCH, function.getString("name"))
         assertTrue(function.getString("description").isNotBlank())
+        assertTrue(function.getString("description").contains("多主体比较"))
+        assertTrue(function.getString("description").contains("独立 web_search 工具调用"))
         assertEquals("object", function.getJSONObject("parameters").getString("type"))
         assertEquals("auto", body.getString("tool_choice"))
     }
@@ -290,6 +294,24 @@ class RemoteChatRuntimeTest {
             listOf(MobileActionFunctions.WEB_SEARCH, MobileActionFunctions.OPEN_WIFI_SETTINGS),
             toolCalls.requests.map { request -> request.toolName },
         )
+    }
+
+    @Test
+    fun remoteToolCallAccumulatorRejectsAmbiguousUnindexedMultiToolArgumentFragments() {
+        val accumulator = RemoteToolCallAccumulator()
+
+        accumulator.absorb(
+            """
+            {"choices":[{"delta":{"tool_calls":[
+              {"id":"call-1","type":"function","function":{"name":"web_search","arguments":"{\"query\""}},
+              {"id":"call-2","type":"function","function":{"name":"web_search","arguments":"{\"query\""}}
+            ]}}]}
+            """.trimIndent(),
+        )
+        accumulator.absorb("""{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":":\"北京天气\"}"}}]}}]}""")
+
+        val error = accumulator.finish().single() as RemoteChatEvent.ParseError
+        assertTrue(error.summary.contains("缺少稳定 index"))
     }
 
     @Test

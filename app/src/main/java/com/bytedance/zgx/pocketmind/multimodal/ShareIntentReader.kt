@@ -86,8 +86,12 @@ class ShareIntentReader(
     }
 
     private fun Uri.toSharedAttachment(intentMimeType: String?): SharedAttachment {
-        val resolvedMimeType = runCatching { context.contentResolver.getType(this) }.getOrNull() ?: intentMimeType
         val metadata = queryMetadata(this)
+        val resolvedMimeType = resolveSharedAttachmentMimeType(
+            resolverMimeType = runCatching { context.contentResolver.getType(this) }.getOrNull(),
+            displayName = metadata.displayName,
+            intentMimeType = intentMimeType,
+        )
         val kind = sharedAttachmentKindFor(resolvedMimeType)
         val textPreview = readSharedAttachmentTextPreview(
             mimeType = resolvedMimeType,

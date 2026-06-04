@@ -7,10 +7,127 @@
 - `本轮覆盖项：` 描述本次验证覆盖的行为、文档或脚本契约。
 - `验证命令：` 记录实际执行的命令；未执行的设备、模拟器或真机项必须明确说明。
 - `结果：` 记录通过、失败或未执行原因，并引用关键 artifact。
+- 自动回归与必须手工验收的结论必须分开记录；语音输入、Android 系统文档选择器和
+  MediaProjection 前台同意不能因为脚本、mock intent、直接 reader/ViewModel 调用或
+  UI 文案存在而写成已手工通过。
 
 完整模拟器回归以 `scripts/regression_emulator.sh` 产出的
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
+
+## 2026-06-04 Agent privacy, public evidence, and emulator regression pass
+
+本轮覆盖项：
+
+- 本地模式普通聊天默认保存为 `LocalOnly`，后续切换远程模型时不会进入远程
+  history；远程发送前会再次过滤误标为 `RemoteEligible` 的敏感历史。
+- 工具 observation 隐私判定改为 fail-closed：未知/本地/缺失隐私结果默认
+  `LocalOnly`；只有注册表声明的 public evidence 工具和 runtime 内部
+  `public_evidence_batch` 聚合结果可远程续写。
+- Public evidence batch 支持部分成功继续综合，失败缺口进入 continuation prompt；
+  顺序 public evidence continuation 带上前序公开证据。
+- 外部 Activity 启动失败不再把异常 message 写入用户 summary；后台任务查询只返回
+  本地元数据，不暴露 reminder title/body。
+- 文档与脚本门禁同步最新 emulator regression 通过状态。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugAndroidTestKotlin
+bash -n scripts/*.sh && scripts/test_validation_scripts.sh && git diff --check
+scripts/doctor.sh
+scripts/verify_local.sh
+
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：完整 JVM 单测 `:app:testDebugUnitTest`，892 tests。
+- 通过：`:app:compileDebugAndroidTestKotlin`。
+- 通过：shell 语法、validation script 回归、`git diff --check`。
+- 通过：`scripts/doctor.sh` 与 `scripts/verify_local.sh`，包含 debug/release 构建、
+  JVM 单测、lint、androidTest APK 和 release APK 产物检查。
+- 通过：完整 emulator regression：
+  `build/verification/regression-emulator-20260604-040806/regression-emulator.properties`
+  为 `status=passed`、`exit_code=0`；nested
+  `emulator-verification.properties` 和 `device-verification.properties` 均
+  `status=passed`；`instrumentation=passed`，`actual_android_test_count=26`，
+  `source_android_test_count=26`，`instrumentation.txt` 非空。设备为
+  `focus_agent_api36_arm64` / `emulator-5554`，API 36，`arm64-v8a`。
+- 通过：密钥扫描未命中用户提供的 DeepSeek endpoint/model/key；远程模型配置仍只走
+  现有安全配置入口。
+
+## 2026-06-04 Device gate final success marker and emulator failure status
+
+本轮覆盖项：
+
+- `MainActivityComprehensiveTest.createAndSwitchSessions` 不再等待过期的
+  `本地内容` 会话标题，改用测试内已发送的稳定远程提问标题
+  `用一句话介绍端侧 AI` 作为切回旧会话锚点，并继续验证切回后能看到
+  `记忆回答`。
+- `scripts/install_and_test_device.sh` 的 instrumentation 通过条件收紧为：
+  runner 退出码成功、没有 failure marker，且输出包含最终 `OK` / `OK (N tests)`
+  成功 marker。单独出现 `INSTRUMENTATION_STATUS: numtests=N` 不再算通过。
+- `scripts/test_validation_scripts.sh` 新增 malformed instrumentation 输出负例，覆盖
+  只有 `numtests`、缺少最终 `OK` 时 device helper 必须失败并写出 failed report。
+
+验证命令：
+
+```bash
+bash -n scripts/install_and_test_device.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugAndroidTestKotlin
+```
+
+结果：
+
+- 通过：shell 语法检查。
+- 通过：fake SDK validation script 回归，包含新增的 `numtests` without final `OK`
+  负例。
+- 未通过/阻塞：`:app:compileDebugAndroidTestKotlin` 在 `:app:compileDebugKotlin`
+  阶段被当前工作区已有主代码编译错误阻塞：
+  `AgentLoopRuntime.kt` 调用中 `successfulPairs` 和 `gapPairs` 参数未解析。该文件不在
+  本轮写入范围内，本轮未修改业务实现。
+- 此前完整 emulator regression 尝试为失败状态，不能作为通过证据：
+  `build/verification/regression-emulator-20260604-033011/regression-emulator.properties`
+  为 `status=failed`、`exit_code=1`；嵌套 device report 为
+  `instrumentation=failed`、`instrumentation_test_count=26`。失败日志显示
+  `MainActivityComprehensiveTest.createAndSwitchSessions` 等待旧 `本地内容` 标题超时。
+  该轮未重跑完整 emulator regression，因此当时 release-candidate emulator gate
+  未通过；最新通过记录见上方 2026-06-04 04:08 artifact。
+
+## 2026-06-04 UI/docs worker acceptance wording
+
+本轮覆盖项：
+
+- 远程模型模式下，composer 附件 picker 显示与分享入口一致的本地保护提示，明确不会读取分享文本、附件元数据、文件流、文本摘录或 OCR 摘录，也不会自动发送。
+- 远程规划动作确认卡只优化 UI 展示：长摘要/长参数折叠并显示长度，链接先显示域名，`packageName` 显示为目标包；不改变 planner、executor、权限或安全策略。
+- README、Agent core 文档和 phone acceptance 收窄工具结果展示口径：聊天只显示安全摘要，结构化详情和 allowlisted completion metadata 在 trace/audit 查看，不声称已有 typed chat card。
+- phone acceptance、validation report 和 release checklist 明确区分自动回归与必须手工验收；语音输入、Android 系统文档选择器和 MediaProjection 前台同意不能用脚本或直接 reader/ViewModel 调用替代。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest --tests com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugKotlin
+git diff --check
+rg -n "远程模型模式下，选择附件只生成受保护信号|聊天中只应追加安全摘要|自动回归与必须手工验收的结论必须分开记录|Scripted regression and manual acceptance must be recorded separately|链接域名|目标包" README.md docs app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt app/src/test/java/com/bytedance/zgx/pocketmind -g '!**/build/**'
+rg -n "聊天中应追加一条结构化执行结果|Agent run trace, audit log, and chat session|typed chat card" README.md docs app/src/test/java/com/bytedance/zgx/pocketmind/docs/AgentCoreDocumentationTest.kt
+```
+
+结果：
+
+- 通过：`:app:compileDebugKotlin`。
+- 通过：`git diff --check`。
+- 通过：关键文案存在性扫描。旧工具结果口径只出现在本轮验证记录的扫描命令/说明和文档测试的否定断言中；`typed chat card` 只出现在 README 否定说明、本轮验证记录和文档测试断言中。
+- 未通过/阻塞：定向 JVM 测试第一次成功编译并执行目标测试集，但旧断言失败；修正断言后，重跑在 `compileDebugUnitTestKotlin` 阶段被当前工作区内 `PocketMindViewModelTest.kt` 的 `lastRouteDeviceContext` 相关未解析符号和 `SkillRunExecutorTest.kt` 的 `reminderCancelSkillPlan` 未解析符号阻塞。这两个文件不在本轮 UI/docs worker 写入范围内，本轮未修改。
+- 未执行：语音输入、Android 系统文档选择器和 MediaProjection 前台同意的手工验收；不能据此写成已手工通过。
 
 ## 2026-06-04 Agent safety/runtime integration 验证
 

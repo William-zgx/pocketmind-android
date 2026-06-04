@@ -101,9 +101,14 @@ class AssistantOrchestratorTest {
             memoryEnabled = false,
         )
         require(route is AssistantRoute.Chat)
+        orchestrator.recordRemoteToolsExposed(
+            runId = requireNotNull(route.runId),
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
 
         val observed = orchestrator.observeModelToolRequest(
-            runId = requireNotNull(route.runId),
+            runId = route.runId,
             request = ToolRequest(
                 id = "call-1",
                 toolName = MobileActionFunctions.WEB_SEARCH,

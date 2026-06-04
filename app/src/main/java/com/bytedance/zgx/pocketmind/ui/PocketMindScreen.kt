@@ -140,6 +140,7 @@ import com.bytedance.zgx.pocketmind.orchestration.AgentExternalOutcome
 import com.bytedance.zgx.pocketmind.orchestration.AgentRecoveryAction
 import com.bytedance.zgx.pocketmind.orchestration.AgentRunState
 import com.bytedance.zgx.pocketmind.ui.theme.LocalPocketMindColors
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -922,18 +923,24 @@ private fun ActionDraftSheet(
             subtitle = "动作只会在你确认后读取上下文、创建草稿或调起系统能力。",
         )
         Text(
-            text = draft.summary,
-            style = MaterialTheme.typography.bodyLarge,
+            text = "参数只用于本次确认动作。链接优先显示域名，长文本会折叠显示长度。",
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        ExpandableActionText(
+            text = draft.summary,
+            collapsedMaxChars = ACTION_SUMMARY_COLLAPSE_CHARS,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            testTag = "action_summary_text",
+        )
         if (draft.parameters.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier.testTag("action_parameters"),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 draft.parameters.forEach { (key, value) ->
-                    Text(
-                        text = "$key: $value",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    ActionParameterRows(key = key, value = value)
                 }
             }
         }
@@ -1010,6 +1017,81 @@ private fun ActionDraftSheet(
             onClick = onDismiss,
         ) {
             Text("取消")
+        }
+    }
+}
+
+@Composable
+private fun ActionParameterRows(
+    key: String,
+    value: String,
+) {
+    val rows = remember(key, value) { actionParameterDisplayRows(key, value) }
+    rows.forEachIndexed { index, row ->
+        ExpandableActionText(
+            label = row.label,
+            text = row.value,
+            collapsedMaxChars = if (row.preferCompact) {
+                ACTION_PARAMETER_COMPACT_CHARS
+            } else {
+                ACTION_PARAMETER_COLLAPSE_CHARS
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            testTag = "action_parameter_${key.safeTestTagPart()}_$index",
+        )
+    }
+}
+
+@Composable
+private fun ExpandableActionText(
+    text: String,
+    collapsedMaxChars: Int,
+    style: androidx.compose.ui.text.TextStyle,
+    color: Color,
+    testTag: String,
+    label: String? = null,
+) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    val display = remember(text, collapsedMaxChars, expanded) {
+        actionTextDisplay(
+            text = text,
+            collapsedMaxChars = collapsedMaxChars,
+            expanded = expanded,
+        )
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (label != null) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(
+            modifier = Modifier.testTag(testTag),
+            text = display.text,
+            style = style,
+            color = color,
+        )
+        if (display.canToggle) {
+            TextButton(
+                modifier = Modifier.testTag("${testTag}_toggle"),
+                onClick = { expanded = !expanded },
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = if (expanded) {
+                        "收起"
+                    } else {
+                        "显示全部（${display.totalChars} 字）"
+                    },
+                )
+            }
         }
     }
 }
@@ -2327,6 +2409,108 @@ private fun AuditEventRow(event: AuditEventSummary) {
 private fun AuditEventSummary.auditTimeLabel(): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(createdAtMillis))
 
+internal const val REMOTE_ATTACHMENT_PROTECTION_NOTICE =
+    "远程模型模式下，选择附件只生成受保护信号；不会读取分享文本、附件元数据、文件流、文本/RTF/PDF/Office/JSON/XML/YAML 摘录或 OCR 摘录，也不会自动发送。请手动粘贴你愿意发送的内容。"
+
+internal const val ACTION_SUMMARY_COLLAPSE_CHARS = 160
+internal const val ACTION_PARAMETER_COLLAPSE_CHARS = 120
+internal const val ACTION_PARAMETER_COMPACT_CHARS = 80
+
+internal data class ActionTextDisplay(
+    val text: String,
+    val totalChars: Int,
+    val canToggle: Boolean,
+)
+
+internal data class ActionParameterDisplayRow(
+    val label: String,
+    val value: String,
+    val preferCompact: Boolean = false,
+)
+
+internal fun actionTextDisplay(
+    text: String,
+    collapsedMaxChars: Int,
+    expanded: Boolean,
+): ActionTextDisplay {
+    val normalized = text.trim()
+    val canToggle = normalized.length > collapsedMaxChars
+    return ActionTextDisplay(
+        text = if (!canToggle || expanded) {
+            normalized
+        } else {
+            normalized.take((collapsedMaxChars - 3).coerceAtLeast(1)).trimEnd() + "..."
+        },
+        totalChars = normalized.length,
+        canToggle = canToggle,
+    )
+}
+
+internal fun actionParameterDisplayRows(
+    key: String,
+    value: String,
+): List<ActionParameterDisplayRow> {
+    val trimmedValue = value.trim()
+    val normalizedKey = key.trim()
+    val keyForMatching = normalizedKey.lowercase(Locale.US)
+    val domain = if (keyForMatching in linkParameterKeys) {
+        actionLinkDomain(trimmedValue)
+    } else {
+        null
+    }
+    return when {
+        domain != null -> listOf(
+            ActionParameterDisplayRow(
+                label = "链接域名",
+                value = domain,
+                preferCompact = true,
+            ),
+            ActionParameterDisplayRow(
+                label = "完整链接",
+                value = trimmedValue,
+            ),
+        )
+
+        keyForMatching == "packagename" -> listOf(
+            ActionParameterDisplayRow(
+                label = "目标包",
+                value = trimmedValue,
+                preferCompact = true,
+            ),
+        )
+
+        keyForMatching == "targetid" -> listOf(
+            ActionParameterDisplayRow(
+                label = "目标类型",
+                value = trimmedValue,
+                preferCompact = true,
+            ),
+        )
+
+        else -> listOf(
+            ActionParameterDisplayRow(
+                label = normalizedKey.ifBlank { "参数" },
+                value = trimmedValue,
+            ),
+        )
+    }
+}
+
+internal fun actionLinkDomain(rawValue: String): String? {
+    val host = runCatching { URI(rawValue.trim()).host }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return host.lowercase(Locale.US)
+}
+
+private val linkParameterKeys = setOf("uri", "url", "link")
+
+private fun String.safeTestTagPart(): String =
+    replace(Regex("""[^A-Za-z0-9_]+"""), "_")
+        .trim('_')
+        .ifBlank { "parameter" }
+
 private val periodicCheckIntervalOptions = listOf(
     PeriodicCheckScheduleRequest.MIN_INTERVAL_MINUTES to "1 小时",
     PeriodicCheckScheduleRequest.DEFAULT_INTERVAL_MINUTES to "6 小时",
@@ -3318,7 +3502,7 @@ private fun Composer(
 ) {
     val inputEnabled = state.isReady && !state.isBusy
     val attachmentEnabled = !state.isBusy
-    val voiceEnabled = !state.isBusy && !state.voiceCapture.isListening
+    val voiceEnabled = !state.isBusy && !state.voiceCapture.isActive
     val actionIsStop = state.isGenerating
     val semanticColors = LocalPocketMindColors.current
     val hasPendingSharedInput = state.pendingSharedInputDraft != null
@@ -3346,14 +3530,18 @@ private fun Composer(
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        if (state.voiceCapture.isListening) {
+        if (state.voiceCapture.isActive) {
             VoiceCaptureBar(
+                isTranscribing = state.voiceCapture.isTranscribing,
                 level = state.voiceCapture.level,
                 waveformLevels = state.voiceCapture.waveformLevels,
                 partialText = state.voiceCapture.partialText,
                 onCancel = onCancelVoiceInput,
                 onFinish = onFinishVoiceInput,
             )
+        }
+        if (state.inferenceMode == InferenceMode.Remote) {
+            RemoteAttachmentProtectionNotice()
         }
         state.pendingSharedInputDraft?.let { draft ->
             PendingSharedInputStrip(
@@ -3380,7 +3568,11 @@ private fun Composer(
                 modifier = Modifier
                     .testTag("composer_attachment_button")
                     .semantics {
-                        contentDescription = "选择附件"
+                        contentDescription = if (state.inferenceMode == InferenceMode.Remote) {
+                            "选择附件；远程模式不会读取附件元数据、文件流、文本摘录或 OCR"
+                        } else {
+                            "选择附件"
+                        }
                     },
                 enabled = attachmentEnabled,
                 onClick = onPickSharedAttachment,
@@ -3473,6 +3665,25 @@ private fun Composer(
 }
 
 @Composable
+private fun RemoteAttachmentProtectionNotice() {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("remote_attachment_protection_notice"),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+    ) {
+        Text(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            text = REMOTE_ATTACHMENT_PROTECTION_NOTICE,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+    }
+}
+
+@Composable
 private fun ComposerIconButton(
     modifier: Modifier = Modifier,
     enabled: Boolean,
@@ -3550,6 +3761,7 @@ private fun PendingSharedInputStrip(
 
 @Composable
 private fun VoiceCaptureBar(
+    isTranscribing: Boolean,
     level: Float,
     waveformLevels: List<Float>,
     partialText: String,
@@ -3586,7 +3798,7 @@ private fun VoiceCaptureBar(
             )
             Text(
                 modifier = Modifier.weight(1f),
-                text = partialText.ifBlank { "正在收音" },
+                text = partialText.ifBlank { if (isTranscribing) "正在转写" else "正在收音" },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 maxLines = 1,
@@ -3603,16 +3815,18 @@ private fun VoiceCaptureBar(
                     contentDescription = null,
                 )
             }
-            IconButton(
-                modifier = Modifier
-                    .size(38.dp)
-                    .semantics { contentDescription = "结束语音输入" },
-                onClick = onFinish,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                )
+            if (!isTranscribing) {
+                IconButton(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .semantics { contentDescription = "结束语音输入" },
+                    onClick = onFinish,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                    )
+                }
             }
         }
     }

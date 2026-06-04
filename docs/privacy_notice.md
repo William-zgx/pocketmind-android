@@ -105,7 +105,14 @@ Sending remains explicit. Audio/video/legacy Office/binary attachments are
 metadata-only in the current app; supported strict UTF-8 text, RTF, PDF text
 layers, PDF scanned-page OCR fallback, Office Open XML, and user-provided image
 attachments may produce bounded local excerpts. Malformed PDFs remain
-metadata-only.
+metadata-only. If Android does not provide a useful MIME type for a
+user-provided attachment, PocketMind may infer common supported types from the
+display-name extension before deciding whether a bounded local excerpt is
+possible. Shared-input excerpts are staged as local composer drafts and are not
+sent to local generation until the user taps send. LocalOnly conversation text
+is not indexed for automatic memory recall, and LocalOnly user text is not used
+verbatim for session-list titles. This inference does not make shared-input
+excerpts remote-eligible.
 
 ## Model Downloads
 
@@ -130,8 +137,9 @@ events.
 Agent trace and pending confirmation recovery are intentionally narrower than a
 full execution replay. Pending rows persist only allowlisted request arguments,
 redacted structure, and value-free checkpoint identifiers where possible.
-Payload-bearing confirmations fail closed after restart instead of restoring
-private executable payload values.
+Payload-bearing confirmations, including Skill pending arguments bound from
+earlier outputs but not pending-allowlisted, fail closed after restart instead
+of restoring private executable payload values or incomplete confirmations.
 
 ## Retention And Controls
 
@@ -139,6 +147,9 @@ Users can create, switch, and delete chat sessions in the app. Long-term memory
 supports reviewing explicit records, forgetting individual records, and
 clearing explicit memory records. Clearing app data or uninstalling the app
 removes local app storage according to Android platform behavior.
+When local memory is disabled, explicit remember/fact commands do not create
+new long-term memory records; forget and clear controls can still remove
+existing records.
 
 This codebase does not contain a first-party analytics upload path beyond
 user-configured remote model calls, recommended/custom model downloads, and

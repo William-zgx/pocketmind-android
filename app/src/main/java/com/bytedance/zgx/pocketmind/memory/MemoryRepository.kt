@@ -1,6 +1,7 @@
 package com.bytedance.zgx.pocketmind.memory
 
 import com.bytedance.zgx.pocketmind.ChatMessage
+import com.bytedance.zgx.pocketmind.MessagePrivacy
 import com.bytedance.zgx.pocketmind.MessageRole
 import com.bytedance.zgx.pocketmind.data.MemoryRecordDao
 import com.bytedance.zgx.pocketmind.data.MemoryRecordEntity
@@ -180,6 +181,7 @@ class MemoryRepository(
             ) {
                 return@forEach
             }
+            if (message.privacy == MessagePrivacy.LocalOnly) return@forEach
             val rolePrefix = when (message.role) {
                 MessageRole.User -> "用户"
                 MessageRole.Assistant -> "助手"

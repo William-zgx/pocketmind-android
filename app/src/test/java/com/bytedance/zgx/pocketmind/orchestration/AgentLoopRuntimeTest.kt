@@ -107,6 +107,82 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun remoteModelCannotRequestToolBeforeToolSnapshotIsRecorded() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "普通远程问题",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+
+        val observed = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-clipboard",
+                toolName = MobileActionFunctions.READ_CLIPBOARD,
+                reason = "remote guessed private tool",
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Failed, observed.run.state)
+        val decision = observed.decision as AgentObservationDecision.Fail
+        assertTrue(decision.reason.contains("before a remote tool snapshot is recorded"))
+        assertEquals(null, runtime.latestPendingConfirmation())
+        assertTrue(observed.steps.any { step -> step is AgentStep.ToolRejected })
+        assertTrue(observed.steps.none { step -> step is AgentStep.UserConfirmationRequested })
+    }
+
+    @Test
+    fun remoteModelCannotRequestScopeEligibleToolMissingFromExposedSnapshot() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "普通远程问题",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.ModelPlanning,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+
+        val observed = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-share",
+                toolName = MobileActionFunctions.SHARE_TEXT,
+                arguments = mapOf("text" to "hello"),
+                reason = "remote guessed hidden scope-eligible tool",
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Failed, observed.run.state)
+        val decision = observed.decision as AgentObservationDecision.Fail
+        assertTrue(decision.reason.contains("current remote tool snapshot"))
+        assertEquals(null, runtime.latestPendingConfirmation())
+        assertTrue(observed.steps.any { step -> step is AgentStep.RemoteToolsExposed })
+        assertTrue(observed.steps.none { step -> step is AgentStep.UserConfirmationRequested })
+    }
+
+    @Test
     fun modelFirstRemoteToolsKeepsDirectSkillPreflightLocal() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = false,
@@ -224,6 +300,41 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun remotePlainTextDoesNotUseInlineLocalToolParser() {
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = false,
+            modelOutputResult = modelToolOutputPlanningResult(
+                """call:share_text{"text":"should not become a tool"}""",
+            ),
+        )
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = actionRuntime,
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "普通远程问题",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools),
+        )
+
+        val observed = runtime.observeModelResult(
+            runId = result.run.id,
+            text = """call:share_text{"text":"should not become a tool"}""",
+            allowInlineToolCalls = false,
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Completed, observed.run.state)
+        assertEquals(AgentObservationDecision.Complete, observed.decision)
+        assertEquals(null, runtime.latestPendingConfirmation())
+        assertEquals(0, actionRuntime.parseModelToolOutputCallCount)
+        assertTrue(observed.steps.none { step -> step is AgentStep.ToolRejected })
+        assertTrue(observed.steps.none { step -> step is AgentStep.UserConfirmationRequested })
+    }
+
+    @Test
     fun publicEvidenceToolResultContinuesToModelForSynthesis() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = false,
@@ -277,6 +388,75 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun publicEvidenceContinuationRejectsActionToolRequestNotExposedInScope() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "普通远程问题",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.ModelPlanning,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val planned = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-weather",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote public evidence",
+            ),
+        )
+        requireNotNull(planned)
+        require(planned.decision is AgentObservationDecision.PlanNextTool)
+        val observed = runtime.observeToolResult(
+            runId = result.run.id,
+            result = ToolResult(
+                requestId = planned.decision.plan.request.id,
+                status = ToolStatus.Succeeded,
+                summary = "已读取北京天气。",
+                data = webSearchResultData(
+                    query = "北京天气",
+                    summaryText = "北京 12 摄氏度。",
+                ),
+            ),
+        )
+        requireNotNull(observed)
+        require(observed.decision is AgentObservationDecision.ContinueWithModel)
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.COMPOSE_EMAIL),
+        )
+
+        val rejected = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-email",
+                toolName = MobileActionFunctions.COMPOSE_EMAIL,
+                reason = "remote action after public evidence",
+            ),
+        )
+
+        requireNotNull(rejected)
+        assertEquals(AgentRunState.Failed, rejected.run.state)
+        val decision = rejected.decision as AgentObservationDecision.Fail
+        assertTrue(decision.reason.contains("current PublicEvidenceOnly tool scope"))
+        assertEquals(null, runtime.latestPendingConfirmation())
+        assertTrue(rejected.steps.none { step -> step is AgentStep.UserConfirmationRequested })
+    }
+
+    @Test
     fun remoteModelMultiplePublicEvidenceToolCallsPlanBatchWithoutConfirmation() {
         val runtime = AgentLoopRuntime(
             memoryIndex = MemoryRepository(),
@@ -301,6 +481,11 @@ class AgentLoopRuntimeTest {
                 arguments = mapOf("query" to "上海天气"),
                 reason = "remote tool call",
             ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
         )
 
         val observed = runtime.observeModelToolRequests(result.run.id, requests)
@@ -345,6 +530,11 @@ class AgentLoopRuntimeTest {
                 reason = "remote tool call",
             ),
         )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH, MobileActionFunctions.OPEN_WIFI_SETTINGS),
+        )
 
         val observed = runtime.observeModelToolRequests(result.run.id, requests)
 
@@ -381,6 +571,11 @@ class AgentLoopRuntimeTest {
                 arguments = mapOf("query" to "上海天气"),
                 reason = "remote tool call",
             ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
         )
         val planned = runtime.observeModelToolRequests(result.run.id, requests)
         requireNotNull(planned)
@@ -427,6 +622,167 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun publicEvidenceToolBatchPartialFailureContinuesWithEvidenceAndGap() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "北京和上海今天温差多少？",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        val requests = listOf(
+            ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote tool call",
+            ),
+            ToolRequest(
+                id = "call-shanghai",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "上海天气"),
+                reason = "remote tool call",
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val planned = runtime.observeModelToolRequests(result.run.id, requests)
+        requireNotNull(planned)
+        require(planned.decision is AgentObservationDecision.PlanToolBatch)
+
+        val observed = runtime.observeToolResults(
+            runId = result.run.id,
+            results = listOf(
+                ToolResult(
+                    requestId = "call-beijing",
+                    status = ToolStatus.Succeeded,
+                    summary = "已读取北京当前天气。",
+                    data = webSearchResultData(
+                        query = "北京天气",
+                        summaryText = "北京 12 摄氏度。",
+                        resultsJson = """{"kind":"weather_current","locations":[{"requestedLocation":"北京","current":{"temperature_2m":12.0}}]}""",
+                    ),
+                ),
+                ToolResult(
+                    requestId = "call-shanghai",
+                    status = ToolStatus.Failed,
+                    summary = "搜索上海天气失败",
+                    data = mapOf("toolName" to MobileActionFunctions.WEB_SEARCH),
+                    error = ToolError(ToolErrorCode.ExecutionFailed, "网络错误"),
+                    retryable = false,
+                ),
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.GeneratingAnswer, observed.run.state)
+        require(observed.decision is AgentObservationDecision.ContinueWithModel)
+        assertEquals(ToolStatus.Succeeded, observed.result.status)
+        assertEquals("1", observed.result.data["succeededToolCount"])
+        assertEquals("1", observed.result.data["failedToolCount"])
+        assertTrue(observed.assistantMessage.contains("部分失败"))
+        val prompt = observed.continuationPromptForModel.orEmpty()
+        assertTrue(prompt.contains("已读取北京当前天气"))
+        assertTrue(prompt.contains("temperature_2m"))
+        assertTrue(prompt.contains("失败缺口"))
+        assertTrue(prompt.contains("上海天气"))
+        assertTrue(prompt.contains("搜索上海天气失败"))
+        assertTrue(prompt.contains("无法完成的部分明确说明缺少什么信息"))
+    }
+
+    @Test
+    fun sequentialPublicEvidenceContinuationIncludesPriorEvidence() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "北京和上海今天温差多少？",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val firstPlan = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote tool call",
+            ),
+        )
+        requireNotNull(firstPlan)
+        require(firstPlan.decision is AgentObservationDecision.PlanNextTool)
+        val firstObserved = runtime.observeToolResult(
+            runId = result.run.id,
+            result = ToolResult(
+                requestId = "call-beijing",
+                status = ToolStatus.Succeeded,
+                summary = "已读取北京当前天气。",
+                data = webSearchResultData(
+                    query = "北京天气",
+                    summaryText = "北京 12 摄氏度。",
+                    resultsJson = """{"kind":"weather_current","locations":[{"requestedLocation":"北京","current":{"temperature_2m":12.0}}]}""",
+                ),
+            ),
+        )
+        requireNotNull(firstObserved)
+        require(firstObserved.decision is AgentObservationDecision.ContinueWithModel)
+
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val secondPlan = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-shanghai",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "上海天气"),
+                reason = "remote tool call",
+            ),
+        )
+        requireNotNull(secondPlan)
+        require(secondPlan.decision is AgentObservationDecision.PlanNextTool)
+
+        val secondObserved = runtime.observeToolResult(
+            runId = result.run.id,
+            result = ToolResult(
+                requestId = "call-shanghai",
+                status = ToolStatus.Succeeded,
+                summary = "已读取上海当前天气。",
+                data = webSearchResultData(
+                    query = "上海天气",
+                    summaryText = "上海 18 摄氏度。",
+                    resultsJson = """{"kind":"weather_current","locations":[{"requestedLocation":"上海","current":{"temperature_2m":18.0}}]}""",
+                ),
+            ),
+        )
+
+        requireNotNull(secondObserved)
+        assertEquals(AgentRunState.GeneratingAnswer, secondObserved.run.state)
+        require(secondObserved.decision is AgentObservationDecision.ContinueWithModel)
+        val prompt = secondObserved.continuationPromptForModel.orEmpty()
+        assertTrue(prompt.contains("已读取北京当前天气"))
+        assertTrue(prompt.contains("已读取上海当前天气"))
+        assertTrue(prompt.contains("北京 12 摄氏度"))
+        assertTrue(prompt.contains("上海 18 摄氏度"))
+        assertTrue(prompt.contains("不要只回答最后一次工具结果"))
+    }
+
+    @Test
     fun publicEvidenceToolBatchCancelledResultCancelsRun() {
         val runtime = AgentLoopRuntime(
             memoryIndex = MemoryRepository(),
@@ -451,6 +807,11 @@ class AgentLoopRuntimeTest {
                 arguments = mapOf("query" to "上海天气"),
                 reason = "remote tool call",
             ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
         )
         val planned = runtime.observeModelToolRequests(result.run.id, requests)
         requireNotNull(planned)
@@ -477,7 +838,73 @@ class AgentLoopRuntimeTest {
         requireNotNull(observed)
         assertEquals(AgentRunState.Cancelled, observed.run.state)
         assertEquals(AgentObservationDecision.Cancel, observed.decision)
+        assertEquals(ToolStatus.Cancelled, observed.result.status)
         assertEquals(null, observed.continuationPromptForModel)
+        assertTrue(observed.assistantMessage.contains("已取消"))
+    }
+
+    @Test
+    fun publicEvidenceToolBatchCancelAndFailureAggregatesAsCancelled() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "北京和上海今天温差多少？",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        val requests = listOf(
+            ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote tool call",
+            ),
+            ToolRequest(
+                id = "call-shanghai",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "上海天气"),
+                reason = "remote tool call",
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val planned = runtime.observeModelToolRequests(result.run.id, requests)
+        requireNotNull(planned)
+        require(planned.decision is AgentObservationDecision.PlanToolBatch)
+
+        val observed = runtime.observeToolResults(
+            runId = result.run.id,
+            results = listOf(
+                ToolResult(
+                    requestId = "call-beijing",
+                    status = ToolStatus.Failed,
+                    summary = "搜索失败",
+                    data = mapOf("toolName" to MobileActionFunctions.WEB_SEARCH),
+                    error = ToolError(ToolErrorCode.ExecutionFailed, "搜索失败"),
+                    retryable = false,
+                ),
+                ToolResult(
+                    requestId = "call-shanghai",
+                    status = ToolStatus.Cancelled,
+                    summary = "用户停止了工具执行",
+                    data = mapOf("toolName" to MobileActionFunctions.WEB_SEARCH),
+                    error = ToolError(ToolErrorCode.UserCancelled, "用户停止了工具执行"),
+                    retryable = false,
+                ),
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Cancelled, observed.run.state)
+        assertEquals(AgentObservationDecision.Cancel, observed.decision)
+        assertEquals(ToolStatus.Cancelled, observed.result.status)
+        assertEquals(ToolErrorCode.UserCancelled, observed.result.error?.code)
         assertTrue(observed.assistantMessage.contains("已取消"))
     }
 
@@ -602,6 +1029,48 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun confirmToolRequestRevalidatesPendingRequestSchemaBeforeExecution() {
+        val traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L })
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = traceStore,
+        )
+        val run = traceStore.createRun("发邮件")
+        val waitingRun = traceStore.updateState(run.id, AgentRunState.AwaitingUserConfirmation)
+        val invalidRequest = ToolRequest(
+            id = "invalid-email",
+            toolName = MobileActionFunctions.COMPOSE_EMAIL,
+            arguments = mapOf("subject" to "Hi"),
+            reason = "restored invalid pending request",
+        )
+        traceStore.savePendingConfirmation(
+            PendingToolConfirmationSnapshot(
+                run = waitingRun,
+                request = invalidRequest,
+                draft = ActionDraft(
+                    functionName = MobileActionFunctions.COMPOSE_EMAIL,
+                    title = "写邮件",
+                    summary = "restored invalid pending request",
+                    parameters = invalidRequest.arguments,
+                ),
+                skillId = null,
+                plannedByModel = true,
+                fallbackReason = "test restored pending",
+            ),
+        )
+
+        val confirmed = runtime.confirmToolRequest(run.id, invalidRequest.id)
+
+        requireNotNull(confirmed)
+        assertEquals(AgentRunState.Failed, confirmed.state)
+        assertEquals(null, runtime.latestPendingConfirmation())
+        val steps = traceStore.steps(run.id)
+        assertTrue(steps.any { step -> step is AgentStep.ToolRejected })
+        assertTrue(steps.none { step -> step is AgentStep.UserConfirmed })
+    }
+
+    @Test
     fun modelToolRequestCannotReusePriorToolRequestId() {
         val runtime = AgentLoopRuntime(
             memoryIndex = MemoryRepository(),
@@ -626,6 +1095,11 @@ class AgentLoopRuntimeTest {
         )
         requireNotNull(observedRead)
         assertEquals(AgentRunState.GeneratingAnswer, observedRead.run.state)
+        runtime.recordRemoteToolsExposed(
+            runId = planned.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
 
         val duplicate = runtime.observeModelToolRequest(
             runId = planned.run.id,
@@ -944,7 +1418,7 @@ class AgentLoopRuntimeTest {
         assertTrue(auditSink.events.all { event ->
             event.toolName == MobileActionFunctions.CANCEL_REMINDER &&
                 event.skillId == BuiltInSkillRuntime.REMINDER_SKILL &&
-                event.permissions.isEmpty()
+                ToolPermission.SchedulesBackgroundWork in event.permissions
         })
     }
 
@@ -3588,7 +4062,7 @@ class AgentLoopRuntimeTest {
         assertTrue(auditSink.events.all { event ->
             event.toolName == MobileActionFunctions.CANCEL_REMINDER &&
                 event.riskLevel == RiskLevel.MediumDraftOrNavigation &&
-                event.permissions.isEmpty()
+                ToolPermission.SchedulesBackgroundWork in event.permissions
         })
 
         val executing = runtime.confirmToolRequest(requested.run.id, requested.plan.request.id)
@@ -6131,12 +6605,12 @@ class AgentLoopRuntimeTest {
             maxToolRetryAttempts = 1,
         )
         val planned = runtime.runOnce(
-            input = "当前应用是什么",
+            input = "搜一下 Kotlin",
             installedCapabilities = setOf(ModelCapability.Chat),
             memoryEnabled = false,
         )
         require(planned.plan is AgentPlan.UseTool)
-        runtime.confirmToolRequest(planned.run.id, planned.plan.request.id)
+        assertEquals(MobileActionFunctions.WEB_SEARCH, planned.plan.request.toolName)
 
         val retrying = runtime.observeToolResult(
             runId = planned.run.id,
@@ -6183,7 +6657,7 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
-    fun retryableLocalEvidenceToolContinuesToLocalModelAfterSuccessfulRetry() {
+    fun retryableLocalEvidenceToolFailureDoesNotScheduleAutomaticRetry() {
         val auditSink = InMemoryToolAuditSink()
         val actionRuntime = ForegroundThenWifiActionRuntime()
         val runtime = AgentLoopRuntime(
@@ -6215,48 +6689,15 @@ class AgentLoopRuntimeTest {
         )
 
         requireNotNull(retrying)
-        assertEquals(AgentRunState.RetryingTool, retrying.run.state)
-        require(retrying.decision is AgentObservationDecision.RetryTool)
-        assertEquals(1, retrying.retryAttempt)
-
-        val replanned = runtime.observeToolResult(
-            runId = planned.run.id,
-            result = ToolResult(
-                requestId = planned.plan.request.id,
-                status = ToolStatus.Succeeded,
-                summary = "当前前台应用：Mail",
-                data = mapOf(
-                    "toolName" to MobileActionFunctions.QUERY_FOREGROUND_APP,
-                    "privacy" to MessagePrivacy.LocalOnly.name,
-                    "requiresLocalModel" to "true",
-                    "source" to "usage_stats_estimate",
-                    "confidence" to "estimate",
-                    "packageName" to "com.example.mail",
-                    "appLabel" to "Mail",
-                    "lastTimeUsedMillis" to "1234",
-                ),
-            ),
-        )
-
-        requireNotNull(replanned)
-        assertEquals(AgentRunState.GeneratingAnswer, replanned.run.state)
-        require(replanned.decision is AgentObservationDecision.ContinueWithModel)
-        assertTrue(replanned.decision.requiresLocalModel)
-        assertTrue(replanned.continuationRequiresLocalModel)
-        assertTrue(replanned.continuationPromptForModel.orEmpty().contains("Mail"))
-        assertTrue(replanned.continuationPromptForModel.orEmpty().contains("com.example.mail"))
+        assertEquals(AgentRunState.Failed, retrying.run.state)
+        require(retrying.decision is AgentObservationDecision.Fail)
+        assertNull(retrying.retryRequest)
+        assertEquals(0, retrying.retryAttempt)
         assertNull(runtime.latestPendingConfirmation())
         assertEquals(listOf(input), actionRuntime.plannedInputs)
-        assertEquals(1, replanned.steps.filterIsInstance<AgentStep.ToolRetryScheduled>().size)
-        assertEquals(
-            listOf(
-                MobileActionFunctions.QUERY_FOREGROUND_APP,
-            ),
-            replanned.steps.filterIsInstance<AgentStep.ToolRequested>().map { it.request.toolName },
-        )
-        assertTrue(auditSink.events.any { event ->
-            event.eventType == ToolAuditEventType.ToolRetryScheduled &&
-                event.requestId == planned.plan.request.id
+        assertTrue(retrying.steps.none { it is AgentStep.ToolRetryScheduled })
+        assertTrue(auditSink.events.none { event ->
+            event.eventType == ToolAuditEventType.ToolRetryScheduled
         })
     }
 

@@ -23,6 +23,9 @@ enum class SafetyOutcome {
 }
 
 class SafetyPolicy {
+    fun containsSensitivePersonalOrSecretContent(text: String): Boolean =
+        text.containsSensitiveNetworkSearchContent()
+
     fun evaluate(
         spec: ToolSpec,
         request: ToolRequest,
@@ -77,6 +80,9 @@ class SafetyPolicy {
             phonePattern.containsMatchIn(this) ||
             chineseIdPattern.containsMatchIn(this) ||
             secretTokenPattern.containsMatchIn(this) ||
+            cloudSecretPattern.containsMatchIn(this) ||
+            privateKeyBlockPattern.containsMatchIn(this) ||
+            secretAssignmentPattern.containsMatchIn(this) ||
             personalChineseKeywordPattern.containsMatchIn(this) ||
             personalEnglishKeywordPattern.containsMatchIn(normalized)
     }
@@ -100,6 +106,13 @@ class SafetyPolicy {
         val phonePattern = Regex("""(?<!\d)(?:\+?\d[\d\s-]{6,}\d|1[3-9]\d{9})(?!\d)""")
         val chineseIdPattern = Regex("""(?<!\d)\d{17}[0-9Xx](?!\d)""")
         val secretTokenPattern = Regex("""\b(?:sk-[A-Za-z0-9_-]{16,}|[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b""")
+        val cloudSecretPattern = Regex(
+            """\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\bAIza[0-9A-Za-z_-]{35}\b|\bxox[abprs]-[0-9A-Za-z-]{16,}\b""",
+        )
+        val privateKeyBlockPattern = Regex("""-----BEGIN [A-Z ]*PRIVATE KEY-----""")
+        val secretAssignmentPattern = Regex(
+            """(?i)\b(?:password|passwd|pwd|token|secret|api[_\s-]*key|access[_\s-]*key|client[_\s-]*secret)\b\s*[:=]\s*['"]?[^\s'"]{6,}""",
+        )
         val personalChineseKeywordPattern =
             Regex("""(我|我的|本人|自己).{0,12}(手机号|电话|邮箱|住址|地址|身份证|工号|银行卡|账号|密码|口令|令牌|密钥|API\s*Key)""")
         val personalEnglishKeywordPattern =

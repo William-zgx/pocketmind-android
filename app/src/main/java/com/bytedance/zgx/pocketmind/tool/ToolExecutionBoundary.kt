@@ -5,7 +5,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -27,6 +29,7 @@ class TimeoutToolExecutionBoundary(
     private val timeoutMillis: Long = DEFAULT_TOOL_EXECUTION_TIMEOUT_MILLIS,
     private val publicEvidenceBatchRetryAttempts: Int =
         DEFAULT_PUBLIC_EVIDENCE_BATCH_RETRY_ATTEMPTS,
+    private val publicEvidenceBatchRequestValidator: (ToolRequest) -> ToolResult? = { null },
 ) : ToolExecutionBoundary {
     override suspend fun execute(request: ToolRequest): ToolResult =
         withTimeoutOrNull(timeoutMillis) {
@@ -54,6 +57,16 @@ class TimeoutToolExecutionBoundary(
         requests: List<ToolRequest>,
         onRetry: suspend () -> Unit,
     ): List<ToolResult> {
+        val rejectedByRequestId = requests.mapNotNull { request ->
+            publicEvidenceBatchRequestValidator(request)?.let { rejection -> request.id to rejection }
+        }.toMap()
+        if (rejectedByRequestId.isNotEmpty()) {
+            return requests.map { request ->
+                rejectedByRequestId[request.id] ?: request.rejected(
+                    "Public evidence batch rejected before execution because another request was ineligible.",
+                )
+            }
+        }
         var results = executeAll(requests)
         repeat(publicEvidenceBatchRetryAttempts) {
             val retryRequests = requests.retryableFailures(results)
@@ -69,12 +82,23 @@ class TimeoutToolExecutionBoundary(
     }
 
     private suspend fun executeAll(requests: List<ToolRequest>): List<ToolResult> =
-        coroutineScope {
+        supervisorScope {
             requests.map { request ->
                 async {
-                    execute(request)
+                    executeForBatch(request)
                 }
             }.awaitAll()
+        }
+
+    private suspend fun executeForBatch(request: ToolRequest): ToolResult =
+        try {
+            execute(request)
+        } catch (cancellation: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw cancellation
+            request.cancelled(
+                summary = "Tool execution was cancelled before completion: ${cancellation.cleanMessage()}",
+                data = request.toolExecutionContext(),
+            )
         }
 }
 

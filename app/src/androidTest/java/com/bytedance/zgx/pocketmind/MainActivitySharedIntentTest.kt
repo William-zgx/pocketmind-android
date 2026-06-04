@@ -19,7 +19,7 @@ class MainActivitySharedIntentTest {
     val composeRule = createEmptyComposeRule()
 
     @Test
-    fun actionSendTextIsIngestedThroughActivityShareEntry() {
+    fun actionSendTextIsStagedThroughActivityShareEntry() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         resetMainActivityPersistentState(context, inferenceMode = InferenceMode.Local)
 
@@ -33,16 +33,19 @@ class MainActivitySharedIntentTest {
 
         ActivityScenario.launch<MainActivity>(launchIntent).use {
             composeRule.waitForTag("app_title")
-            composeRule.waitForText(sharedText, substring = true)
+            composeRule.waitForTag("pending_shared_input_strip")
             composeRule.waitForText("已接收分享内容", substring = true)
 
             composeRule.onNodeWithTag("app_title").assertIsDisplayed()
-            composeRule.onAllNodesWithText(sharedText, substring = true)
+            composeRule.onNodeWithTag("pending_shared_input_strip")
+                .assertIsDisplayed()
+            composeRule.onAllNodesWithText("文本", substring = true)
                 .onFirst()
                 .assertIsDisplayed()
             composeRule.onAllNodesWithText("已接收分享内容", substring = true)
                 .onFirst()
                 .assertIsDisplayed()
+            composeRule.assertTextAbsent(sharedText)
         }
     }
 
@@ -69,8 +72,8 @@ class MainActivitySharedIntentTest {
         }
     }
 
-    private fun ComposeTestRule.waitForTag(tag: String) {
-        waitUntil(timeoutMillis = 5_000) {
+    private fun ComposeTestRule.waitForTag(tag: String, timeoutMillis: Long = 5_000) {
+        waitUntil(timeoutMillis = timeoutMillis) {
             onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }

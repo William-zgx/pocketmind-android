@@ -163,6 +163,7 @@ class SafetyPolicyTest {
             "look up my email alex@example.com",
             "帮我查我的地址附近有什么",
             "search " + "sk-" + "1234567890abcdef1234567890abcdef",
+            "search AKIA1234567890ABCDEF",
         )
 
         sensitiveQueries.forEach { query ->
@@ -186,6 +187,18 @@ class SafetyPolicyTest {
             assertEquals(query, SafetyOutcome.RequireConfirmation, beforeConfirmation.outcome)
             assertEquals(query, SafetyOutcome.Allow, afterConfirmation.outcome)
         }
+    }
+
+    @Test
+    fun sensitiveRemotePromptContentIsDetectedForOutboundGate() {
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("我的手机号是 13800138000，帮我总结"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("please explain my email alex@example.com"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("check " + "sk-" + "1234567890abcdef1234567890abcdef"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("AWS key AKIA1234567890ABCDEF"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("Google key AIzaSyA123456789012345678901234567890123"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("Slack token xoxb-123456789012-abcdefabcdef"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("-----BEGIN PRIVATE KEY-----"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("client_secret = superSecret123"))
     }
 
     private fun toolSpec(

@@ -75,7 +75,17 @@ interface AssistantRouter : AutoCloseable {
         outcome: AgentExternalOutcome,
     ): AgentExternalOutcomeResult?
 
-    fun observeModelResult(runId: String, text: String): AgentModelObservationResult?
+    fun observeModelResult(
+        runId: String,
+        text: String,
+        allowInlineToolCalls: Boolean = true,
+    ): AgentModelObservationResult?
+
+    fun recordRemoteToolsExposed(
+        runId: String,
+        scope: RemoteToolScope,
+        toolNames: Set<String>,
+    )
 
     fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult?
 
@@ -186,8 +196,28 @@ class AssistantOrchestrator(
     ): AgentExternalOutcomeResult? =
         agentLoopRuntime.recordExternalOutcome(runId, requestId, outcome)
 
-    override fun observeModelResult(runId: String, text: String): AgentModelObservationResult? =
-        agentLoopRuntime.observeModelResult(runId, text)
+    override fun observeModelResult(
+        runId: String,
+        text: String,
+        allowInlineToolCalls: Boolean,
+    ): AgentModelObservationResult? =
+        agentLoopRuntime.observeModelResult(
+            runId = runId,
+            text = text,
+            allowInlineToolCalls = allowInlineToolCalls,
+        )
+
+    override fun recordRemoteToolsExposed(
+        runId: String,
+        scope: RemoteToolScope,
+        toolNames: Set<String>,
+    ) {
+        agentLoopRuntime.recordRemoteToolsExposed(
+            runId = runId,
+            scope = scope,
+            toolNames = toolNames,
+        )
+    }
 
     override fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult? =
         agentLoopRuntime.observeModelToolRequest(runId, request)

@@ -413,7 +413,7 @@ class DeviceContextToolExecutorTest {
     }
 
     @Test
-    fun backgroundTasksQueryReturnsLocalOnlyTaskAndPolicyMetadataWithoutBodies() {
+    fun backgroundTasksQueryReturnsLocalOnlyTaskAndPolicyMetadataWithoutReminderContent() {
         val scheduler = RecordingBackgroundTaskScheduler(
             activeTasks = listOf(
                 ScheduledTask(
@@ -479,16 +479,23 @@ class DeviceContextToolExecutorTest {
         assertEquals("background_tasks_local_only_no_reminder_body", result.data["metadataPolicy"])
         assertEquals("1", result.data["activeTaskCount"])
         assertEquals("1", result.data["historyTaskCount"])
+        assertTrue(result.summary.contains("元数据"))
         assertFalse(result.summary.contains("Doctor appointment"))
+        assertFalse(result.summary.contains("Paid invoice"))
         assertFalse(result.summary.contains("secret reminder body"))
+        assertFalse(result.summary.contains("private completed body"))
+        assertFalse(result.data.toString().contains("Doctor appointment"))
+        assertFalse(result.data.toString().contains("Paid invoice"))
+        assertFalse(result.data.toString().contains("secret reminder body"))
+        assertFalse(result.data.toString().contains("private completed body"))
         val tasks = JSONArray(result.data.getValue("tasksJson"))
         assertEquals(2, tasks.length())
         val task = tasks.getJSONObject(0)
         assertEquals(
-            setOf("scope", "id", "type", "status", "title", "triggerAtMillis", "createdAtMillis", "updatedAtMillis"),
+            setOf("scope", "id", "type", "status", "triggerAtMillis", "createdAtMillis", "updatedAtMillis"),
             task.keysSet(),
         )
-        assertEquals("Doctor appointment", task.getString("title"))
+        assertFalse(task.has("title"))
         assertFalse(task.has("body"))
         assertFalse(task.has("prompt"))
         assertFalse(task.has("text"))

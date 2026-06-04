@@ -5,6 +5,9 @@ import java.util.UUID
 const val TOOL_NAME_ONLY_OUTPUT_SCHEMA_JSON =
     """{"type":"object","required":["toolName"],"properties":{"toolName":{"type":"string","minLength":1}},"additionalProperties":false}"""
 
+const val MAX_SHARE_TEXT_CHARS = 4_000
+const val MAX_SHARE_TITLE_CHARS = 120
+
 data class ToolSpec(
     val name: String,
     val title: String,

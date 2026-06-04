@@ -577,6 +577,87 @@ class AgentRuntimePermissionPolicyTest {
         )
     }
 
+    @Test
+    fun android14RecentFilesAllAcceptsPartialMediaGrantWithoutAudio() {
+        val confirmation = confirmationFor(
+            toolName = MobileActionFunctions.QUERY_RECENT_FILES,
+            arguments = mapOf("kind" to "all"),
+        )
+        val imagePermission = Manifest.permission.READ_MEDIA_IMAGES
+        val videoPermission = Manifest.permission.READ_MEDIA_VIDEO
+        val selectedVisualPermission = Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+        val audioPermission = Manifest.permission.READ_MEDIA_AUDIO
+
+        assertTrue(
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to false,
+                    videoPermission to false,
+                    selectedVisualPermission to true,
+                    audioPermission to false,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ).isEmpty(),
+        )
+        assertTrue(
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to false,
+                    videoPermission to false,
+                    selectedVisualPermission to false,
+                    audioPermission to true,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ).isEmpty(),
+        )
+        assertEquals(
+            listOf(imagePermission, videoPermission, selectedVisualPermission, audioPermission),
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(
+                    imagePermission to false,
+                    videoPermission to false,
+                    selectedVisualPermission to false,
+                    audioPermission to false,
+                ),
+                apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                hasRuntimePermission = { false },
+            ),
+        )
+    }
+
+    @Test
+    fun runtimePermissionResultCanMatchCurrentPendingAfterActivityRecreation() {
+        val contacts = confirmationFor(MobileActionFunctions.QUERY_CONTACTS)
+        val screenshot = confirmationFor(MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR)
+
+        assertTrue(
+            contacts.requiresRuntimePermissionResult(
+                resultPermissions = setOf(Manifest.permission.READ_CONTACTS),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+            ),
+        )
+        assertTrue(
+            contacts.requiresRuntimePermissionResult(
+                resultPermissions = emptySet(),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+            ),
+        )
+        assertTrue(
+            contacts.matchesExecution(contacts.copy()),
+        )
+        assertTrue(
+            !contacts.matchesExecution(screenshot),
+        )
+        assertTrue(
+            !contacts.requiresRuntimePermissionResult(
+                resultPermissions = setOf(Manifest.permission.READ_MEDIA_IMAGES),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+            ),
+        )
+    }
+
     private fun confirmationFor(
         toolName: String,
         arguments: Map<String, String> = emptyMap(),

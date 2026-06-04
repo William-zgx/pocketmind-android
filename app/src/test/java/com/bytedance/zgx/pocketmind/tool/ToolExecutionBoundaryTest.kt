@@ -149,6 +149,59 @@ class ToolExecutionBoundaryTest {
         assertEquals(1, callCount)
         assertEquals(0, retryCallbackCount)
     }
+
+    @Test
+    fun publicEvidenceBatchMapsSingleToolCancellationWithoutCancellingWholeBatch() = runTest {
+        val cancelled = ToolRequest(id = "cancelled", toolName = "cancelled_tool")
+        val succeeded = ToolRequest(id = "succeeded", toolName = "succeeded_tool")
+        val boundary = TimeoutToolExecutionBoundary(
+            executor = LambdaToolExecutor { request ->
+                when (request.id) {
+                    "cancelled" -> throw CancellationException("single tool stopped")
+                    "succeeded" -> request.succeeded("success")
+                    else -> error("Unexpected request ${request.id}")
+                }
+            },
+            dispatcher = Dispatchers.Unconfined,
+        )
+
+        val results = boundary.executePublicEvidenceBatch(listOf(cancelled, succeeded))
+
+        assertEquals(listOf("cancelled", "succeeded"), results.map { it.requestId })
+        assertEquals(listOf(ToolStatus.Cancelled, ToolStatus.Succeeded), results.map { it.status })
+        assertEquals(ToolErrorCode.UserCancelled, results.first().error?.code)
+        assertFalse(results.first().retryable)
+        assertEquals("cancelled_tool", results.first().data["toolName"])
+    }
+
+    @Test
+    fun publicEvidenceBatchValidatorRejectsWholeBatchBeforeExecution() = runTest {
+        val allowed = ToolRequest(id = "allowed", toolName = "allowed_tool")
+        val blocked = ToolRequest(id = "blocked", toolName = "blocked_tool")
+        var executeCallCount = 0
+        val boundary = TimeoutToolExecutionBoundary(
+            executor = LambdaToolExecutor { request ->
+                executeCallCount += 1
+                request.succeeded("unexpected")
+            },
+            dispatcher = Dispatchers.Unconfined,
+            publicEvidenceBatchRequestValidator = { request ->
+                if (request.id == "blocked") {
+                    request.rejected("blocked is not public evidence")
+                } else {
+                    null
+                }
+            },
+        )
+
+        val results = boundary.executePublicEvidenceBatch(listOf(allowed, blocked))
+
+        assertEquals(0, executeCallCount)
+        assertEquals(listOf("allowed", "blocked"), results.map { it.requestId })
+        assertEquals(listOf(ToolStatus.Rejected, ToolStatus.Rejected), results.map { it.status })
+        assertTrue(results[0].summary.contains("another request was ineligible"))
+        assertTrue(results[1].summary.contains("blocked is not public evidence"))
+    }
 }
 
 private class LambdaToolExecutor(

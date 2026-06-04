@@ -125,11 +125,14 @@ data class VoiceInputDraft(
 
 data class VoiceCaptureUiState(
     val isListening: Boolean = false,
+    val isTranscribing: Boolean = false,
     val level: Float = 0f,
     val waveformLevels: List<Float> = emptyList(),
     val waveformFrame: Int = 0,
     val partialText: String = "",
-)
+) {
+    val isActive: Boolean get() = isListening || isTranscribing
+}
 
 data class SharedInputDraft(
     val id: Long,

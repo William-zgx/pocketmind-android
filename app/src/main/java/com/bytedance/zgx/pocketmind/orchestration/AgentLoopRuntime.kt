@@ -29,7 +29,6 @@ import com.bytedance.zgx.pocketmind.skill.SkillToolResultProgression
 import com.bytedance.zgx.pocketmind.skill.authorizationContractHash
 import com.bytedance.zgx.pocketmind.skill.validateStructure
 import com.bytedance.zgx.pocketmind.skill.valueFreeCheckpointForPendingTool
-import com.bytedance.zgx.pocketmind.tool.RiskLevel
 import com.bytedance.zgx.pocketmind.tool.ToolErrorCode
 import com.bytedance.zgx.pocketmind.tool.ToolPermission
 import com.bytedance.zgx.pocketmind.tool.ToolRegistry
@@ -40,6 +39,7 @@ import com.bytedance.zgx.pocketmind.tool.ToolStatus
 import com.bytedance.zgx.pocketmind.tool.cancelled
 import com.bytedance.zgx.pocketmind.tool.failed
 import com.bytedance.zgx.pocketmind.tool.isPublicEvidenceBatchEligible
+import com.bytedance.zgx.pocketmind.tool.isRemoteModelPlanningEligible
 import com.bytedance.zgx.pocketmind.tool.EXTERNAL_OUTCOME_CONFIRMED_SUMMARY_PREFIX
 import com.bytedance.zgx.pocketmind.tool.isUserConfirmedCompletedExternalOutcome
 import com.bytedance.zgx.pocketmind.tool.isUnverifiedExternalLaunch
@@ -71,6 +71,8 @@ class AgentLoopRuntime(
 ) {
     private val skillProgressor = SkillRunProgressor(toolRegistry = toolRegistry)
     private val valueFreeCompletedStepFrontiersByRunId = mutableMapOf<String, Set<String>>()
+    private val remoteToolScopesByRunId = mutableMapOf<String, RemoteToolScope>()
+    private val remoteExposedToolNamesByRunId = mutableMapOf<String, Set<String>>()
 
     @Suppress("UNUSED_PARAMETER")
     fun runOnce(
@@ -83,6 +85,7 @@ class AgentLoopRuntime(
         options: AgentRunOptions = AgentRunOptions(),
     ): AgentLoopResult {
         val createdRun = traceStore.createRun(input, sessionId)
+        remoteToolScopesByRunId[createdRun.id] = options.remoteToolScope
         traceStore.updateState(createdRun.id, AgentRunState.LoadingContext)
 
         val memoryHits = if (memoryEnabled) {
@@ -107,6 +110,7 @@ class AgentLoopRuntime(
                 traceStore.appendStep(createdRun.id, AgentStep.ToolRejected(initialToolPlan.result))
                 auditRejectedTool(createdRun.id, initialToolPlan.result)
                 val failedRun = traceStore.updateState(createdRun.id, AgentRunState.Failed)
+                clearEphemeralRunState(createdRun.id)
                 return AgentLoopResult(
                     run = failedRun,
                     plan = initialToolPlan,
@@ -164,6 +168,7 @@ class AgentLoopRuntime(
         traceStore.appendStep(runId, AgentStep.Failed(failureReason))
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
+        clearEphemeralRunState(runId)
         return AgentModelObservationResult(
             run = updatedRun,
             decision = decision,
@@ -190,7 +195,7 @@ class AgentLoopRuntime(
         val decision = AgentObservationDecision.Cancel
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         val updatedRun = traceStore.updateState(runId, AgentRunState.Cancelled)
-        valueFreeCompletedStepFrontiersByRunId.remove(runId)
+        clearEphemeralRunState(runId)
         return AgentModelObservationResult(
             run = updatedRun,
             decision = decision,
@@ -207,7 +212,7 @@ class AgentLoopRuntime(
         val decision = AgentObservationDecision.Fail(reason)
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
-        valueFreeCompletedStepFrontiersByRunId.remove(runId)
+        clearEphemeralRunState(runId)
         return AgentModelObservationResult(
             run = updatedRun,
             decision = decision,
@@ -226,7 +231,7 @@ class AgentLoopRuntime(
         val decision = AgentObservationDecision.Fail(reason)
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
-        valueFreeCompletedStepFrontiersByRunId.remove(runId)
+        clearEphemeralRunState(runId)
         return AgentObservationResult(
             run = updatedRun,
             result = result,
@@ -251,7 +256,7 @@ class AgentLoopRuntime(
         auditRejectedTool(run.id, rejectedPlan.result)
         traceStore.appendStep(run.id, AgentStep.Failed(rejectedPlan.result.summary))
         val failedRun = traceStore.updateState(run.id, AgentRunState.Failed)
-        valueFreeCompletedStepFrontiersByRunId.remove(run.id)
+        clearEphemeralRunState(run.id)
         return AgentLoopResult(
             run = failedRun,
             plan = rejectedPlan,
@@ -282,6 +287,13 @@ class AgentLoopRuntime(
         if (run.state != AgentRunState.AwaitingUserConfirmation) return run
         val request = pendingToolRequest(runId, requestId)
             ?: return traceStore.run(runId) ?: run
+        toolRegistry.validate(request)?.let { rejection ->
+            traceStore.appendStep(runId, AgentStep.ToolRejected(rejection))
+            auditRejectedTool(runId, rejection)
+            traceStore.clearPendingConfirmation(runId, requestId)
+            return traceStore.updateState(runId, AgentRunState.Failed)
+                .also { clearEphemeralRunState(runId) }
+        }
         val spec = toolRegistry.specFor(request.toolName)
         if (spec == null) {
             val rejection = request.rejected("Unknown tool: ${request.toolName}")
@@ -289,6 +301,7 @@ class AgentLoopRuntime(
             auditRejectedTool(runId, rejection)
             traceStore.clearPendingConfirmation(runId, requestId)
             return traceStore.updateState(runId, AgentRunState.Failed)
+                .also { clearEphemeralRunState(runId) }
         }
         val safetyDecision = safetyPolicy.evaluate(spec, request, SafetyContext(userConfirmed = true))
         if (safetyDecision.outcome == SafetyOutcome.Reject) {
@@ -298,6 +311,7 @@ class AgentLoopRuntime(
             auditRejectedTool(runId, rejection)
             traceStore.clearPendingConfirmation(runId, requestId)
             return traceStore.updateState(runId, AgentRunState.Failed)
+                .also { clearEphemeralRunState(runId) }
         }
         traceStore.appendStep(runId, AgentStep.SafetyChecked(safetyDecision))
         traceStore.appendStep(runId, AgentStep.UserConfirmed(requestId))
@@ -433,7 +447,7 @@ class AgentLoopRuntime(
         }
         val updatedRun = traceStore.updateState(runId, finalState)
         if (finalState in terminalRunStates) {
-            valueFreeCompletedStepFrontiersByRunId.remove(runId)
+            clearEphemeralRunState(runId)
         }
         if (decision is AgentObservationDecision.PlanNextTool && decision.plan.requiresUserConfirmation()) {
             traceStore.savePendingConfirmation(decision.plan.toPendingSnapshot(updatedRun))
@@ -447,14 +461,22 @@ class AgentLoopRuntime(
         )
     }
 
-    fun observeModelResult(runId: String, text: String): AgentModelObservationResult? {
+    fun observeModelResult(
+        runId: String,
+        text: String,
+        allowInlineToolCalls: Boolean = true,
+    ): AgentModelObservationResult? {
         val run = traceStore.run(runId) ?: return null
         if (run.state != AgentRunState.GeneratingAnswer) return null
         if (observationDecisionBudgetExceeded(runId)) {
             return failRunBudget(runId, OBSERVATION_DECISION_BUDGET_EXCEEDED_REASON)
         }
         val nextToolPlan = when {
-            text.isNotBlank() -> planNextToolAfterModelResult(run, text.trim())
+            text.isNotBlank() -> planNextToolAfterModelResult(
+                run = run,
+                text = text.trim(),
+                allowInlineToolCalls = allowInlineToolCalls,
+            )
             latestSkillPlan(runId) != null -> NextObservationPlan.Rejected(
                 "Model output was blank; cannot continue skill.",
             )
@@ -487,7 +509,7 @@ class AgentLoopRuntime(
         }
         val updatedRun = traceStore.updateState(runId, finalState)
         if (finalState in terminalRunStates) {
-            valueFreeCompletedStepFrontiersByRunId.remove(runId)
+            clearEphemeralRunState(runId)
         }
         if (decision is AgentObservationDecision.PlanNextTool && decision.plan.requiresUserConfirmation()) {
             traceStore.savePendingConfirmation(decision.plan.toPendingSnapshot(updatedRun))
@@ -496,6 +518,27 @@ class AgentLoopRuntime(
             run = updatedRun,
             decision = decision,
             steps = traceStore.steps(runId),
+        )
+    }
+
+    fun recordRemoteToolsExposed(
+        runId: String,
+        scope: RemoteToolScope,
+        toolNames: Set<String>,
+    ) {
+        val run = traceStore.run(runId) ?: return
+        if (run.state != AgentRunState.GeneratingAnswer) return
+        val sanitizedNames = toolNames
+            .filter { toolName -> toolRegistry.isKnownTool(toolName) }
+            .toSortedSet()
+        remoteToolScopesByRunId[runId] = scope
+        remoteExposedToolNamesByRunId[runId] = sanitizedNames
+        traceStore.appendStep(
+            runId,
+            AgentStep.RemoteToolsExposed(
+                scope = scope,
+                toolNames = sanitizedNames.toList(),
+            ),
         )
     }
 
@@ -508,6 +551,20 @@ class AgentLoopRuntime(
         if (toolStepBudgetExceeded(runId)) {
             return failRunBudget(runId, TOOL_STEP_BUDGET_EXCEEDED_REASON)
         }
+        rejectRemoteToolIfNotExposedInCurrentScope(runId, request)?.let { rejected ->
+            traceStore.appendStep(runId, AgentStep.ModelPlanned(AgentPlan.RejectedTool(rejected)))
+            traceStore.appendStep(runId, AgentStep.ToolRejected(rejected))
+            auditRejectedTool(runId, rejected)
+            val decision = AgentObservationDecision.Fail(rejected.summary)
+            traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
+            val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
+            clearEphemeralRunState(runId)
+            return AgentModelObservationResult(
+                run = updatedRun,
+                decision = decision,
+                steps = traceStore.steps(runId),
+            )
+        }
         if (toolRequestFor(runId, request.id) != null) {
             val rejected = request.rejected("Model tool request id already exists: ${request.id}")
             traceStore.appendStep(runId, AgentStep.ModelPlanned(AgentPlan.RejectedTool(rejected)))
@@ -516,6 +573,7 @@ class AgentLoopRuntime(
             val decision = AgentObservationDecision.Fail(rejected.summary)
             traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
             val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
+            clearEphemeralRunState(runId)
             return AgentModelObservationResult(
                 run = updatedRun,
                 decision = decision,
@@ -557,6 +615,7 @@ class AgentLoopRuntime(
                 val decision = AgentObservationDecision.Fail(plan.result.summary)
                 traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
                 val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
+                clearEphemeralRunState(runId)
                 AgentModelObservationResult(
                     run = updatedRun,
                     decision = decision,
@@ -611,6 +670,9 @@ class AgentLoopRuntime(
 
         val plans = mutableListOf<AgentPlan.UseTool>()
         requests.forEach { request ->
+            rejectRemoteToolIfNotExposedInCurrentScope(runId, request)?.let { rejection ->
+                return rejectModelToolBatch(runId = runId, result = rejection)
+            }
             toolRegistry.validate(request)?.let { rejection ->
                 return rejectModelToolBatch(runId = runId, result = rejection)
             }
@@ -697,22 +759,41 @@ class AgentLoopRuntime(
             )
             plan to traceResult
         }
+        val successfulPairs = observedPairs.filter { (_, result) -> result.status == ToolStatus.Succeeded }
         val cancelledPair = observedPairs.firstOrNull { (_, result) -> result.status == ToolStatus.Cancelled }
-        val failedPair = observedPairs.firstOrNull { (_, result) -> result.status != ToolStatus.Succeeded }
-        val assistantMessage = cancelledPair?.let { (_, result) ->
-            "工具批量执行已取消：${result.summary}"
-        } ?: failedPair?.let { (_, result) ->
-            "工具批量执行失败：${result.summary}"
-        } ?: "工具执行结果：已完成 ${observedPairs.size} 个公开只读工具调用。"
+        val gapPairs = observedPairs.filter { (_, result) ->
+            result.status != ToolStatus.Succeeded && result.status != ToolStatus.Cancelled
+        }
+        val failedPair = gapPairs.firstOrNull()
+        val aggregatePair = cancelledPair ?: failedPair
+        val assistantMessage = when {
+            cancelledPair != null -> "工具批量执行已取消：${cancelledPair.second.summary}"
+            failedPair != null && successfulPairs.isNotEmpty() ->
+                "工具批量执行部分失败：已获得 ${successfulPairs.size}/${observedPairs.size} 个公开只读工具结果；失败缺口：${failedPair.second.summary}"
+
+            failedPair != null -> "工具批量执行失败：${failedPair.second.summary}"
+            else -> "工具执行结果：已完成 ${observedPairs.size} 个公开只读工具调用。"
+        }
+        val aggregateStatus = when {
+            cancelledPair != null -> ToolStatus.Cancelled
+            successfulPairs.isNotEmpty() -> ToolStatus.Succeeded
+            failedPair != null -> failedPair.second.status
+            else -> ToolStatus.Succeeded
+        }
         val aggregateResult = ToolResult(
             requestId = "public-evidence-batch:${plannedIds.joinToString(",")}",
-            status = failedPair?.second?.status ?: ToolStatus.Succeeded,
+            status = aggregateStatus,
             summary = assistantMessage,
             data = mapOf(
                 "toolName" to "public_evidence_batch",
                 "toolCount" to observedPairs.size.toString(),
+                "succeededToolCount" to successfulPairs.size.toString(),
+                "failedToolCount" to gapPairs.size.toString(),
+                "cancelledToolCount" to observedPairs
+                    .count { (_, result) -> result.status == ToolStatus.Cancelled }
+                    .toString(),
             ),
-            error = failedPair?.second?.error,
+            error = if (aggregateStatus == ToolStatus.Succeeded) null else aggregatePair?.second?.error,
             retryable = false,
         )
         traceStore.appendStep(runId, AgentStep.AssistantResponded(assistantMessage))
@@ -724,13 +805,27 @@ class AgentLoopRuntime(
                 reason = OBSERVATION_DECISION_BUDGET_EXCEEDED_REASON,
             )
         }
-        val continuationPrompt = if (failedPair == null) {
-            publicEvidenceBatchContinuationPrompt(run, observedPairs)
+        val continuationPrompt = if (cancelledPair == null && successfulPairs.isNotEmpty()) {
+            publicEvidenceBatchContinuationPrompt(
+                run = run,
+                observedPairs = observedPairs,
+                successfulPairs = successfulPairs,
+                gapPairs = gapPairs,
+            )
         } else {
             null
         }
         val decision = when {
             cancelledPair != null -> AgentObservationDecision.Cancel
+            successfulPairs.isNotEmpty() -> AgentObservationDecision.ContinueWithModel(
+                requiresLocalModel = false,
+                reason = if (gapPairs.isEmpty()) {
+                    "Parallel public evidence tools completed."
+                } else {
+                    "Parallel public evidence tools partially completed."
+                },
+            )
+
             failedPair != null -> AgentObservationDecision.Fail(failedPair.second.summary)
             else -> AgentObservationDecision.ContinueWithModel(
                 requiresLocalModel = false,
@@ -746,8 +841,11 @@ class AgentLoopRuntime(
                 else -> AgentRunState.Failed
             },
         )
+        if (decision is AgentObservationDecision.ContinueWithModel) {
+            remoteToolScopesByRunId[runId] = RemoteToolScope.PublicEvidenceOnly
+        }
         if (updatedRun.state in terminalRunStates) {
-            valueFreeCompletedStepFrontiersByRunId.remove(runId)
+            clearEphemeralRunState(runId)
         }
         return AgentObservationResult(
             run = updatedRun,
@@ -757,6 +855,7 @@ class AgentLoopRuntime(
             recoveryAction = null,
             continuationPromptForModel = continuationPrompt,
             continuationRequiresLocalModel = false,
+            continuationRemoteToolScope = RemoteToolScope.PublicEvidenceOnly,
             retryRequest = null,
             retryAttempt = 0,
             steps = traceStore.steps(runId),
@@ -777,7 +876,7 @@ class AgentLoopRuntime(
         val decision = AgentObservationDecision.Fail(result.summary)
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         val updatedRun = traceStore.updateState(runId, AgentRunState.Failed)
-        valueFreeCompletedStepFrontiersByRunId.remove(runId)
+        clearEphemeralRunState(runId)
         return AgentModelObservationResult(
             run = updatedRun,
             decision = decision,
@@ -807,6 +906,8 @@ class AgentLoopRuntime(
         val continuation = continuationForToolObservation(run, request, safeResult)
         val continuationPrompt = continuation?.prompt
         val continuationRequiresLocalModel = continuation?.requiresLocalModel ?: false
+        val continuationRemoteToolScope =
+            continuation?.remoteToolScope ?: RemoteToolScope.PublicEvidenceOnly
         val canPlanNextToolBeforeContinuation = continuation?.canPlanNextToolBeforeModel ?: false
         val observedResult = safeResult.redactedForTrace(request)
         val budgetExceeded = observationDecisionBudgetExceeded(runId)
@@ -911,7 +1012,10 @@ class AgentLoopRuntime(
         }
         val updatedRun = traceStore.updateState(runId, finalState)
         if (finalState in terminalRunStates && !observedResult.isUnverifiedExternalLaunch()) {
-            valueFreeCompletedStepFrontiersByRunId.remove(runId)
+            clearEphemeralRunState(runId)
+        }
+        if (decision is AgentObservationDecision.ContinueWithModel) {
+            remoteToolScopesByRunId[runId] = continuationRemoteToolScope
         }
         if (decision is AgentObservationDecision.PlanNextTool && decision.plan.requiresUserConfirmation()) {
             traceStore.savePendingConfirmation(decision.plan.toPendingSnapshot(updatedRun))
@@ -924,6 +1028,7 @@ class AgentLoopRuntime(
             recoveryAction = recoveryAction,
             continuationPromptForModel = continuationPrompt,
             continuationRequiresLocalModel = continuationRequiresLocalModel,
+            continuationRemoteToolScope = continuationRemoteToolScope,
             retryRequest = retryRequest,
             retryAttempt = retryAttempt,
             steps = traceStore.steps(runId),
@@ -1101,9 +1206,14 @@ class AgentLoopRuntime(
     private fun planNextToolAfterModelResult(
         run: AgentRun,
         text: String,
+        allowInlineToolCalls: Boolean = true,
     ): NextObservationPlan {
         val skillPlan = latestSkillPlan(run.id)
-            ?: return planExplicitToolCallAfterModelResult(run, text)
+            ?: return if (allowInlineToolCalls) {
+                planExplicitToolCallAfterModelResult(run, text)
+            } else {
+                NextObservationPlan.None
+            }
         val requestedRequestIds = toolRequestsFor(run.id).mapTo(mutableSetOf()) { request -> request.id }
         invalidSkillPlanReason(skillPlan)?.let { reason ->
             return rejectNextToolPlan(
@@ -1290,6 +1400,7 @@ class AgentLoopRuntime(
         traceStore.appendStep(run.id, AgentStep.ToolRejected(plan.result))
         auditRejectedTool(run.id, plan.result)
         val failedRun = traceStore.updateState(run.id, AgentRunState.Failed)
+        clearEphemeralRunState(run.id)
         return AgentLoopResult(
             run = failedRun,
             plan = plan,
@@ -1368,7 +1479,7 @@ class AgentLoopRuntime(
         traceStore.clearPendingConfirmation(snapshot.run.id, snapshot.request.id)
         traceStore.appendStep(snapshot.run.id, AgentStep.Failed(rejection.summary))
         traceStore.updateState(snapshot.run.id, AgentRunState.Failed)
-        valueFreeCompletedStepFrontiersByRunId.remove(snapshot.run.id)
+        clearEphemeralRunState(snapshot.run.id)
         return false
     }
 
@@ -1837,28 +1948,7 @@ class AgentLoopRuntime(
 
     private fun ToolRequest.allowsAutomaticRetry(): Boolean {
         val spec = toolRegistry.specFor(toolName) ?: return false
-        if (spec.riskLevel == RiskLevel.HighExternalSend ||
-            spec.riskLevel == RiskLevel.CriticalDeviceOrPayment
-        ) {
-            return false
-        }
-        val sideEffectPermissions = setOf(
-            ToolPermission.StartsExternalActivity,
-            ToolPermission.SendsTextToExternalApp,
-            ToolPermission.SchedulesBackgroundWork,
-            ToolPermission.PostsNotification,
-        )
-        if (spec.permissions.any { permission -> permission in sideEffectPermissions }) return false
-        val readPermissions = setOf(
-            ToolPermission.ReadsDeviceContext,
-            ToolPermission.ReadsClipboard,
-            ToolPermission.ReadsCalendar,
-            ToolPermission.ReadsContacts,
-            ToolPermission.ReadsFiles,
-            ToolPermission.ReadsAccessibilityText,
-        )
-        return spec.riskLevel == RiskLevel.LowReadOnly ||
-            spec.permissions.any { permission -> permission in readPermissions }
+        return spec.isPublicEvidenceBatchEligible()
     }
 
     private fun continuationForToolObservation(
@@ -1964,20 +2054,17 @@ class AgentLoopRuntime(
         request: ToolRequest,
         result: ToolResult,
     ): ToolObservationContinuation? {
-        if (result.data["privacy"] == MessagePrivacy.LocalOnly.name) return null
-        if (result.data["requiresLocalModel"]?.toBooleanStrictOrNull() == true) return null
-        val publicData = result.promptDataBlock()
+        if (!result.isPublicEvidenceForRemoteModel()) return null
+        val evidenceBlocks = priorPublicEvidencePromptBlocks(
+            runId = run.id,
+            excludedRequestIds = setOf(request.id),
+        ) + request.publicEvidencePromptBlock(result)
         return ToolObservationContinuation(
-            prompt = """
-                请根据工具返回的公开只读结果回答用户原始问题。不要只复述工具状态；如果用户要求比较、计算、总结或判断，请基于工具结果完成对应推理。
-                如果工具结果不足以完成用户请求，可以继续调用公开只读工具补充证据；仍不足时请明确说明缺少什么信息，不要编造。
-
-                用户原始请求：${run.input}
-                工具名称：${request.toolName}
-                工具观察：${result.summary}
-                工具公开数据：
-                $publicData
-            """.trimIndent(),
+            prompt = publicEvidenceContinuationPrompt(
+                run = run,
+                evidenceBlocks = evidenceBlocks,
+                gapBlocks = emptyList(),
+            ),
             requiresLocalModel = false,
             canPlanNextToolBeforeModel = true,
         )
@@ -1986,42 +2073,143 @@ class AgentLoopRuntime(
     private fun publicEvidenceBatchContinuationPrompt(
         run: AgentRun,
         observedPairs: List<Pair<AgentPlan.UseTool, ToolResult>>,
+        successfulPairs: List<Pair<AgentPlan.UseTool, ToolResult>>,
+        gapPairs: List<Pair<AgentPlan.UseTool, ToolResult>>,
     ): String {
-        val evidenceBlocks = observedPairs
-            .mapIndexed { index, (plan, result) ->
-                val argumentBlock = plan.request.arguments.entries
-                    .sortedBy { (key, _) -> key }
-                    .joinToString(separator = "\n") { (key, value) ->
-                        "$key: ${value.boundedPromptValue()}"
-                    }
-                    .ifBlank { "无" }
-                """
-                    工具 ${index + 1}
-                    工具名称：${plan.request.toolName}
-                    工具参数：
-                    $argumentBlock
-                    工具观察：${result.summary}
-                    工具公开数据：
-                    ${result.promptDataBlock()}
-                """.trimIndent()
-            }
-            .joinToString(separator = "\n\n")
+        val currentRequestIds = observedPairs.mapTo(mutableSetOf()) { (plan, _) -> plan.request.id }
+        val evidenceBlocks = priorPublicEvidencePromptBlocks(
+            runId = run.id,
+            excludedRequestIds = currentRequestIds,
+        ) + successfulPairs.map { (plan, result) ->
+            plan.request.publicEvidencePromptBlock(result)
+        }
+        val gapBlocks = gapPairs.map { (plan, result) ->
+            plan.request.publicEvidenceGapBlock(result)
+        }
+        return publicEvidenceContinuationPrompt(
+            run = run,
+            evidenceBlocks = evidenceBlocks,
+            gapBlocks = gapBlocks,
+        )
+    }
+
+    private fun publicEvidenceContinuationPrompt(
+        run: AgentRun,
+        evidenceBlocks: List<PublicEvidencePromptBlock>,
+        gapBlocks: List<PublicEvidenceGapBlock>,
+    ): String {
+        val gapSection = if (gapBlocks.isEmpty()) {
+            ""
+        } else {
+            """
+
+            失败缺口：
+            ${gapBlocks.renderPublicEvidenceGapBlocks()}
+            """.trimIndent()
+        }
         return """
-            请根据以下多个公开只读工具结果回答用户原始问题。不要只回答其中一个工具结果；如果用户要求比较、计算、总结或判断，请综合所有可用证据完成对应推理。
+            请根据以下公开只读工具结果回答用户原始问题。不要只回答最后一次工具结果；如果用户要求比较、计算、总结或判断，请综合所有可用证据完成对应推理。
+            如果存在失败缺口，请先基于成功证据部分回答；无法完成的部分明确说明缺少什么信息，不要编造。
             如果工具结果仍不足以完成用户请求，可以继续调用公开只读工具补充证据；仍不足时请明确说明缺少什么信息，不要编造。
 
             用户原始请求：${run.input}
 
-            工具结果：
-            $evidenceBlocks
+            成功公开证据：
+            ${evidenceBlocks.renderPublicEvidenceBlocks()}
+            $gapSection
         """.trimIndent()
     }
 
+    private fun priorPublicEvidencePromptBlocks(
+        runId: String,
+        excludedRequestIds: Set<String>,
+    ): List<PublicEvidencePromptBlock> {
+        val requestsById = toolRequestsFor(runId).associateBy { request -> request.id }
+        return traceStore.steps(runId)
+            .asSequence()
+            .mapNotNull { step -> (step as? AgentStep.ToolObserved)?.result }
+            .filter { result ->
+                result.requestId !in excludedRequestIds &&
+                    result.status == ToolStatus.Succeeded &&
+                    result.isPublicEvidenceForRemoteModel()
+            }
+            .mapNotNull { result ->
+                val request = requestsById[result.requestId] ?: return@mapNotNull null
+                val spec = toolRegistry.specFor(request.toolName) ?: return@mapNotNull null
+                if (spec.resultContinuationPolicy != ToolResultContinuationPolicy.PublicEvidence) {
+                    return@mapNotNull null
+                }
+                request.publicEvidencePromptBlock(result)
+            }
+            .toList()
+    }
+
+    private fun ToolResult.isPublicEvidenceForRemoteModel(): Boolean =
+        data["privacy"] != MessagePrivacy.LocalOnly.name &&
+            data["requiresLocalModel"]?.toBooleanStrictOrNull() != true
+
+    private fun ToolRequest.publicEvidencePromptBlock(result: ToolResult): PublicEvidencePromptBlock =
+        PublicEvidencePromptBlock(
+            toolName = toolName,
+            argumentBlock = argumentsPromptBlock(),
+            summary = result.summary,
+            dataBlock = result.promptDataBlock(),
+        )
+
+    private fun ToolRequest.publicEvidenceGapBlock(result: ToolResult): PublicEvidenceGapBlock =
+        PublicEvidenceGapBlock(
+            toolName = toolName,
+            argumentBlock = argumentsPromptBlock(),
+            status = result.status.name,
+            summary = result.summary,
+            errorMessage = result.error?.message,
+        )
+
+    private fun ToolRequest.argumentsPromptBlock(): String =
+        arguments.entries
+            .sortedBy { (key, _) -> key }
+            .joinToString(separator = "\n") { (key, value) ->
+                "$key: ${value.boundedPromptValue()}"
+            }
+            .ifBlank { "无" }
+
+    private fun List<PublicEvidencePromptBlock>.renderPublicEvidenceBlocks(): String =
+        if (isEmpty()) {
+            "无"
+        } else {
+            mapIndexed { index, block ->
+                """
+                    工具 ${index + 1}
+                    工具名称：${block.toolName}
+                    工具参数：
+                    ${block.argumentBlock}
+                    工具观察：${block.summary.boundedPromptValue()}
+                    工具公开数据：
+                    ${block.dataBlock}
+                """.trimIndent()
+            }.joinToString(separator = "\n\n")
+        }
+
+    private fun List<PublicEvidenceGapBlock>.renderPublicEvidenceGapBlocks(): String =
+        if (isEmpty()) {
+            "无"
+        } else {
+            mapIndexed { index, block ->
+                """
+                    缺口 ${index + 1}
+                    工具名称：${block.toolName}
+                    工具参数：
+                    ${block.argumentBlock}
+                    状态：${block.status}
+                    失败摘要：${block.summary.boundedPromptValue()}
+                    错误：${block.errorMessage?.boundedPromptValue() ?: "无"}
+                """.trimIndent()
+            }.joinToString(separator = "\n\n")
+        }
+
     private fun ToolResult.publicEvidenceBatchResultOrFailure(request: ToolRequest): ToolResult {
         if (status != ToolStatus.Succeeded) return this
-        if (data["privacy"] == MessagePrivacy.LocalOnly.name ||
-            data["requiresLocalModel"]?.toBooleanStrictOrNull() == true
-        ) {
+        if (!isPublicEvidenceForRemoteModel()) {
             val summary = "Tool ${request.toolName} returned local-only evidence in a public evidence batch."
             return request.failed(
                 code = ToolErrorCode.InvalidResult,
@@ -2133,10 +2321,61 @@ class AgentLoopRuntime(
             ?: skillPlan.manifest.title
     }
 
+    private fun rejectRemoteToolIfNotExposedInCurrentScope(
+        runId: String,
+        request: ToolRequest,
+    ): ToolResult? {
+        val spec = toolRegistry.specFor(request.toolName)
+            ?: return request.rejected("Unknown tool: ${request.toolName}")
+        val scope = remoteToolScopesByRunId[runId] ?: RemoteToolScope.PublicEvidenceOnly
+        val exposedNames = remoteExposedToolNamesByRunId[runId]
+            ?: return request.rejected(
+                "Remote tool ${request.toolName} cannot be used before a remote tool snapshot is recorded.",
+            )
+        if (request.toolName !in exposedNames) {
+            return request.rejected(
+                "Remote tool ${request.toolName} was not exposed in the current remote tool snapshot.",
+            )
+        }
+        val exposed = when (scope) {
+            RemoteToolScope.PublicEvidenceOnly -> spec.isPublicEvidenceBatchEligible()
+            RemoteToolScope.ModelPlanning -> spec.isRemoteModelPlanningEligible()
+        }
+        return if (exposed) {
+            null
+        } else {
+            request.rejected(
+                "Remote tool ${request.toolName} was not exposed in the current ${scope.name} tool scope.",
+            )
+        }
+    }
+
+    private fun clearEphemeralRunState(runId: String) {
+        valueFreeCompletedStepFrontiersByRunId.remove(runId)
+        remoteToolScopesByRunId.remove(runId)
+        remoteExposedToolNamesByRunId.remove(runId)
+    }
+
     private data class ToolObservationContinuation(
         val prompt: String,
         val requiresLocalModel: Boolean,
+        val remoteToolScope: RemoteToolScope = RemoteToolScope.PublicEvidenceOnly,
         val canPlanNextToolBeforeModel: Boolean = false,
+    )
+
+    private data class PublicEvidencePromptBlock(
+        val toolName: String,
+        val argumentBlock: String,
+        val summary: String,
+        val dataBlock: String,
+    )
+
+    private data class PublicEvidenceGapBlock(
+        val toolName: String,
+        val argumentBlock: String,
+        val status: String,
+        val summary: String,
+        val errorMessage: String?,
     )
 
     private val terminalRunStates = setOf(

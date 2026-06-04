@@ -30,7 +30,13 @@ Google AI Edge LiteRT-LM.
   safe planning tools; non-public execution still returns to local validation
   and confirmation. Multiple calls in one model turn are executed in parallel
   only when every tool is public, read-only, no-confirmation, non-private, and
-  side-effect free; mixed batches fail closed before any tool is run.
+  side-effect free; mixed batches fail closed before any tool is run. The
+  remote-model system prompt and `web_search` tool description explicitly tell
+  the model to split multi-evidence comparison questions into independent
+  public read-only calls when appropriate; the app does not hard-code
+  weather- or city-specific decomposition. Public-evidence follow-up turns keep
+  the remote tool schema restricted to public read-only tools, and remote plain
+  text cannot trigger the local inline `call:tool{...}` parser.
 - Value-free Skill checkpoint persistence records only run/request/step ids,
   manifest identity, output keys, and private-output refs for pending Skill
   confirmations; raw continuation outputs and executable payload values stay
@@ -113,6 +119,9 @@ excerpts, current-screen Accessibility text snapshots, and attachment metadata
 are not automatically sent to the configured backend. HTTPS is
 required except for local debug hosts such as `localhost`, `127.0.0.1`, and
 Android emulator `10.0.2.2`.
+The current remote prompt also passes a conservative outbound privacy gate:
+personal identifiers, contact details, and token/API-key-like content are kept
+LocalOnly with a prompt to switch local or remove sensitive content.
 API keys are stored with Android Keystore-backed encryption and are removed
 when the user clears the key field.
 When the remote model requests tools, PocketMind still routes the request
@@ -167,7 +176,9 @@ supported tool draft after a successful observed tool result; unsupported or
 malformed drafts fail closed, and every proposed tool still requires explicit
 confirmation. After confirmation,
 Android execution returns a structured tool result that is written back to the
-Agent run trace, audit log, and chat session.
+Agent run trace and audit log. The chat surface only shows a safe result
+summary; structured fields and allowlisted completion metadata are inspected
+through the trace/audit surfaces, not a typed chat card.
 Reminder requests such as “提醒我 15 分钟后喝水” become confirmed
 `schedule_reminder` tool calls and are persisted before being handed to Android
 AlarmManager. Pending reminders are restored after device reboot; reminders
@@ -181,7 +192,9 @@ Requests such as “取消提醒 task-123” use the skill-first path and become
 confirmed `cancel_reminder` tool calls only when the request explicitly
 mentions a reminder and a `task-*` id. Requests without a task id, API or
 implementation discussions, negated commands, and non-reminder cancellations
-are not routed to the tool.
+are not routed to the tool. The tool declares the background scheduling
+boundary in its permission metadata so audit and safety policy treat reminder
+cancellation as a local scheduling mutation, not as a parameter-free read.
 Requests such as “开启周期检查，每 2 小时” or “关闭周期检查” become confirmed
 `configure_periodic_check` tool calls. The tool only enables or disables the
 local reminder patrol policy through WorkManager; it does not run background
@@ -274,10 +287,11 @@ screen text / visible text / Accessibility text.
 Explicit requests such as “OCR 当前屏幕截图文字” become confirmed
 `capture_current_screenshot_ocr` tool calls. After the normal tool confirmation,
 PocketMind asks Android for a foreground MediaProjection consent result, consumes
-that token once in memory, captures one current-screen frame, runs local ML Kit
-OCR, and returns only bounded OCR text plus included/truncated flags. It does
-not persist pixels, URI/path data, file names, window titles, coordinates, or
-visual descriptions, and it does not perform semantic screen understanding.
+that request-bound token once in memory before a short TTL expires, captures one
+current-screen frame, runs local ML Kit OCR, and returns only bounded OCR text
+plus included/truncated flags. It does not persist pixels, URI/path data, file
+names, window titles, coordinates, or visual descriptions, and it does not
+perform semantic screen understanding.
 Cancelling the MediaProjection consent is observed as a structured LocalOnly
 tool failure.
 Requests such as “总结当前屏幕文字并分享” use one constrained composite flow:
@@ -293,22 +307,35 @@ sheet is never opened without this second confirmation.
 Requests such as “分享这段文字...” open Android's system share panel through
 `share_text`; destination selection stays with the user.
 Shared text or attachments from other Android apps, as well as files selected
-through the in-app attachment picker, are ingested as privacy-minimal
-multimodal prompts: PocketMind records bounded user-visible shared text, may produce
+through the in-app attachment picker, are staged as explicit composer drafts
+before any model call. PocketMind records bounded user-visible shared text, may produce
 bounded local text excerpts for `text/*` plus JSON/XML/YAML text-like
 application documents, bounded local text-layer excerpts for user-provided RTF,
 PDF text layers, and `.docx` / `.xlsx` / `.pptx` files, may produce bounded
 local OCR excerpts for user-provided `image/*` attachments, and may fall back to
 bounded scanned-page OCR for user-provided PDFs with no readable text layer.
+When a provider returns no MIME type or only `application/octet-stream`,
+PocketMind uses the display-name extension to recover common image, text, PDF,
+RTF, and Office Open XML types before deciding whether a bounded local excerpt
+is possible.
 It keeps attachment metadata for local processing. Binary, audio, video, legacy
 Office, and other unsupported attachments remain metadata-only. Automatically
 generated shared-input excerpts and metadata are
 marked `LocalOnly`; remote mode now protects at the reader boundary and does not
 read shared text values, attachment metadata, file streams, text excerpts, or OCR
-before showing a local privacy notice.
+before showing a local privacy notice. The in-app picker shows the same remote
+protection notice before selection: it does not read attachment metadata, file
+streams, text excerpts, or OCR excerpts for automatic remote submission. Local
+mode also requires the user to tap send before the staged shared-input prompt
+enters chat generation. LocalOnly
+conversation text is excluded from automatic memory recall and from verbatim
+session-title derivation; explicit long-term facts/preferences still use their
+own memory controls.
 Voice input uses Android system speech recognition and inserts the transcript
 into the compose box only; sending remains explicit, and PocketMind does not
-read audio files for this path.
+read audio files for this path. The composer keeps a non-modal voice capture bar
+visible while recording and while Android is transcribing, with waveform levels
+driven by recognition RMS updates during recording.
 Automatically generated shared-input and clipboard-derived messages are marked
 local-only, filtered from remote history, and rejected as current prompts before
 any remote model request is made.
@@ -513,6 +540,11 @@ device report records this as `instrumentation_test_count`.
 For complete emulator regression, the artifact of record is the
 `regression-emulator.properties` file written by `scripts/regression_emulator.sh`;
 record the regression as passed only when that file contains `status=passed`.
+Scripted regression and manual acceptance must be recorded separately. Voice
+recognition, the Android system document picker, and the foreground
+MediaProjection consent sheet are system-mediated flows; a script, direct
+reader/ViewModel call, or mocked intent cannot be used as a substitute for
+manual acceptance of those entry points.
 
 Avoid `./gradlew :app:connectedDebugAndroidTest` when you need to keep the app
 installed on the device. The Android Gradle Plugin may clean up test packages

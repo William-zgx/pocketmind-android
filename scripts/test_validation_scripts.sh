@@ -354,6 +354,21 @@ grep -q -- "-s device-a shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" 
   fail "Expected adb device commands to target the only authorized device"
 
 reset_logs
+expect_failure \
+  "install helper rejects instrumentation numtests without final OK" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' \
+  FAKE_INSTRUMENTATION_OUTPUT=$'INSTRUMENTATION_STATUS: numtests=20' \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
+assert_gradle_called
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
+grep -q "final OK/success marker" <<<"$LAST_OUTPUT" ||
+  fail "Expected install helper to reject malformed instrumentation output without final OK"
+
+reset_logs
 expect_success \
   "install helper selects requested serial" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \

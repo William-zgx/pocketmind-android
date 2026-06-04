@@ -324,6 +324,7 @@ internal class RemoteToolCallAccumulator {
     private var sawToolCalls = false
     private var sawLegacyFunctionCall = false
     private var mixedToolCallFormats = false
+    private var ambiguousUnindexedToolCallFragments = false
 
     fun absorb(raw: String): List<RemoteChatEvent> {
         val json = runCatching { JSONObject(raw) }.getOrElse {
@@ -379,6 +380,10 @@ internal class RemoteToolCallAccumulator {
         if (id.isBlank() && name.isBlank() && builders.size == 1) {
             return builders.keys.single()
         }
+        if (id.isBlank() && name.isBlank() && builders.size > 1) {
+            ambiguousUnindexedToolCallFragments = true
+            return nextSyntheticToolCallIndex()
+        }
         return nextSyntheticToolCallIndex()
     }
 
@@ -399,6 +404,9 @@ internal class RemoteToolCallAccumulator {
     fun finish(): List<RemoteChatEvent> {
         if (mixedToolCallFormats) {
             return listOf(RemoteChatEvent.ParseError("远程模型同时返回多种工具调用格式，已拒绝执行"))
+        }
+        if (ambiguousUnindexedToolCallFragments) {
+            return listOf(RemoteChatEvent.ParseError("远程模型流式多工具调用缺少稳定 index，已拒绝执行"))
         }
         if (builders.isEmpty()) return emptyList()
         val requests = mutableListOf<ToolRequest>()

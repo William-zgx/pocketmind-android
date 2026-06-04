@@ -135,10 +135,11 @@ Current status:
   one-shot Android MediaProjection consent flow. Its input/output schema is
   locked to `current_screen` capture, `LocalOnly`, `requiresLocalModel=true`,
   `truncated` status, and bounded OCR text only. The ActivityResult token is
-  kept in memory, consumed once by `CurrentScreenshotOcrProvider`, and is never
+  kept in memory, bound to the pending tool `requestId`, consumed once by
+  `CurrentScreenshotOcrProvider` before a short TTL expires, and is never
   serialized into `ToolRequest`, trace, audit, or pending confirmation rows.
-  Without a fresh foreground MediaProjection consent result, the executor fails
-  closed.
+  Without a fresh matching foreground MediaProjection consent result, the
+  executor fails closed.
 - Tools that may require runtime permissions declare that requirement in
   `ToolSpec` only when the current runtime permission policy can request a
   concrete Android manifest permission. The Activity boundary maps pending tool
@@ -315,6 +316,26 @@ Current status:
   observation: thrown executor errors become failed `ToolResult`s, invalid or
   local-only batch results fail the run, and cancelled results cancel the Agent
   run instead of being reported as generic failures.
+- Batch execution isolates per-tool executor cancellation: a single tool's own
+  `CancellationException` becomes that request's `Cancelled` result while
+  sibling public evidence calls can still report their results. Parent job
+  cancellation, such as the user stopping the active generation, still cancels
+  the whole batch.
+- Streaming `tool_calls` require stable tool-call identity. Indexed chunks are
+  merged by `index`; unindexed single-call continuations can still merge, but
+  ambiguous unindexed multi-tool argument fragments fail closed before any tool
+  execution so arguments cannot be attached to the wrong request.
+- The remote chat system prompt and `web_search` tool description explicitly
+  describe evidence-first tool use: for comparison, difference, summary, or
+  cross-check questions, the model should issue independent public read-only
+  calls for each evidence target when needed, then synthesize after observation.
+  The decomposition remains a model-planning responsibility; the Android
+  runtime only validates, executes eligible public batches concurrently, and
+  rejects unsafe mixtures before any tool starts.
+- Public evidence continuations keep the remote tool scope restricted to
+  public read-only evidence tools. Remote plain text is treated as answer text;
+  only structured remote `tool_calls` can request tools, while inline
+  `call:tool{...}` parsing remains a local-model-only protocol.
 - Local model answers can also hand back an explicit, whole-output
   `call:function{...}` request. That protocol is parsed strictly: ordinary
   answers are left alone, malformed calls and unknown tools fail closed, and
@@ -388,6 +409,11 @@ Current status:
   clear the pending/checkpoint recovery rows. Plain pending confirmations
   without a `SkillPlan` do not require a checkpoint, and saving a plain pending
   clears any stale checkpoint for that run/request.
+- If a pending Skill tool argument is bound from earlier Skill outputs, restore
+  is allowed only when that argument target is also in the current tool's
+  pending-argument allowlist. Payload-bearing targets such as `share_text.text`
+  fail closed after restart with an unrestorable pending-confirmation trace
+  instead of restoring a confirmation with missing parameters.
 - Pending confirmation and skill checkpoint writes/deletes go through Room
   transaction helpers so restore never observes a pending row and checkpoint
   that were saved or removed separately.
@@ -937,6 +963,10 @@ Current status:
 - Chat history now carries `MessagePrivacy`; messages marked `LocalOnly` are
   persisted for the local conversation but are filtered from remote history, and
   a `LocalOnly` current prompt is rejected before any remote request is made.
+- Remote current prompts also pass a conservative outbound safety gate before
+  runtime calls. Inputs containing personal identifiers, contact details, or
+  token/API-key-like content are recorded as `LocalOnly` with a local notice
+  instead of being uploaded automatically.
 - Local action draft turns are persisted as `LocalOnly` user/assistant messages,
   even when the app is in remote mode. The confirmation flow executes Android
   tools locally and does not make that action text part of later remote-model
@@ -1065,7 +1095,8 @@ Responsibilities:
 
 - Convert confirmed `ToolRequest` values into Android system intents.
 - Return execution success or failure as `ToolResult`.
-- Surface execution results to the UI and Agent trace.
+- Surface safe execution summaries to the UI while structured result details
+  remain in Agent trace and audit.
 
 Current status:
 
@@ -1318,6 +1349,9 @@ Current status:
   remote runtime; visible control/status messages are stored as `LocalOnly`.
   `rebuild` reloads persisted records and saved non-control session history into
   the in-memory index.
+- When local memory is disabled, explicit remember/fact commands remain
+  `LocalOnly` control messages but do not create new long-term memory records.
+  Forget and clear controls still delete existing records while memory is off.
 - `sendMessage` also treats explicit preference deletion statements such as
   `忘记：...` / `forget ...` as local memory-control commands. They delete the
   deterministic `Preference` record for the normalized target, or delete the
@@ -1499,6 +1533,10 @@ Current status:
   to `Scheduled` after a successful scan. Runner or Worker exceptions mark the
   periodic task `Failed` so local state no longer claims a healthy scheduled
   check.
+- `PeriodicCheckScheduler` validates the registered
+  `periodic_local_reminder_patrol` `BackgroundSkillSpec` against production
+  tool specs before saving an enabled policy or enqueueing work. Invalid specs
+  close the policy as `Failed` and return a scheduling failure.
 - A stale `Running` periodic check is reclaimed before a new worker run tries to
   acquire it, using the same bounded lease as reminder delivery recovery.
 - App startup now reconciles the singleton periodic check after reminder alarm
@@ -1513,6 +1551,10 @@ Current status:
   bounded task metadata (`taskId`, `taskStatus`, `triggerAtMillis`,
   `recoveryToolName`, `recoveryTaskId`) while continuing to omit reminder
   title/body content from audit display.
+- `cancel_reminder` now declares the local background scheduling boundary with
+  `SchedulesBackgroundWork`, so audit summaries and safety checks see the same
+  mutation class as reminder scheduling/configuration tools while still
+  requiring foreground confirmation.
 - Successful `schedule_reminder` results now include bounded rollback metadata:
   `recoveryToolName=cancel_reminder` and the scheduled `recoveryTaskId`. Agent
   trace preserves only this recovery metadata, not reminder title/body content.
@@ -1557,10 +1599,10 @@ Current status:
   `ActionExecutor`, calls only `scheduledTasks`, `recentTasks`, and
   `periodicCheckPolicy`, and never calls schedule/cancel/set/disable methods.
   Results are `LocalOnly` and `requiresLocalModel=true`; `tasksJson` may include
-  task id, type, status, title, and timestamps for local reasoning, but reminder
-  `body`, prompts, raw periodic `lastRunSummary`, remote responses, and secrets
-  are omitted. `tasksJson`, `policyJson`, and task counts are private outputs
-  and are redacted from trace/audit summaries.
+  task id, type, status, and timestamps for local reasoning, but reminder
+  title/body, prompts, raw periodic `lastRunSummary`, remote responses, and
+  secrets are omitted. `tasksJson`, `policyJson`, and task counts are private
+  outputs and are redacted from trace/audit summaries.
 - Periodic check run summaries preserve the saved policy fields instead of
   replacing them, so the UI reads typed policy state from the background layer
   rather than parsing task history rows.
@@ -1577,7 +1619,7 @@ Tests:
 - `ActionExecutorTest.configuresPeriodicCheckThroughBackgroundScheduler`
 - `ActionExecutorTest.disablesPeriodicCheckThroughBackgroundScheduler`
 - `ActionExecutorTest.reportsStaleReminderCancellationAsNonRetryableInvalidRequest`
-- `DeviceContextToolExecutorTest.backgroundTasksQueryReturnsLocalOnlyTaskAndPolicyMetadataWithoutBodies`
+- `DeviceContextToolExecutorTest.backgroundTasksQueryReturnsLocalOnlyTaskAndPolicyMetadataWithoutReminderContent`
 - `DeviceContextToolExecutorTest.backgroundTasksPolicyScopeDoesNotReadTaskLists`
 - `RoutingAndValidatingToolExecutorTest.routingExecutorDispatchesDeviceContextToolsBeforeDelegate`
 - `AgentLoopRuntimeTest.skillFirstBackgroundTasksQueryBypassesActionPlannerAndRequestsReadOnlyConfirmation`
@@ -1624,8 +1666,9 @@ Responsibilities:
   text-layer excerpts, bounded local PDF scanned-page OCR fallback, bounded
   local OCR text excerpts for user-provided `image/*` attachments, and
   attachment metadata from Android share targets and the in-app picker.
-- Classify attachments by MIME type; keep unsupported non-text files
-  metadata-only.
+- Classify attachments by MIME type, with display-name extension fallback when
+  Android providers return no type or only `application/octet-stream`; keep
+  unsupported non-text files metadata-only.
 - Keep multimodal source handling separate from chat generation and tools.
 
 Current status:
@@ -1640,6 +1683,10 @@ Current status:
 - Implemented privacy-minimal `SharedInput` prompts for bounded direct shared
   text plus attachment metadata such as kind, MIME type, display name, and byte
   size.
+- Share intents and picker selections now stage those generated prompts in the
+  composer as `LocalOnly` pending drafts. The prompt enters local chat
+  generation only after the user explicitly taps send; it no longer auto-routes
+  just because a local model is ready.
 - Implemented bounded local text excerpts for user-initiated shared `text/*`
   documents and JSON/XML/YAML text-like application MIME types, bounded
   text-layer excerpts for user-provided RTF, PDF text layers, and Office Open
@@ -1655,7 +1702,10 @@ Current status:
 - Implemented a voice input entry that launches Android system speech
   recognition and returns the transcript as a one-shot compose-box draft.
   Transcripts are not auto-sent, do not create chat messages until the user
-  taps send, and do not trigger model generation by themselves.
+  taps send, and do not trigger model generation by themselves. The UI keeps
+  the non-modal voice capture bar active across recording and the post-speech
+  transcription wait; RMS updates drive the waveform while recording, and
+  partial transcripts can still update after `onEndOfSpeech`.
 - Shared-input prompts are marked `LocalOnly` when generated automatically, so
   local processing can continue without later leaking shared text, generated
   excerpts, attachment metadata, or local assistant responses into remote chat
@@ -1663,15 +1713,19 @@ Current status:
   parsing the share intent or picked URIs; this value-free path does not read
   `EXTRA_TEXT` values, query attachment metadata, open file streams, parse text
   layers, or run OCR before showing the local privacy notice.
+- `LocalOnly` conversation messages are skipped by automatic memory rebuild and
+  are not used verbatim for session titles. Explicit user facts/preferences
+  still use the dedicated long-term memory record path.
 - The voice entry does not read or parse audio files. Recent screenshot OCR and
   recent image OCR are implemented as confirmed Device Context tools, not
   automatic shared-input ingestion. The current-screen Accessibility
   text snapshot tool follows the same Device Context boundary and reads text
   nodes only. `capture_current_screenshot_ocr` uses a user-confirmed, one-shot
-  Android MediaProjection ActivityResult flow, consumes the consent token in
-  memory, captures one current-screen frame, runs local ML Kit OCR, and returns
-  only bounded OCR text plus `truncated` / included flags. It does not persist
-  pixels, URIs, paths, window titles, or visual descriptions. Screen semantic
+  Android MediaProjection ActivityResult flow, consumes the request-bound
+  consent token in memory before its TTL expires, captures one current-screen
+  frame, runs local ML Kit OCR, and returns only bounded OCR text plus
+  `truncated` / included flags. It does not persist pixels, URIs, paths, window
+  titles, or visual descriptions. Screen semantic
   understanding, PDF layout parsing, legacy Office parsing, full rich-text
   fidelity, image semantic understanding, and media content understanding are
   pending. RTF, PDF text layer, and Office Open XML extraction are not complete

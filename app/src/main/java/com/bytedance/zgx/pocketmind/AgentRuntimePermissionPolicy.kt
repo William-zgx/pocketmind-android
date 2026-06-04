@@ -28,6 +28,26 @@ fun PendingAgentConfirmation.runtimePermissionsFor(apiLevel: Int = Build.VERSION
         .distinct()
 }
 
+internal fun PendingAgentConfirmation.matchesExecution(other: PendingAgentConfirmation): Boolean =
+    runId == other.runId &&
+        toolRequest == other.toolRequest &&
+        draft.functionName == other.draft.functionName &&
+        draft.parameters == other.draft.parameters
+
+internal fun PendingAgentConfirmation.requiresRuntimePermissionResult(
+    resultPermissions: Set<String>,
+    apiLevel: Int = Build.VERSION.SDK_INT,
+): Boolean {
+    val expectedPermissions = runtimePermissionsFor(apiLevel).toSet()
+    if (expectedPermissions.isEmpty()) return false
+    return resultPermissions.isEmpty() || resultPermissions.any { permission -> permission in expectedPermissions }
+}
+
+internal fun PendingAgentConfirmation.requiresCurrentScreenshotOcrConsent(): Boolean {
+    val toolName = toolRequest?.toolName ?: draft.functionName
+    return toolName == MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR
+}
+
 fun PendingAgentConfirmation.runtimePermissionRequirementsFor(
     apiLevel: Int = Build.VERSION.SDK_INT,
 ): List<RuntimePermissionRequirement> {
@@ -108,6 +128,12 @@ fun PendingAgentConfirmation.deniedRuntimePermissionsAfterGrantResult(
             grantResults[permission] == true ||
                 hasRuntimePermission(permission) ||
                 isCoveredByAlternativeVisualMediaGrant(
+                    permission = permission,
+                    grantResults = grantResults,
+                    apiLevel = apiLevel,
+                    hasRuntimePermission = hasRuntimePermission,
+                ) ||
+                isCoveredByPartialRecentFileAllGrant(
                     permission = permission,
                     grantResults = grantResults,
                     apiLevel = apiLevel,
@@ -221,6 +247,31 @@ private fun isCoveredByAlternativeVisualMediaGrant(
         in visualMediaPermissions -> hasSelectedVisualGrant
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> hasFullVisualGrant
         else -> false
+    }
+}
+
+private fun PendingAgentConfirmation.isCoveredByPartialRecentFileAllGrant(
+    permission: String,
+    grantResults: Map<String, Boolean>,
+    apiLevel: Int,
+    hasRuntimePermission: (String) -> Boolean,
+): Boolean {
+    if (apiLevel < Build.VERSION_CODES.TIRAMISU) return false
+    val toolName = toolRequest?.toolName ?: draft.functionName
+    if (toolName != MobileActionFunctions.QUERY_RECENT_FILES) return false
+    val kind = (toolRequest?.arguments?.get("kind") ?: draft.parameters["kind"] ?: "all").lowercase()
+    if (kind != "all") return false
+    val mediaPermissions = buildSet {
+        add(Manifest.permission.READ_MEDIA_IMAGES)
+        add(Manifest.permission.READ_MEDIA_VIDEO)
+        add(Manifest.permission.READ_MEDIA_AUDIO)
+        if (apiLevel >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        }
+    }
+    if (permission !in mediaPermissions) return false
+    return mediaPermissions.any { mediaPermission ->
+        grantResults[mediaPermission] == true || hasRuntimePermission(mediaPermission)
     }
 }
 

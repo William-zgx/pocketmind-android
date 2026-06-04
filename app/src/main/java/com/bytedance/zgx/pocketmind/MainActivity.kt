@@ -24,7 +24,7 @@ import androidx.activity.viewModels
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
-import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
+import com.bytedance.zgx.pocketmind.device.DeviceContextAuthorizationSnapshot
 import com.bytedance.zgx.pocketmind.device.PocketMindAccessibilityService
 import com.bytedance.zgx.pocketmind.multimodal.SharedInputReadMode
 import com.bytedance.zgx.pocketmind.multimodal.ShareIntentReader
@@ -53,8 +53,13 @@ class MainActivity : ComponentActivity() {
     private val runtimePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grantResults ->
-        val confirmation = pendingRuntimePermissionConfirmation ?: return@registerForActivityResult
+        val confirmation = pendingRuntimePermissionConfirmationForResult(grantResults.keys)
         pendingRuntimePermissionConfirmation = null
+        syncDeviceContextAuthorizationSnapshot()
+        if (confirmation == null) {
+            rejectCurrentRuntimePermissionPendingAfterUnmatchedResult(grantResults.keys)
+            return@registerForActivityResult
+        }
         val deniedPermissions = confirmation.deniedRuntimePermissionsAfterGrantResult(
             grantResults = grantResults,
             hasRuntimePermission = ::hasRuntimePermission,
@@ -73,6 +78,7 @@ class MainActivity : ComponentActivity() {
     ) {
         val requirement = pendingSpecialAccessRequirement ?: return@registerForActivityResult
         pendingSpecialAccessRequirement = null
+        syncDeviceContextAuthorizationSnapshot()
         viewModel.reportSpecialAccessResult(
             requirement = requirement,
             granted = hasSpecialAccess(requirement),
@@ -95,11 +101,24 @@ class MainActivity : ComponentActivity() {
     private val currentScreenshotOcrLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val confirmation = pendingMediaProjectionConfirmation ?: return@registerForActivityResult
+        val confirmation = pendingMediaProjectionConfirmationForResult()
         pendingMediaProjectionConfirmation = null
+        if (confirmation == null) {
+            rejectCurrentMediaProjectionPendingAfterUnmatchedResult()
+            return@registerForActivityResult
+        }
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            appContainer.currentScreenshotOcrProvider.setOneShotConsent(result.resultCode, result.data)
-            viewModel.confirmAgentConfirmation(confirmation)
+            val requestId = confirmation.toolRequest?.id
+            if (requestId == null) {
+                viewModel.rejectAgentConfirmationForMediaProjectionDenial(confirmation)
+            } else {
+                appContainer.currentScreenshotOcrProvider.setOneShotConsent(
+                    requestId = requestId,
+                    resultCode = result.resultCode,
+                    data = result.data,
+                )
+                viewModel.confirmAgentConfirmation(confirmation)
+            }
         } else {
             viewModel.rejectAgentConfirmationForMediaProjectionDenial(confirmation)
         }
@@ -182,6 +201,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleSharedIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncDeviceContextAuthorizationSnapshot()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -327,6 +351,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun confirmAgentConfirmationWithPermissions(confirmation: PendingAgentConfirmation) {
+        syncDeviceContextAuthorizationSnapshot()
         if (pendingRuntimePermissionConfirmation != null || pendingMediaProjectionConfirmation != null) return
         val missingPermissions = confirmation.runtimePermissionsFor()
             .filterNot(::hasRuntimePermission)
@@ -377,11 +402,78 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hasSpecialAccess(requirement: SpecialAccessRequirement): Boolean =
-        when (requirement.id) {
+        hasSpecialAccess(requirement.id)
+
+    private fun hasSpecialAccess(id: String): Boolean =
+        when (id) {
             SPECIAL_ACCESS_USAGE_STATS -> hasUsageStatsAccess()
             SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT -> hasAccessibilityScreenTextAccess()
             else -> false
         }
+
+    private fun pendingRuntimePermissionConfirmationForResult(
+        resultPermissions: Set<String>,
+    ): PendingAgentConfirmation? {
+        val current = viewModel.uiState.value.pendingConfirmation
+        val remembered = pendingRuntimePermissionConfirmation
+        if (current != null &&
+            current.requiresRuntimePermissionResult(resultPermissions)
+        ) {
+            return current
+        }
+        return remembered?.takeIf { pending ->
+            current == null && pending.requiresRuntimePermissionResult(resultPermissions)
+        }
+    }
+
+    private fun rejectCurrentRuntimePermissionPendingAfterUnmatchedResult(
+        resultPermissions: Set<String>,
+    ) {
+        val current = viewModel.uiState.value.pendingConfirmation
+            ?.takeIf { pending ->
+                pending.requiresRuntimePermissionResult(resultPermissions) ||
+                    pending.runtimePermissionsFor().isNotEmpty()
+            }
+            ?: return
+        val deniedPermissions = current.runtimePermissionsFor()
+            .filterNot(::hasRuntimePermission)
+            .ifEmpty { current.runtimePermissionsFor() }
+        viewModel.rejectAgentConfirmationForRuntimePermissionDenial(
+            confirmation = current,
+            deniedPermissions = deniedPermissions,
+        )
+    }
+
+    private fun pendingMediaProjectionConfirmationForResult(): PendingAgentConfirmation? {
+        val current = viewModel.uiState.value.pendingConfirmation
+        val remembered = pendingMediaProjectionConfirmation
+        if (current != null && current.requiresCurrentScreenshotOcrConsent()) {
+            return current
+        }
+        return remembered?.takeIf { pending ->
+            current == null && pending.requiresCurrentScreenshotOcrConsent()
+        }
+    }
+
+    private fun rejectCurrentMediaProjectionPendingAfterUnmatchedResult() {
+        val current = viewModel.uiState.value.pendingConfirmation
+            ?.takeIf { it.requiresCurrentScreenshotOcrConsent() }
+            ?: return
+        viewModel.rejectAgentConfirmationForMediaProjectionDenial(current)
+    }
+
+    private fun syncDeviceContextAuthorizationSnapshot() {
+        viewModel.updateDeviceContextAuthorizationSnapshot(
+            DeviceContextAuthorizationSnapshot(
+                grantedRuntimePermissions = DEVICE_CONTEXT_RUNTIME_PERMISSIONS
+                    .filter(::hasRuntimePermission)
+                    .toSet(),
+                grantedSpecialAccessIds = DEVICE_CONTEXT_SPECIAL_ACCESS_IDS
+                    .filter(::hasSpecialAccess)
+                    .toSet(),
+            ),
+        )
+    }
 
     private fun hasUsageStatsAccess(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
@@ -419,11 +511,6 @@ class MainActivity : ComponentActivity() {
             }
     }
 
-    private fun PendingAgentConfirmation.requiresCurrentScreenshotOcrConsent(): Boolean {
-        val toolName = toolRequest?.toolName ?: draft.functionName
-        return toolName == MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR
-    }
-
     companion object {
         const val EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK =
             "com.bytedance.zgx.pocketmind.extra.SKIP_STARTUP_MODEL_RUNTIME_WORK"
@@ -446,6 +533,23 @@ class MainActivity : ComponentActivity() {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+        private val DEVICE_CONTEXT_RUNTIME_PERMISSIONS = buildList {
+            add(Manifest.permission.READ_CONTACTS)
+            add(Manifest.permission.READ_CALENDAR)
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.READ_MEDIA_IMAGES)
+                add(Manifest.permission.READ_MEDIA_VIDEO)
+                add(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            }
+        }
+        private val DEVICE_CONTEXT_SPECIAL_ACCESS_IDS = listOf(
+            SPECIAL_ACCESS_USAGE_STATS,
+            SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT,
         )
 
         private fun isRunningUnderAndroidTest(): Boolean =

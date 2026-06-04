@@ -534,10 +534,10 @@ class BackgroundTasksToolExecutor(
             historyTasks.appendToBackgroundTasksJson(scope = "history", target = this)
         }
         val summary = when (scope) {
-            "history" -> "已读取 ${historyTasks.size} 条后台任务历史。"
+            "history" -> "已读取 ${historyTasks.size} 条后台任务历史元数据。"
             "policy" -> "已读取本地提醒周期检查策略。"
-            "all" -> "已读取 ${activeTasks.size} 个活动后台任务、${historyTasks.size} 条历史与周期检查策略。"
-            else -> "已读取 ${activeTasks.size} 个活动后台任务。"
+            "all" -> "已读取 ${activeTasks.size} 个活动后台任务元数据、${historyTasks.size} 条历史元数据与周期检查策略。"
+            else -> "已读取 ${activeTasks.size} 个活动后台任务元数据。"
         }
         return request.succeeded(
             summary = summary,
@@ -756,7 +756,7 @@ class CurrentScreenshotOcrToolExecutor(
             )
         }
 
-        return when (val result = provider?.captureCurrentScreenshotOcr()) {
+        return when (val result = provider?.captureCurrentScreenshotOcr(request.id)) {
             null ->
                 request.failed(
                     code = ToolErrorCode.ExecutionFailed,
@@ -848,7 +848,6 @@ private fun List<ScheduledTask>.appendToBackgroundTasksJson(
                 .put("id", task.id)
                 .put("type", task.type.name)
                 .put("status", task.status.name)
-                .put("title", task.title)
                 .put("triggerAtMillis", task.triggerAtMillis)
                 .put("createdAtMillis", task.createdAtMillis)
                 .put("updatedAtMillis", task.updatedAtMillis),

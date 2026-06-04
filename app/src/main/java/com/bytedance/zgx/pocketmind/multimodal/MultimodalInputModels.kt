@@ -80,9 +80,11 @@ private fun SharedAttachment.unavailablePreviewNotice(): String? =
         SharedAttachmentKind.Audio ->
             "音频内容未转写；当前仅有元数据。"
 
-        SharedAttachmentKind.Document,
-        SharedAttachmentKind.Other,
-        -> null
+        SharedAttachmentKind.Document ->
+            "文档正文未读取；当前仅有元数据。"
+
+        SharedAttachmentKind.Other ->
+            "附件正文未读取；当前仅有元数据。"
     }
 
 private data class BoundedSharedText(
@@ -165,6 +167,26 @@ fun sharedAttachmentKindFor(mimeType: String?): SharedAttachmentKind =
         }
     }
 
+fun resolveSharedAttachmentMimeType(
+    resolverMimeType: String?,
+    displayName: String?,
+    intentMimeType: String? = null,
+): String? {
+    val normalizedResolverType = resolverMimeType.normalizedMediaType()
+    if (normalizedResolverType.isConcreteSharedMimeType()) {
+        return normalizedResolverType
+    }
+    val extensionType = displayName.inferredMimeTypeFromExtension()
+    if (extensionType != null) {
+        return extensionType
+    }
+    val normalizedIntentType = intentMimeType.normalizedMediaType()
+    if (normalizedIntentType.isConcreteSharedMimeType()) {
+        return normalizedIntentType
+    }
+    return normalizedResolverType ?: normalizedIntentType
+}
+
 fun canReadTextPreviewFor(mimeType: String?): Boolean =
     when (val normalizedMimeType = mimeType.normalizedMediaType()) {
         null -> false
@@ -222,6 +244,27 @@ private fun String?.normalizedMediaType(): String? =
         ?.trim()
         ?.lowercase(Locale.ROOT)
         ?.takeIf { it.isNotBlank() }
+
+private fun String?.inferredMimeTypeFromExtension(): String? {
+    val safeName = this
+        ?.replace('\\', '/')
+        ?.substringAfterLast('/')
+        ?.substringBeforeLast('#')
+        ?.substringBeforeLast('?')
+        ?: return null
+    val extension = safeName
+        .substringAfterLast('.', missingDelimiterValue = "")
+        .lowercase(Locale.ROOT)
+        .takeIf { it.isNotBlank() }
+        ?: return null
+    return extensionMimeTypes[extension]
+}
+
+private fun String?.isConcreteSharedMimeType(): Boolean {
+    val normalized = this ?: return false
+    if (normalized in abstractMimeTypes) return false
+    return !normalized.endsWith("/*") && !normalized.contains('*')
+}
 
 object TextAttachmentPreviewReader {
     fun read(inputStream: InputStream): SharedTextPreview? {
@@ -322,6 +365,16 @@ private val textLikeApplicationMimeTypes = setOf(
     "application/x-yaml",
 )
 
+private val abstractMimeTypes = setOf(
+    "*/*",
+    "application/*",
+    "application/octet-stream",
+    "audio/*",
+    "image/*",
+    "text/*",
+    "video/*",
+)
+
 private val richTextMimeTypes = setOf(
     "application/rtf",
     "text/rtf",
@@ -331,4 +384,33 @@ internal val officeOpenXmlMimeTypes = setOf(
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+)
+
+private val extensionMimeTypes = mapOf(
+    "txt" to "text/plain",
+    "text" to "text/plain",
+    "log" to "text/plain",
+    "md" to "text/markdown",
+    "markdown" to "text/markdown",
+    "csv" to "text/csv",
+    "json" to "application/json",
+    "xml" to "application/xml",
+    "yaml" to "application/x-yaml",
+    "yml" to "application/x-yaml",
+    "rtf" to "application/rtf",
+    "pdf" to "application/pdf",
+    "doc" to "application/msword",
+    "xls" to "application/vnd.ms-excel",
+    "ppt" to "application/vnd.ms-powerpoint",
+    "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx" to "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "jpg" to "image/jpeg",
+    "jpeg" to "image/jpeg",
+    "png" to "image/png",
+    "webp" to "image/webp",
+    "gif" to "image/gif",
+    "bmp" to "image/bmp",
+    "heic" to "image/heic",
+    "heif" to "image/heif",
 )

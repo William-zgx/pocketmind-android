@@ -115,6 +115,7 @@ class ToolRegistryTest {
         requireNotNull(cancelReminderSpec)
         assertEquals(ToolCapability.BackgroundTask, cancelReminderSpec.capability)
         assertEquals(ConfirmationPolicy.Required, cancelReminderSpec.confirmationPolicy)
+        assertTrue(ToolPermission.SchedulesBackgroundWork in cancelReminderSpec.permissions)
         assertTrue(ToolPermission.RequiresAndroidRuntimePermission !in cancelReminderSpec.permissions)
         assertTrue(cancelReminderSpec.inputSchemaJson.contains("taskId"))
 
@@ -131,6 +132,8 @@ class ToolRegistryTest {
         assertEquals(ToolCapability.ExternalShare, shareSpec.capability)
         assertTrue(ToolPermission.StartsExternalActivity in shareSpec.permissions)
         assertTrue(ToolPermission.SendsTextToExternalApp in shareSpec.permissions)
+        assertTrue(shareSpec.inputSchemaJson.contains("\"maxLength\": $MAX_SHARE_TEXT_CHARS"))
+        assertTrue(shareSpec.inputSchemaJson.contains("\"maxLength\": $MAX_SHARE_TITLE_CHARS"))
 
         val calendarAvailabilitySpec = registry.specFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY)
         assertNotNull(calendarAvailabilitySpec)
@@ -348,6 +351,38 @@ class ToolRegistryTest {
         requireNotNull(rejection)
         assertEquals(ToolStatus.Rejected, rejection.status)
         assertTrue(rejection.summary.contains("at most 20"))
+    }
+
+    @Test
+    fun shareTextSchemaRejectsOversizedPayloads() {
+        val oversizedText = registry.validate(
+            ToolRequest(
+                id = "share-text-too-long",
+                toolName = MobileActionFunctions.SHARE_TEXT,
+                arguments = mapOf("text" to "x".repeat(MAX_SHARE_TEXT_CHARS + 1)),
+                reason = "schema contract",
+            ),
+        )
+        val oversizedTitle = registry.validate(
+            ToolRequest(
+                id = "share-title-too-long",
+                toolName = MobileActionFunctions.SHARE_TEXT,
+                arguments = mapOf(
+                    "text" to "hello",
+                    "title" to "x".repeat(MAX_SHARE_TITLE_CHARS + 1),
+                ),
+                reason = "schema contract",
+            ),
+        )
+
+        assertNotNull(oversizedText)
+        requireNotNull(oversizedText)
+        assertEquals(ToolStatus.Rejected, oversizedText.status)
+        assertTrue(oversizedText.summary.contains("at most $MAX_SHARE_TEXT_CHARS"))
+        assertNotNull(oversizedTitle)
+        requireNotNull(oversizedTitle)
+        assertEquals(ToolStatus.Rejected, oversizedTitle.status)
+        assertTrue(oversizedTitle.summary.contains("at most $MAX_SHARE_TITLE_CHARS"))
     }
 
     @Test
@@ -891,6 +926,32 @@ class ToolRegistryTest {
         assertFalse(wrongOutputType.retryable)
         assertTrue(wrongOutputType.summary.contains("truncated"))
         assertTrue(wrongOutputType.summary.contains("true or false"))
+    }
+
+    @Test
+    fun validateResultRejectsInvalidJsonContentMediaType() {
+        val request = ToolRequest(
+            id = "web-search-output-contract",
+            toolName = MobileActionFunctions.WEB_SEARCH,
+            reason = "schema contract",
+        )
+
+        val invalidJson = registry.validateResult(
+            request = request,
+            result = request.succeeded(
+                summary = "web search",
+                data = mapOf(
+                    "toolName" to MobileActionFunctions.WEB_SEARCH,
+                    "query" to "北京天气",
+                    "source" to "duckduckgo",
+                    "summaryText" to "北京天气摘要",
+                    "resultsJson" to "[{\"title\":\"weather\"}",
+                ),
+            ),
+        )
+
+        assertInvalidResult(invalidJson, "resultsJson")
+        assertTrue(invalidJson?.summary.orEmpty().contains("valid JSON"))
     }
 
     @Test

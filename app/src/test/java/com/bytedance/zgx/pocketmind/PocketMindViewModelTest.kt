@@ -1,5 +1,6 @@
 package com.bytedance.zgx.pocketmind
 
+import android.Manifest
 import android.net.Uri
 import android.provider.Settings
 import com.bytedance.zgx.pocketmind.action.ActionDraft
@@ -30,6 +31,8 @@ import com.bytedance.zgx.pocketmind.data.ModelVerificationStatus
 import com.bytedance.zgx.pocketmind.data.RemoteModelStore
 import com.bytedance.zgx.pocketmind.data.SessionStore
 import com.bytedance.zgx.pocketmind.data.TransferProgress
+import com.bytedance.zgx.pocketmind.device.DeviceContextAuthorizationSnapshot
+import com.bytedance.zgx.pocketmind.device.DeviceContextToolReadinessState
 import com.bytedance.zgx.pocketmind.download.DownloadInfo
 import com.bytedance.zgx.pocketmind.download.ModelDownloadClient
 import com.bytedance.zgx.pocketmind.memory.EmbeddingRuntime
@@ -39,6 +42,7 @@ import com.bytedance.zgx.pocketmind.memory.MemoryRecordStore
 import com.bytedance.zgx.pocketmind.memory.MemoryRepository
 import com.bytedance.zgx.pocketmind.memory.PersistedMemoryRecord
 import com.bytedance.zgx.pocketmind.memory.SemanticMemoryRuntimeStatus
+import com.bytedance.zgx.pocketmind.memory.explicitUserPreferenceRecordId
 import com.bytedance.zgx.pocketmind.memory.taskStateMemoryRecordId
 import com.bytedance.zgx.pocketmind.multimodal.SharedAttachment
 import com.bytedance.zgx.pocketmind.multimodal.SharedAttachmentKind
@@ -138,6 +142,78 @@ class PocketMindViewModelTest {
             sessionStore.messages.map { it.privacy },
         )
         assertTrue(sessionStore.messages.first().text.contains("私密输入"))
+    }
+
+    @Test
+    fun remoteModeProtectsSensitiveDirectPromptBeforeCallingRemoteRuntime() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        listOf(
+            "我的手机号是 13800138000，帮我总结一下",
+            "AWS key AKIA1234567890ABCDEF 帮我分析",
+            "client_secret = superSecret123 帮我检查",
+        ).forEach { sensitivePrompt ->
+            viewModel.sendMessage(sensitivePrompt)
+            advanceUntilIdle()
+
+            assertTrue(remoteRuntime.calls.isEmpty())
+            assertEquals(0, assistantRouter.routeCallCount)
+            assertEquals("已保护敏感内容", viewModel.uiState.value.statusText)
+            assertTrue(viewModel.uiState.value.messages.last().text.contains("疑似包含个人信息或密钥"))
+        }
+        assertTrue(sessionStore.messages.all { message -> message.privacy == MessagePrivacy.LocalOnly })
+    }
+
+    @Test
+    fun remoteModeFiltersSensitiveRemoteEligibleHistoryBeforeCallingRemoteRuntime() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore(
+            initialSessions = mapOf(
+                "session-1" to listOf(
+                    ChatMessage(
+                        role = MessageRole.User,
+                        text = "公开上下文：我在比较城市天气",
+                        privacy = MessagePrivacy.RemoteEligible,
+                    ),
+                    ChatMessage(
+                        role = MessageRole.User,
+                        text = "历史误标内容：我的手机号是 13800138000",
+                        privacy = MessagePrivacy.RemoteEligible,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        val historyText = remoteRuntime.calls.single().history.joinToString("\n") { it.text }
+        assertTrue(historyText.contains("公开上下文"))
+        assertFalse(historyText.contains("13800138000"))
+        assertFalse(historyText.contains("历史误标内容"))
     }
 
     @Test
@@ -581,6 +657,14 @@ class PocketMindViewModelTest {
         )
         advanceUntilIdle()
 
+        assertEquals("已接收分享内容", viewModel.uiState.value.statusText)
+        assertEquals("文本", viewModel.uiState.value.pendingSharedInputDraft?.summary)
+        assertTrue(sessionStore.messages.isEmpty())
+        assertTrue(localRuntime.prompts.isEmpty())
+
+        viewModel.sendPendingSharedInput()
+        advanceUntilIdle()
+
         assertEquals(
             listOf(MessagePrivacy.LocalOnly, MessagePrivacy.LocalOnly),
             sessionStore.messages.map { it.privacy },
@@ -594,6 +678,42 @@ class PocketMindViewModelTest {
         val call = remoteRuntime.calls.single()
         assertFalse(call.history.toString().contains("私密分享内容"))
         assertFalse(call.history.toString().contains("本地回复：私密分享摘要"))
+        assertEquals("普通远程问题", sessionStore.messages.dropLast(1).last().text)
+    }
+
+    @Test
+    fun localModePromptDoesNotEnterLaterRemoteHistoryByDefault() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val localRuntime = FakeLiteRtRuntime(localResponse = "本地回复：普通本地回答")
+        val remoteStore = FakeRemoteModelStore(mode = InferenceMode.Local)
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            runtime = localRuntime,
+            remoteRuntime = remoteRuntime,
+            remoteStore = remoteStore,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState()
+        advanceUntilIdle()
+
+        viewModel.sendMessage("本地普通问题")
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(MessagePrivacy.LocalOnly, MessagePrivacy.LocalOnly),
+            sessionStore.messages.map { it.privacy },
+        )
+        assertTrue(sessionStore.messages.last().text.contains("本地回复：普通本地回答"))
+
+        viewModel.updateRemoteModelConfig(configuredRemoteModel())
+        viewModel.selectInferenceMode(InferenceMode.Remote)
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        val call = remoteRuntime.calls.single()
+        assertFalse(call.history.toString().contains("本地普通问题"))
+        assertFalse(call.history.toString().contains("本地回复：普通本地回答"))
         assertEquals("普通远程问题", sessionStore.messages.dropLast(1).last().text)
     }
 
@@ -768,6 +888,34 @@ class PocketMindViewModelTest {
         assertEquals(9, loudSamples.size)
         assertTrue(quietSamples != initialSamples)
         assertTrue((loudSamples.maxOrNull() ?: 0f) > (quietSamples.maxOrNull() ?: 0f))
+    }
+
+    @Test
+    fun voiceCaptureStaysVisibleWhileTranscribingAfterSpeechEnds() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+
+        viewModel.startVoiceInputCapture()
+        viewModel.updateVoiceInputPartialTranscript("第一段")
+        viewModel.finishVoiceInputCapture()
+        advanceUntilIdle()
+
+        val transcribing = viewModel.uiState.value.voiceCapture
+        assertFalse(transcribing.isListening)
+        assertTrue(transcribing.isTranscribing)
+        assertTrue(transcribing.isActive)
+        assertEquals("第一段", transcribing.partialText)
+        assertEquals("正在转写", viewModel.uiState.value.statusText)
+
+        viewModel.updateVoiceInputPartialTranscript("第一段 第二句")
+        advanceUntilIdle()
+
+        assertEquals("第一段 第二句", viewModel.uiState.value.voiceCapture.partialText)
+
+        viewModel.acceptVoiceTranscript("第一段 第二句")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.voiceCapture.isActive)
+        assertEquals("第一段 第二句", viewModel.uiState.value.voiceInputDraft?.text)
     }
 
     @Test
@@ -1829,6 +1977,59 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun localDeviceContextToolReadinessUsesLatestAuthorizationSnapshot() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState()
+        advanceUntilIdle()
+        viewModel.updateDeviceContextAuthorizationSnapshot(
+            DeviceContextAuthorizationSnapshot(
+                grantedRuntimePermissions = setOf(
+                    Manifest.permission.READ_CONTACTS,
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                ),
+                grantedSpecialAccessIds = setOf(SPECIAL_ACCESS_USAGE_STATS),
+            ),
+        )
+
+        viewModel.sendMessage("检查设备上下文")
+        advanceUntilIdle()
+
+        val readiness = requireNotNull(assistantRouter.lastRouteDeviceContext)
+            .toolReadiness
+            .associateBy { it.toolName }
+        assertEquals(
+            DeviceContextToolReadinessState.Available,
+            readiness[MobileActionFunctions.QUERY_CONTACTS]?.state,
+        )
+        assertEquals(
+            DeviceContextToolReadinessState.Available,
+            readiness[MobileActionFunctions.QUERY_FOREGROUND_APP]?.state,
+        )
+        assertEquals(
+            DeviceContextToolReadinessState.Available,
+            readiness[MobileActionFunctions.QUERY_RECENT_FILES]?.state,
+        )
+        assertEquals(
+            DeviceContextToolReadinessState.Available,
+            readiness[MobileActionFunctions.READ_RECENT_IMAGE_OCR]?.state,
+        )
+        assertEquals(
+            DeviceContextToolReadinessState.RequiresRuntimePermission,
+            readiness[MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY]?.state,
+        )
+        assertEquals(
+            DeviceContextToolReadinessState.RequiresSpecialAccess,
+            readiness[MobileActionFunctions.READ_CURRENT_SCREEN_TEXT]?.state,
+        )
+    }
+
+    @Test
     fun deleteActiveSessionClearsSessionAgentTraceAndPendingConfirmation() = runTest(dispatcher) {
         val sessionStore = FakeSessionStore(
             initialSessions = linkedMapOf(
@@ -1913,6 +2114,57 @@ class PocketMindViewModelTest {
         assertEquals(1, executor.executedRequests.size)
         assertEquals(request.id, executor.executedRequests.single().id)
         assertEquals(1, assistantRouter.confirmCallCount)
+    }
+
+    @Test
+    fun tamperedPendingConfirmationToolArgumentsDoNotExecute() = runTest(dispatcher) {
+        val request = ToolRequest(
+            id = "share-request",
+            toolName = MobileActionFunctions.SHARE_TEXT,
+            arguments = mapOf("text" to "original share text"),
+            reason = "分享文本",
+        )
+        val executor = RecordingToolExecutor()
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Action(
+                runId = "run-share",
+                toolRequest = request,
+                draft = ActionDraft(
+                    functionName = MobileActionFunctions.SHARE_TEXT,
+                    title = "系统分享",
+                    summary = "分享文本",
+                    parameters = request.arguments,
+                ),
+                plannedByModel = false,
+                fallbackReason = "test fallback",
+                skillId = BuiltInSkillRuntime.SHARE_TEXT_SKILL,
+            ),
+            confirmedRun = AgentRun("run-share", "分享文本", AgentRunState.ExecutingTool, 1L, 2L),
+        )
+        val viewModel = createViewModel(
+            assistantRouter = assistantRouter,
+            actionExecutor = executor,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState()
+        advanceUntilIdle()
+
+        viewModel.sendMessage("分享这段文字：original share text")
+        advanceUntilIdle()
+        val confirmation = viewModel.uiState.value.pendingConfirmation
+        requireNotNull(confirmation)
+        val tampered = confirmation.copy(
+            toolRequest = request.copy(arguments = mapOf("text" to "tampered share text")),
+            draft = confirmation.draft.copy(parameters = request.arguments),
+        )
+
+        viewModel.confirmAgentConfirmation(tampered)
+        advanceUntilIdle()
+
+        assertEquals(0, assistantRouter.confirmCallCount)
+        assertTrue(executor.executedRequests.isEmpty())
+        assertEquals(confirmation, viewModel.uiState.value.pendingConfirmation)
+        assertEquals("工具确认已处理", viewModel.uiState.value.statusText)
     }
 
     @Test
@@ -2382,6 +2634,12 @@ class PocketMindViewModelTest {
         assertEquals(0, assistantRouter.observeToolCallCount)
         assertEquals(2, remoteRuntime.calls.size)
         assertEquals("请综合北京和上海的天气结果计算温差。", remoteRuntime.calls.last().prompt)
+        assertEquals(false, assistantRouter.lastObserveModelResultAllowInlineToolCalls)
+        val continuationTools = remoteRuntime.calls.last().tools
+        assertTrue(continuationTools.any { tool -> tool.name == MobileActionFunctions.WEB_SEARCH })
+        assertFalse(continuationTools.any { tool -> tool.name == MobileActionFunctions.COMPOSE_EMAIL })
+        assertFalse(continuationTools.any { tool -> tool.name == MobileActionFunctions.SEARCH_MAPS })
+        assertFalse(continuationTools.any { tool -> tool.name == MobileActionFunctions.SHARE_TEXT })
         assertTrue(sessionStore.messages.any { message -> message.text.contains("正在并行使用工具：Web 搜索 x2") })
         assertTrue(sessionStore.messages.any { message -> message.text.contains("已完成 2 个公开只读工具调用") })
         assertEquals("北京和上海今天温差约 3 度。", sessionStore.messages.last().text)
@@ -4324,6 +4582,68 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun rememberCommandDoesNotPersistWhenMemoryDisabled() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        val memoryRepository = MemoryRepository(recordStore = store)
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            firstRunStore = FakeFirstRunSetupStore(memoryEnabled = false),
+            memoryRepository = memoryRepository,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+        viewModel.sendMessage("记住：我喜欢简洁回答")
+        advanceUntilIdle()
+        viewModel.sendMessage("remember that my rcode is xb83")
+        advanceUntilIdle()
+
+        assertTrue(store.records().isEmpty())
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertTrue(memoryRepository.search("简洁回答").isEmpty())
+        assertEquals("本地记忆已关闭", viewModel.uiState.value.statusText)
+        assertTrue(viewModel.uiState.value.messages.last().text.contains("本地记忆已关闭"))
+        assertEquals(
+            List(4) { MessagePrivacy.LocalOnly },
+            viewModel.uiState.value.messages.map { it.privacy },
+        )
+        assertTrue(remoteRuntime.calls.isEmpty())
+    }
+
+    @Test
+    fun forgetCommandStillDeletesMemoryWhenMemoryDisabled() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        val memoryRepository = MemoryRepository(recordStore = store)
+        memoryRepository.indexPreference(explicitUserPreferenceRecordId("我喜欢简洁回答"), "我喜欢简洁回答")
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            firstRunStore = FakeFirstRunSetupStore(memoryEnabled = false),
+            memoryRepository = memoryRepository,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+        viewModel.sendMessage("忘记：我喜欢简洁回答")
+        advanceUntilIdle()
+
+        assertTrue(store.records().isEmpty())
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertEquals("长期记忆已更新", viewModel.uiState.value.statusText)
+        assertTrue(viewModel.uiState.value.messages.last().text.contains("已遗忘这条本地记忆"))
+        assertTrue(remoteRuntime.calls.isEmpty())
+    }
+
+    @Test
     fun forgetRememberCommandMemoryDoesNotReindexFromHistory() = runTest(dispatcher) {
         val store = FakeMemoryRecordStore()
         val memoryRepository = MemoryRepository(recordStore = store)
@@ -5387,11 +5707,19 @@ class PocketMindViewModelTest {
             private set
         var lastRouteOptions: AgentRunOptions? = null
             private set
+        var lastRouteDeviceContext: com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot? = null
+            private set
         var lastRecoverySessionId: String? = null
             private set
         var lastRestorePendingSessionId: String? = null
             private set
         var lastRestorePendingExternalOutcomeSessionId: String? = null
+            private set
+        var lastObserveModelResultAllowInlineToolCalls: Boolean? = null
+            private set
+        var lastRemoteToolsExposedScope: RemoteToolScope? = null
+            private set
+        var lastRemoteToolsExposedNames: Set<String> = emptySet()
             private set
         private val knownRunStates = linkedMapOf<String, AgentRunState>()
         private var failedModelTraceRun: AgentTraceRunSummary? = null
@@ -5410,6 +5738,7 @@ class PocketMindViewModelTest {
             routeCallCount += 1
             lastRouteSessionId = sessionId
             lastRouteOptions = options
+            lastRouteDeviceContext = deviceContext
             routeFailure?.let { throw it }
             val route = routeResult ?:
                 AssistantRoute.Chat(
@@ -5553,8 +5882,23 @@ class PocketMindViewModelTest {
             }
         }
 
-        override fun observeModelResult(runId: String, text: String): AgentModelObservationResult? =
-            modelObservation.also { observation -> recordRun(observation?.run) }
+        override fun observeModelResult(
+            runId: String,
+            text: String,
+            allowInlineToolCalls: Boolean,
+        ): AgentModelObservationResult? {
+            lastObserveModelResultAllowInlineToolCalls = allowInlineToolCalls
+            return modelObservation.also { observation -> recordRun(observation?.run) }
+        }
+
+        override fun recordRemoteToolsExposed(
+            runId: String,
+            scope: RemoteToolScope,
+            toolNames: Set<String>,
+        ) {
+            lastRemoteToolsExposedScope = scope
+            lastRemoteToolsExposedNames = toolNames
+        }
 
         override fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult? {
             observeModelToolCallCount += 1
@@ -6011,14 +6355,18 @@ class PocketMindViewModelTest {
         }
     }
 
-    private class FakeFirstRunSetupStore : FirstRunSetupStore {
+    private class FakeFirstRunSetupStore(
+        private var memoryEnabled: Boolean = true,
+    ) : FirstRunSetupStore {
         override fun isSetupDismissed(): Boolean = true
 
         override fun markSetupDismissed() = Unit
 
-        override fun isMemoryEnabled(): Boolean = true
+        override fun isMemoryEnabled(): Boolean = memoryEnabled
 
-        override fun setMemoryEnabled(enabled: Boolean) = Unit
+        override fun setMemoryEnabled(enabled: Boolean) {
+            memoryEnabled = enabled
+        }
     }
 
     private class FakeModelDownloadClient : ModelDownloadClient {
