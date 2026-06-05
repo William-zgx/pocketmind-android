@@ -579,7 +579,7 @@ class PocketMindViewModel(
         val source = modelRepository.createCustomDownloadSource(downloadUrl)
         if (source == null) {
             _uiState.update {
-                it.copy(statusText = "请输入有效的 http/https 模型下载链接")
+                it.copy(statusText = "请输入有效的 HTTPS 模型下载链接；HTTP 仅支持本地调试地址")
             }
             return
         }
@@ -975,6 +975,7 @@ class PocketMindViewModel(
     private fun sendMessageInternal(
         prompt: String,
         explicitMessagePrivacy: MessagePrivacy?,
+        imageAttachments: List<ChatImageAttachment> = emptyList(),
     ) {
         val trimmed = prompt.trim()
         if (trimmed.isNotEmpty() && _uiState.value.pendingConfirmation != null) {
@@ -1315,6 +1316,7 @@ class PocketMindViewModel(
                                 parameters = _uiState.value.generationParameters,
                                 config = remoteConfig,
                                 tools = remoteTools,
+                                imageAttachments = imageAttachments,
                             ).collect { event ->
                                 when (event) {
                                     is RemoteChatEvent.TextDelta -> {
@@ -1529,23 +1531,19 @@ class PocketMindViewModel(
     fun ingestSharedInput(sharedInput: SharedInput) {
         if (sharedInput.isEmpty) return
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            replaceActiveSessionMessages(
-                _uiState.value.messages + ChatMessage(
-                    role = MessageRole.Assistant,
-                    text = "已接收分享内容。当前为远程模型模式，为保护隐私，不会读取或自动发送分享文本、RTF/PDF/Office 文档摘录、JSON/XML/YAML 文本摘录、OCR 摘录或附件元数据。请手动粘贴你愿意发送的内容。",
-                    privacy = MessagePrivacy.LocalOnly,
-                ),
-                persistNow = true,
-            )
-            _uiState.update {
-                it.copy(statusText = "已保护分享内容")
+            if (!sharedInput.isRemoteVisionSendable()) {
+                protectRemoteSharedInput()
+                return
             }
-            return
         }
         stageSharedInputDraft(sharedInput, statusText = "已接收分享内容")
     }
 
     fun stageSharedInput(sharedInput: SharedInput) {
+        if (_uiState.value.inferenceMode == InferenceMode.Remote && !sharedInput.isRemoteVisionSendable()) {
+            protectRemoteSharedInput()
+            return
+        }
         stageSharedInputDraft(sharedInput, statusText = "已选择附件")
     }
 
@@ -1553,16 +1551,40 @@ class PocketMindViewModel(
         if (sharedInput.isEmpty) return
         val prompt = sharedInput.toPrompt()
         if (prompt.isBlank()) return
+        val imageAttachments = if (_uiState.value.inferenceMode == InferenceMode.Remote) {
+            sharedInput.remoteImageAttachments()
+        } else {
+            emptyList()
+        }
         _uiState.update {
             it.copy(
                 pendingSharedInputDraft = SharedInputDraft(
                     id = ++nextSharedInputDraftId,
                     prompt = prompt,
                     summary = sharedInput.composerSummary(),
-                    privacy = MessagePrivacy.LocalOnly,
+                    imageAttachments = imageAttachments,
+                    privacy = if (imageAttachments.isNotEmpty()) {
+                        MessagePrivacy.RemoteEligible
+                    } else {
+                        MessagePrivacy.LocalOnly
+                    },
                 ),
                 statusText = statusText,
             )
+        }
+    }
+
+    private fun protectRemoteSharedInput() {
+        replaceActiveSessionMessages(
+            _uiState.value.messages + ChatMessage(
+                role = MessageRole.Assistant,
+                text = "已接收分享内容。当前为远程模型模式，只会在你主动选择图片时把图片发送给远程视觉模型；不会读取或自动发送分享文本、RTF/PDF/Office 文档摘录、JSON/XML/YAML 文本摘录、OCR 摘录或非图片附件元数据。",
+                privacy = MessagePrivacy.LocalOnly,
+            ),
+            persistNow = true,
+        )
+        _uiState.update {
+            it.copy(statusText = "已保护分享内容")
         }
     }
 
@@ -1624,7 +1646,11 @@ class PocketMindViewModel(
             _uiState.update { it.copy(statusText = "已接收分享内容") }
             return
         }
-        sendMessage(message, messagePrivacy = draft.privacy)
+        sendMessageInternal(
+            prompt = message,
+            explicitMessagePrivacy = draft.privacy,
+            imageAttachments = draft.imageAttachments,
+        )
     }
 
     private fun cancelActiveGenerationRun(runId: String?) {
@@ -3876,10 +3902,11 @@ class PocketMindViewModel(
 }
 
 private fun SharedInput.composerSummary(): String {
-    if (protectedSourceCount > 0) {
+    if (protectedSourceCount > 0 && attachments.isEmpty() && text.isBlank()) {
         return "受保护分享 ${protectedSourceCount} 项"
     }
     val labels = buildList {
+        if (protectedSourceCount > 0) add("受保护 ${protectedSourceCount} 项")
         if (text.isNotBlank()) add("文本")
         attachments.take(3).forEach { attachment ->
             add(attachment.composerSummaryLabel())
@@ -3895,11 +3922,24 @@ private fun SharedInput.composerSummary(): String {
 private fun SharedAttachment.composerSummaryLabel(): String {
     val base = safeDisplayNameForPrompt() ?: kind.label
     return when {
+        kind == SharedAttachmentKind.Image && imageAttachment != null -> "$base · 图片"
         kind == SharedAttachmentKind.Image && textPreview == null -> "$base · 无 OCR"
         kind == SharedAttachmentKind.Image -> "$base · OCR"
         else -> base
     }
 }
+
+private fun SharedInput.remoteImageAttachments(): List<ChatImageAttachment> =
+    attachments.mapNotNull { attachment -> attachment.imageAttachment }
+
+private fun SharedInput.isRemoteVisionSendable(): Boolean =
+    text.isBlank() &&
+        attachments.isNotEmpty() &&
+        attachments.all { attachment ->
+            attachment.kind == SharedAttachmentKind.Image &&
+                attachment.imageAttachment != null &&
+                attachment.textPreview == null
+        }
 
 private fun Float.normalizedVoiceInputLevel(): Float =
     ((this + 2f) / 12f).coerceIn(0.08f, 1f)

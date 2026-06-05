@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -70,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -88,6 +90,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -223,7 +227,7 @@ fun PocketMindScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(PocketMindBackgroundBrush()),
+                .pocketMindTechBackdrop(),
         ) {
             Column(
                 modifier = Modifier
@@ -446,14 +450,51 @@ private fun appendComposerInput(current: String, addition: String): String {
 }
 
 @Composable
-private fun PocketMindBackgroundBrush(): Brush =
-    Brush.verticalGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.surfaceContainerLowest,
-            MaterialTheme.colorScheme.background,
-            MaterialTheme.colorScheme.surfaceContainerLowest,
-        ),
-    )
+private fun Modifier.pocketMindTechBackdrop(): Modifier {
+    val base = MaterialTheme.colorScheme.background
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)
+    return background(base).drawBehind {
+        val maxDimension = size.width.coerceAtLeast(size.height)
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(primary.copy(alpha = 0.24f), Color.Transparent),
+                center = Offset(size.width * 0.08f, size.height * 0.05f),
+                radius = maxDimension * 0.78f,
+            ),
+        )
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(secondary.copy(alpha = 0.13f), Color.Transparent),
+                center = Offset(size.width * 0.92f, size.height * 0.72f),
+                radius = maxDimension * 0.58f,
+            ),
+        )
+        val gridStep = 32.dp.toPx()
+        val stroke = 0.45.dp.toPx()
+        var x = 0f
+        while (x <= size.width) {
+            drawLine(
+                color = gridColor,
+                start = Offset(x, 0f),
+                end = Offset(x, size.height),
+                strokeWidth = stroke,
+            )
+            x += gridStep
+        }
+        var y = 0f
+        while (y <= size.height) {
+            drawLine(
+                color = gridColor,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = stroke,
+            )
+            y += gridStep
+        }
+    }
+}
 
 @Composable
 private fun ChatTopBar(
@@ -463,10 +504,21 @@ private fun ChatTopBar(
     onOpenBackgroundTasks: () -> Unit,
     onCreateSession: () -> Unit,
 ) {
+    val topEdgeColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
+    val modelStatus = currentModelStatus(state)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.88f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = topEdgeColor,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            },
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.82f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.44f)),
         shadowElevation = 0.dp,
     ) {
         Column(
@@ -481,6 +533,20 @@ private fun ChatTopBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(5.dp)
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.secondary,
+                                ),
+                            ),
+                        ),
+                )
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(1.dp),
@@ -490,13 +556,6 @@ private fun ChatTopBar(
                         text = "PocketMind",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = currentModelStatus(state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -528,6 +587,16 @@ private fun ChatTopBar(
                 )
             }
 
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 13.dp),
+                text = modelStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             RuntimeStatusBadge(state)
         }
     }
@@ -544,13 +613,19 @@ private fun TopActionButton(
     IconButton(
         modifier = modifier
             .size(48.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
+                shape = MaterialTheme.shapes.medium,
+            )
             .semantics {
                 contentDescription = label
             },
         onClick = onClick,
         enabled = enabled,
         colors = IconButtonDefaults.iconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.68f),
             contentColor = MaterialTheme.colorScheme.primary,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.36f),
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
@@ -650,11 +725,11 @@ private fun ChatEmptyState(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f),
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
             border = BorderStroke(
                 width = 1.dp,
                 color = if (state.isReady) {
-                    semanticColors.accentLine.copy(alpha = 0.86f)
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.82f)
                 } else {
                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
                 },
@@ -916,6 +991,7 @@ private fun ActionDraftSheet(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -1231,7 +1307,7 @@ private fun ModelManagerSheet(
     onDismiss: () -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("当前", "模型", "远程", "高级")
+    val tabs = listOf("当前", "模型", "远程", "高级", "信任")
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1310,7 +1386,7 @@ private fun ModelManagerSheet(
                 onRemoteModelConfigChanged = onRemoteModelConfigChanged,
             )
 
-            else -> AdvancedModelPanel(
+            3 -> AdvancedModelPanel(
                 state = state,
                 onGenerationParametersChanged = onGenerationParametersChanged,
                 onResetGenerationParameters = onResetGenerationParameters,
@@ -1318,6 +1394,8 @@ private fun ModelManagerSheet(
                 onForgetLongTermMemory = onForgetLongTermMemory,
                 onClearLongTermMemory = onClearLongTermMemory,
             )
+
+            else -> TrustBoundaryPanel(state = state)
         }
 
         if (state.isDownloading || state.downloadProgressPercent != null || state.totalBytes > 0L) {
@@ -1339,7 +1417,8 @@ private fun labelToTabTag(label: String): String =
         "当前" -> "current"
         "模型" -> "models"
         "远程" -> "remote"
-        else -> "advanced"
+        "高级" -> "advanced"
+        else -> "trust"
     }
 
 @Composable
@@ -1440,7 +1519,7 @@ private fun AddModelPanel(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionTitle(
             text = "添加模型",
-            subtitle = "自定义链接或本地文件都必须是 .litertlm 模型。",
+            subtitle = "自定义链接必须是 HTTPS；HTTP 仅用于本地调试地址。本地文件必须是 .litertlm 模型。",
         )
         OutlinedTextField(
             modifier = Modifier
@@ -1486,7 +1565,8 @@ private fun EmptyPanelText(text: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)),
     ) {
         Text(
             modifier = Modifier.padding(14.dp),
@@ -1527,13 +1607,23 @@ private fun AdvancedModelPanel(
 
 @Composable
 private fun PanelSurface(content: @Composable () -> Unit) {
+    val panelEdge = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = panelEdge,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            },
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
         ),
         tonalElevation = 0.dp,
     ) {
@@ -1642,10 +1732,11 @@ private fun RemoteModelPanel(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SectionTitle(
+                    modifier = Modifier.weight(1f),
                     text = "远程模型",
                     subtitle = "兼容 /v1/chat/completions；远程模式会发送当前对话上下文。",
                 )
@@ -1705,9 +1796,26 @@ private fun RemoteModelPanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            OutlinedButton(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("remote_config_clear_button"),
+                onClick = { onRemoteModelConfigChanged(RemoteModelConfig()) },
+                enabled = !state.isBusy && config.hasAnySavedValue(),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(" 清除远程配置")
+            }
         }
     }
 }
+
+private fun RemoteModelConfig.hasAnySavedValue(): Boolean =
+    baseUrl.isNotBlank() || modelName.isNotBlank() || apiKey.isNotBlank()
 
 private fun remoteConfigStatusText(config: RemoteModelConfig): String =
     when {
@@ -1723,6 +1831,98 @@ private fun remoteConfigStatusText(config: RemoteModelConfig): String =
         else ->
             "填写 HTTPS 服务地址和模型名后可切换远程模型"
     }
+
+@Composable
+private fun TrustBoundaryPanel(state: ChatUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PanelSurface {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle(
+                    text = "数据边界",
+                    subtitle = "正式使用前，用户应该能直接看懂什么留在本机、什么会发到远程。",
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Storage,
+                    title = "本地优先",
+                    body = TRUST_LOCAL_BOUNDARY_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Cloud,
+                    title = "远程模型",
+                    body = TRUST_REMOTE_BOUNDARY_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Settings,
+                    title = "敏感权限",
+                    body = TRUST_PERMISSION_BOUNDARY_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Delete,
+                    title = "用户控制",
+                    body = trustDeletionBoundaryText(state),
+                )
+            }
+        }
+        PanelSurface {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionTitle(
+                    text = "发布前仍需人工完成",
+                    subtitle = "这些不是 App 代码能自动替代的事项。",
+                )
+                ProductReadinessBullet("使用生产签名或 Play App Signing，不使用本地 debug keystore 发布。")
+                ProductReadinessBullet("准备公开隐私政策 URL，并与 Play Console Data safety 表单保持一致。")
+                ProductReadinessBullet("接入 crash/ANR 监控，并完成真机矩阵、无障碍和大字体验收。")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrustBoundaryRow(
+    icon: ImageVector,
+    title: String,
+    body: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            modifier = Modifier.size(20.dp),
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProductReadinessBullet(text: String) {
+    Text(
+        text = "• $text",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private fun trustDeletionBoundaryText(state: ChatUiState): String =
+    "可清空长期记忆、删除当前会话、取消后台任务，并可一键清除远程服务地址、模型名和 API Key。当前已保存长期记忆 ${state.longTermMemories.size} 条。"
 
 @Composable
 private fun MemoryTogglePanel(
@@ -2412,7 +2612,16 @@ private fun AuditEventSummary.auditTimeLabel(): String =
     SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(createdAtMillis))
 
 internal const val REMOTE_ATTACHMENT_PROTECTION_NOTICE =
-    "远程模型模式下，选择附件只生成受保护信号；不会读取分享文本、附件元数据、文件流、文本/RTF/PDF/Office/JSON/XML/YAML 摘录或 OCR 摘录，也不会自动发送。请手动粘贴你愿意发送的内容。"
+    "远程模型模式下，主动选择的图片会直接发送给远程视觉模型；其他附件和分享文本不会读取正文、文本摘录或 OCR 摘录。若模型或接口不支持图片，会直接提示不支持。"
+
+internal const val TRUST_LOCAL_BOUNDARY_TEXT =
+    "会话、长期记忆、设备上下文和本地工具结果默认留在本机；切到远程模型时，本地隐私消息和 LocalOnly 工具结果不会进入远程历史。"
+
+internal const val TRUST_REMOTE_BOUNDARY_TEXT =
+    "远程模型会收到当前可远程发送的对话上下文；你主动附加的图片会随请求发送，非图片附件、分享文本、OCR 摘录和本地工具私密结果不会自动发送。"
+
+internal const val TRUST_PERMISSION_BOUNDARY_TEXT =
+    "联系人、日历、媒体、通知、当前屏幕、Accessibility 文本和截图 OCR 都需要运行时权限、系统特殊授权或前台一次性确认；动作工具仍需用户确认后执行。"
 
 internal const val ACTION_SUMMARY_COLLAPSE_CHARS = 160
 internal const val ACTION_PARAMETER_COLLAPSE_CHARS = 120
@@ -2675,14 +2884,14 @@ private fun RecommendedModelCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.86f),
         tonalElevation = 0.dp,
         border = BorderStroke(
             width = 1.dp,
             color = if (isSelectedChat) {
-                accent.copy(alpha = 0.8f)
+                accent.copy(alpha = 0.9f)
             } else {
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f)
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f)
             },
         ),
     ) {
@@ -3327,9 +3536,9 @@ private fun MessageBubble(
     val isUser = message.role == MessageRole.User
     val semanticColors = LocalPocketMindColors.current
     val bubbleColor = if (isUser) {
-        semanticColors.localContainer.copy(alpha = 0.92f)
+        semanticColors.localContainer.copy(alpha = 0.88f)
     } else {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f)
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.90f)
     }
     val textColor = if (isUser) {
         semanticColors.onLocalContainer
@@ -3338,9 +3547,9 @@ private fun MessageBubble(
     }
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     val shape = if (isUser) {
-        RoundedCornerShape(18.dp, 6.dp, 18.dp, 18.dp)
+        RoundedCornerShape(10.dp, 3.dp, 10.dp, 10.dp)
     } else {
-        RoundedCornerShape(6.dp, 18.dp, 18.dp, 18.dp)
+        RoundedCornerShape(3.dp, 10.dp, 10.dp, 10.dp)
     }
 
     Box(
@@ -3353,10 +3562,11 @@ private fun MessageBubble(
             shape = shape,
             color = bubbleColor,
             border = if (isUser) {
-                BorderStroke(1.dp, semanticColors.local.copy(alpha = 0.24f))
+                BorderStroke(1.dp, semanticColors.local.copy(alpha = 0.48f))
             } else {
-                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f))
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f))
             },
+            shadowElevation = if (isUser) 1.dp else 0.dp,
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
@@ -3369,7 +3579,7 @@ private fun MessageBubble(
                         else -> "PocketMind"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = textColor.copy(alpha = 0.62f),
+                    color = textColor.copy(alpha = 0.72f),
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (isStreaming && message.text.isBlank()) {
@@ -3524,7 +3734,7 @@ private fun Composer(
     val attachmentEnabled = !state.isBusy
     val voiceEnabled = !state.isBusy && !state.voiceCapture.isActive
     val actionIsStop = state.isGenerating
-    val semanticColors = LocalPocketMindColors.current
+    val composerEdge = MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
     val hasPendingSharedInput = state.pendingSharedInputDraft != null
     val canSend = inputEnabled && (input.isNotBlank() || hasPendingSharedInput)
     val placeholder = when {
@@ -3540,12 +3750,20 @@ private fun Composer(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.96f),
-                        MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.98f),
+                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                        MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.94f),
                     ),
                 ),
             )
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f))
+            .drawBehind {
+                drawLine(
+                    color = composerEdge,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.44f))
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -3579,108 +3797,239 @@ private fun Composer(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            ComposerIconButton(
-                modifier = Modifier
-                    .testTag("composer_attachment_button")
-                    .semantics {
-                        contentDescription = if (state.inferenceMode == InferenceMode.Remote) {
-                            "选择附件；远程模式不会读取附件元数据、文件流、文本摘录或 OCR"
-                        } else {
-                            "选择附件"
-                        }
-                    },
-                enabled = attachmentEnabled,
-                onClick = onPickSharedAttachment,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AttachFile,
-                    contentDescription = null,
-                )
-            }
-
-            OutlinedTextField(
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 52.dp)
-                    .testTag("composer_input"),
-                value = input,
-                onValueChange = onInputChanged,
-                enabled = inputEnabled,
-                minLines = 1,
-                maxLines = 5,
-                placeholder = { Text(placeholder) },
-            )
-
-            ComposerIconButton(
-                modifier = Modifier
-                    .testTag("composer_voice_button")
-                    .semantics {
-                        contentDescription = "语音输入"
-                    },
-                onClick = onStartVoiceInput,
-                enabled = voiceEnabled,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Mic,
-                    contentDescription = null,
-                )
-            }
-
-            ComposerIconButton(
-                modifier = Modifier
-                    .testTag("composer_model_button")
-                    .semantics {
-                        contentDescription = "模型管理"
-                    },
-                onClick = onOpenModelManager,
-                enabled = !state.isBusy,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Tune,
-                    contentDescription = null,
-                )
-            }
-
-            IconButton(
-                modifier = Modifier
-                    .height(52.dp)
-                    .width(52.dp)
-                    .testTag("composer_send_button")
-                    .semantics {
-                        contentDescription = if (actionIsStop) "停止生成" else "发送"
-                    },
-                onClick = when {
-                    actionIsStop -> onStopGeneration
-                    else -> onSend
-                },
-                enabled = when {
-                    actionIsStop -> true
-                    else -> canSend
-                },
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = when {
-                        actionIsStop -> semanticColors.busy
-                        canSend -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    },
-                    contentColor = when {
-                        actionIsStop -> semanticColors.onBusy
-                        canSend -> MaterialTheme.colorScheme.onPrimary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f)
-                    },
-                ),
-            ) {
-                Icon(
-                    imageVector = if (actionIsStop) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
-                    contentDescription = null,
-                )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compactControls = maxWidth < 360.dp
+            if (compactControls) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        ComposerAttachmentButton(
+                            remoteMode = state.inferenceMode == InferenceMode.Remote,
+                            enabled = attachmentEnabled,
+                            onClick = onPickSharedAttachment,
+                        )
+                        ComposerTextInput(
+                            modifier = Modifier.weight(1f),
+                            input = input,
+                            onInputChanged = onInputChanged,
+                            inputEnabled = inputEnabled,
+                            placeholder = placeholder,
+                        )
+                        ComposerSendButton(
+                            actionIsStop = actionIsStop,
+                            canSend = canSend,
+                            onStopGeneration = onStopGeneration,
+                            onSend = onSend,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ComposerVoiceButton(
+                            enabled = voiceEnabled,
+                            onClick = onStartVoiceInput,
+                        )
+                        ComposerModelButton(
+                            enabled = !state.isBusy,
+                            onClick = onOpenModelManager,
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    ComposerAttachmentButton(
+                        remoteMode = state.inferenceMode == InferenceMode.Remote,
+                        enabled = attachmentEnabled,
+                        onClick = onPickSharedAttachment,
+                    )
+                    ComposerTextInput(
+                        modifier = Modifier.weight(1f),
+                        input = input,
+                        onInputChanged = onInputChanged,
+                        inputEnabled = inputEnabled,
+                        placeholder = placeholder,
+                    )
+                    ComposerVoiceButton(
+                        enabled = voiceEnabled,
+                        onClick = onStartVoiceInput,
+                    )
+                    ComposerModelButton(
+                        enabled = !state.isBusy,
+                        onClick = onOpenModelManager,
+                    )
+                    ComposerSendButton(
+                        actionIsStop = actionIsStop,
+                        canSend = canSend,
+                        onStopGeneration = onStopGeneration,
+                        onSend = onSend,
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ComposerAttachmentButton(
+    remoteMode: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ComposerIconButton(
+        modifier = Modifier
+            .testTag("composer_attachment_button")
+            .semantics {
+                contentDescription = if (remoteMode) {
+                    "选择附件；远程模式会发送图片，其他附件不读取正文或 OCR"
+                } else {
+                    "选择附件"
+                }
+            },
+        enabled = enabled,
+        onClick = onClick,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.AttachFile,
+            contentDescription = null,
+        )
+    }
+}
+
+@Composable
+private fun ComposerTextInput(
+    input: String,
+    onInputChanged: (String) -> Unit,
+    inputEnabled: Boolean,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        modifier = modifier
+            .heightIn(min = 52.dp)
+            .testTag("composer_input"),
+        value = input,
+        onValueChange = onInputChanged,
+        enabled = inputEnabled,
+        minLines = 1,
+        maxLines = 5,
+        placeholder = { Text(placeholder) },
+        shape = MaterialTheme.shapes.medium,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.76f),
+            disabledBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.74f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.58f),
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.32f),
+            cursorColor = MaterialTheme.colorScheme.primary,
+        ),
+    )
+}
+
+@Composable
+private fun ComposerVoiceButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ComposerIconButton(
+        modifier = Modifier
+            .testTag("composer_voice_button")
+            .semantics {
+                contentDescription = "语音输入"
+            },
+        onClick = onClick,
+        enabled = enabled,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Mic,
+            contentDescription = null,
+        )
+    }
+}
+
+@Composable
+private fun ComposerModelButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ComposerIconButton(
+        modifier = Modifier
+            .testTag("composer_model_button")
+            .semantics {
+                contentDescription = "模型管理"
+            },
+        onClick = onClick,
+        enabled = enabled,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Tune,
+            contentDescription = null,
+        )
+    }
+}
+
+@Composable
+private fun ComposerSendButton(
+    actionIsStop: Boolean,
+    canSend: Boolean,
+    onStopGeneration: () -> Unit,
+    onSend: () -> Unit,
+) {
+    val semanticColors = LocalPocketMindColors.current
+    IconButton(
+        modifier = Modifier
+            .height(52.dp)
+            .width(52.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .border(
+                width = 1.dp,
+                color = if (canSend || actionIsStop) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
+                },
+                shape = MaterialTheme.shapes.medium,
+            )
+            .testTag("composer_send_button")
+            .semantics {
+                contentDescription = if (actionIsStop) "停止生成" else "发送"
+            },
+        onClick = when {
+            actionIsStop -> onStopGeneration
+            else -> onSend
+        },
+        enabled = when {
+            actionIsStop -> true
+            else -> canSend
+        },
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = when {
+                actionIsStop -> semanticColors.busy
+                canSend -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            },
+            contentColor = when {
+                actionIsStop -> semanticColors.onBusy
+                canSend -> MaterialTheme.colorScheme.onPrimary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f)
+            },
+        ),
+    ) {
+        Icon(
+            imageVector = if (actionIsStop) Icons.Filled.Stop else Icons.AutoMirrored.Filled.Send,
+            contentDescription = null,
+        )
     }
 }
 
@@ -3691,8 +4040,8 @@ private fun RemoteAttachmentProtectionNotice() {
             .fillMaxWidth()
             .testTag("remote_attachment_protection_notice"),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.58f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.46f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.32f)),
     ) {
         Text(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -3714,16 +4063,17 @@ private fun ComposerIconButton(
         modifier = modifier
             .height(52.dp)
             .width(46.dp)
+            .clip(MaterialTheme.shapes.medium)
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = CircleShape,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.76f),
+                shape = MaterialTheme.shapes.medium,
             ),
         onClick = onClick,
         enabled = enabled,
         colors = IconButtonDefaults.iconButtonColors(
             contentColor = MaterialTheme.colorScheme.primary,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.58f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.64f),
             disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.34f),
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
         ),
@@ -3742,8 +4092,8 @@ private fun PendingSharedInputStrip(
             .fillMaxWidth()
             .testTag("pending_shared_input_strip"),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.46f)),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.34f)),
     ) {
         Row(
             modifier = Modifier.padding(start = 10.dp, top = 6.dp, end = 4.dp, bottom = 6.dp),
@@ -3803,8 +4153,8 @@ private fun VoiceCaptureBar(
             .fillMaxWidth()
             .testTag("voice_capture_bar"),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.66f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),

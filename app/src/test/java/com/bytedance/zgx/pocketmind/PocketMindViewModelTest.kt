@@ -459,6 +459,60 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModeSendsSharedImageAttachmentToVisionRuntime() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.stageSharedInput(
+            SharedInput(
+                text = "",
+                attachments = listOf(
+                    SharedAttachment(
+                        kind = SharedAttachmentKind.Image,
+                        mimeType = "image/png",
+                        displayName = "screen.png",
+                        sizeBytes = 12L,
+                        imageAttachment = ChatImageAttachment(
+                            mimeType = "image/png",
+                            dataUrl = "data:image/png;base64,AA==",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        val draft = requireNotNull(viewModel.uiState.value.pendingSharedInputDraft)
+        assertEquals("screen.png · 图片", draft.summary)
+        assertEquals(MessagePrivacy.RemoteEligible, draft.privacy)
+        assertEquals("data:image/png;base64,AA==", draft.imageAttachments.single().dataUrl)
+
+        viewModel.sendPendingSharedInput("描述这张图")
+        advanceUntilIdle()
+
+        val call = remoteRuntime.calls.single()
+        assertTrue(call.prompt.contains("描述这张图"))
+        assertTrue(call.prompt.contains("screen.png"))
+        assertTrue(call.prompt.contains("不支持图片输入"))
+        assertEquals("data:image/png;base64,AA==", call.imageAttachments.single().dataUrl)
+        assertTrue(sessionStore.messages.first().text.contains("screen.png"))
+        assertEquals(
+            listOf(MessagePrivacy.RemoteEligible, MessagePrivacy.RemoteEligible),
+            sessionStore.messages.map { it.privacy },
+        )
+    }
+
+    @Test
     fun remoteModeRejectsSharedOfficeDocumentPreviewBeforeBuildingPrompt() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore()
@@ -5510,6 +5564,7 @@ class PocketMindViewModelTest {
         val prompt: String,
         val history: List<ChatMessage>,
         val tools: List<ToolSpec> = emptyList(),
+        val imageAttachments: List<ChatImageAttachment> = emptyList(),
     )
 
     private fun agentTraceRunSummary(
@@ -5558,8 +5613,9 @@ class PocketMindViewModelTest {
             history: List<ChatMessage>,
             parameters: GenerationParameters,
             config: RemoteModelConfig,
+            imageAttachments: List<ChatImageAttachment>,
         ): Flow<String> {
-            calls += RemoteCall(prompt, history)
+            calls += RemoteCall(prompt, history, imageAttachments = imageAttachments)
             return flowOf("远程回复")
         }
 
@@ -5569,9 +5625,10 @@ class PocketMindViewModelTest {
             parameters: GenerationParameters,
             config: RemoteModelConfig,
             tools: List<ToolSpec>,
+            imageAttachments: List<ChatImageAttachment>,
         ): Flow<RemoteChatEvent> {
             val callIndex = calls.size
-            calls += RemoteCall(prompt, history, tools)
+            calls += RemoteCall(prompt, history, tools, imageAttachments)
             val eventsForCall = eventBatches.getOrNull(callIndex) ?: events
             return flowOf(*eventsForCall.toTypedArray())
         }

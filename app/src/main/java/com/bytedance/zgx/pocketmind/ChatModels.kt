@@ -58,6 +58,11 @@ data class ChatMessage(
     val privacy: MessagePrivacy = MessagePrivacy.RemoteEligible,
 )
 
+data class ChatImageAttachment(
+    val mimeType: String,
+    val dataUrl: String,
+)
+
 fun List<ChatMessage>.remoteEligibleMessages(): List<ChatMessage> =
     filter { it.privacy == MessagePrivacy.RemoteEligible }
 
@@ -138,6 +143,7 @@ data class SharedInputDraft(
     val id: Long,
     val prompt: String,
     val summary: String,
+    val imageAttachments: List<ChatImageAttachment> = emptyList(),
     val privacy: MessagePrivacy = MessagePrivacy.LocalOnly,
 )
 

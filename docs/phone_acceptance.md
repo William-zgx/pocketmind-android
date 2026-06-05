@@ -148,7 +148,7 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 自动回归通过只证明脚本、构建、JVM 单测和 instrumentation 覆盖的路径通过；必须手工验收的系统入口要单独记录，不能用脚本通过、直接调用 ViewModel/reader、mock intent 或 UI 文案存在替代。
 
 - 语音输入必须在设备上点麦克风入口，观察 Android 系统语音识别、收音/转写条、取消/完成状态和最终文本进入输入框。
-- 系统文档选择器必须从输入区附件按钮打开，观察本地模式摘录/metadata-only 行为，以及远程模式下 picker 前置保护提示明确说明未读取分享文本、附件元数据、文件流、文本摘录或 OCR 摘录。
+- 系统文档选择器必须从输入区附件按钮打开，观察本地模式摘录/metadata-only 行为，以及远程模式下主动选择的图片会直接发送给远程视觉模型；其他附件和分享文本不读取正文、文本摘录或 OCR 摘录。
 - 当前屏幕截图 OCR 必须在确认卡后观察 Android MediaProjection 前台同意弹窗；取消和同意后的单次消费行为不能用直接调用 OCR provider 替代。
 
 ## 手动模型验收
@@ -296,10 +296,10 @@ UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model
 - 分享或选择用户主动提供的 RTF 文档时，App 可以生成用户可见、有界、本地文本层摘录；摘录只进入本地 shared-input prompt，不代表完整富文档解析、版式理解或语义理解。
 - 分享或选择用户主动提供的 PDF 文档时，App 可以生成用户可见、有界、本地 PDF 文本层摘录；没有可读文本层时，可以渲染前几页并生成有界的本地扫描页 OCR 摘录。摘录只进入本地 shared-input prompt，不代表版式理解、表格/坐标提取、图片语义理解或完整 PDF 解析。
 - 分享或选择用户主动提供的 `.docx` / `.xlsx` / `.pptx` Office Open XML 文件时，App 可以生成用户可见、有界、本地文本层摘录；摘录只进入本地 shared-input prompt，不代表完整文档解析、版式理解或语义理解。
-- 分享或选择用户主动提供的 `image/*` 附件时，App 可以在本地生成用户可见、有界的 OCR 文本摘录；摘录只进入本地 shared-input prompt，不代表图片语义理解。
+- 本地模式下分享或选择用户主动提供的 `image/*` 附件时，App 可以生成用户可见、有界的 OCR 文本摘录；摘录只进入本地 shared-input prompt，不代表图片语义理解。远程模式下，用户主动提供的 `image/*` 附件应默认作为图片输入直接发送给远程视觉模型，不跑本地 OCR；若模型或接口不支持图片输入，应直接提示图片输入失败/不支持。
 - 当 Android provider 返回空 MIME 或 `application/octet-stream` 时，应使用显示文件名扩展名保守推断常见图片、文本、PDF、RTF 和 Office Open XML 类型；推断成功后仍只允许对应的有界本地摘录，未知或不支持扩展名继续 metadata-only。
 - 分享或选择音频、视频、旧版 Office、二进制和其他非文本附件时，App 只应读取 MIME 类型、文件名和大小等元数据，不应读取文件正文、像素或二进制内容。
-- 自动生成的 shared-input 文本、OCR 摘录、文本/RTF/PDF/Office 摘录和附件元数据应标记为 `LocalOnly`；远程模式不应自动上传这些内容，应在 ShareIntentReader 边界就避免读取分享文本值、附件元数据、文件流、文本摘录或 OCR。输入区附件 picker 的远程保护提示也必须明确说明未读取附件元数据、文件流、文本摘录或 OCR，并提示用户手动粘贴愿意发送的内容。
+- 自动生成的 shared-input 文本、OCR 摘录、文本/RTF/PDF/Office 摘录和非图片附件元数据应标记为 `LocalOnly`；远程模式不应自动上传这些内容，应在 ShareIntentReader 边界就避免读取分享文本值、非图片附件元数据、非图片文件流、文本摘录或 OCR。远程模式下用户主动提供的图片附件例外：只在 provider 识别为图片后读取并作为图片输入发送给远程视觉模型。
 - 本地模式下，即使模型已就绪，外部分享或附件选择生成的分享 prompt 也只能先进入输入区待发送草稿；用户点击发送后才可进入普通聊天路由。模型未就绪时，点击发送后应落到会话里并提示先准备模型。
 - `LocalOnly` 分享/OCR/屏幕文本会话内容不应进入自动记忆召回，也不应原文派生会话列表标题；显式长期记忆仍必须通过用户明确 remember/fact 路径。
 - 点击语音输入入口应拉起 Android 系统语音识别；转写成功后，文本只应出现在输入框。

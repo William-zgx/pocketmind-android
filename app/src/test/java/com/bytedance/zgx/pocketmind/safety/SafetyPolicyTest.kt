@@ -162,6 +162,13 @@ class SafetyPolicyTest {
             "搜索我的手机号 13800138000 有没有泄露",
             "look up my email alex@example.com",
             "帮我查我的地址附近有什么",
+            "搜一下我的银行卡 6222020202020202020 有没有风险",
+            "check my employee id E123456 incident history",
+            "搜索我的 HIV 检测结果应该怎么办",
+            "查一下附近心理咨询",
+            "find bankruptcy lawyer near me",
+            "search my credit card debt options",
+            "look up my child's insurance claim",
             "search " + "sk-" + "1234567890abcdef1234567890abcdef",
             "search AKIA1234567890ABCDEF",
         )
@@ -193,6 +200,11 @@ class SafetyPolicyTest {
     fun sensitiveRemotePromptContentIsDetectedForOutboundGate() {
         assertTrue(policy.containsSensitivePersonalOrSecretContent("我的手机号是 13800138000，帮我总结"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("please explain my email alex@example.com"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("我的银行卡 6222020202020202020 是否安全"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("my employee id E123456 needs a report"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("我的怀孕检查结果怎么解读"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("nearby therapist near me"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("my bankruptcy lawyer options"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("check " + "sk-" + "1234567890abcdef1234567890abcdef"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("AWS key AKIA1234567890ABCDEF"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("Google key AIzaSyA123456789012345678901234567890123"))

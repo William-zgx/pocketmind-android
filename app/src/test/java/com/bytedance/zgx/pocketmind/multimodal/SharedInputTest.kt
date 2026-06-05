@@ -1,5 +1,6 @@
 package com.bytedance.zgx.pocketmind.multimodal
 
+import com.bytedance.zgx.pocketmind.ChatImageAttachment
 import java.io.ByteArrayOutputStream
 import java.util.zip.DeflaterOutputStream
 import java.util.zip.ZipEntry
@@ -102,6 +103,33 @@ class SharedInputTest {
         assertTrue(prompt.contains("图片文字摘录（已截断）"))
         assertTrue(prompt.contains("标题"))
         assertTrue(prompt.contains("正文"))
+    }
+
+    @Test
+    fun promptMentionsAttachedImageForRemoteVisionAttachment() {
+        val input = SharedInput(
+            text = "",
+            attachments = listOf(
+                SharedAttachment(
+                    kind = SharedAttachmentKind.Image,
+                    mimeType = "image/png",
+                    displayName = "screen.png",
+                    sizeBytes = 120L,
+                    imageAttachment = ChatImageAttachment(
+                        mimeType = "image/png",
+                        dataUrl = "data:image/png;base64,AA==",
+                    ),
+                ),
+            ),
+        )
+
+        val prompt = input.toPrompt()
+
+        assertTrue(prompt.contains("图片已随本次请求发送给模型"))
+        assertTrue(prompt.contains("不支持图片输入"))
+        assertTrue(prompt.contains("图片会随本次远程模型请求发送"))
+        assertTrue(prompt.contains("screen.png"))
+        assertFalse(prompt.contains("只支持图片 OCR"))
     }
 
     @Test

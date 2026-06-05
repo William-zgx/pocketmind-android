@@ -40,10 +40,11 @@ data class RemoteModelConfig(
         runCatching { URI(baseUrl.trim()) }.getOrNull()
 }
 
-private fun String?.isLocalDebugHost(): Boolean =
+internal fun String?.isLocalDebugHost(): Boolean =
     this == "localhost" ||
         this == "127.0.0.1" ||
         this == "::1" ||
+        this == "[::1]" ||
         this == "10.0.2.2"
 
 fun InferenceMode.label(): String =

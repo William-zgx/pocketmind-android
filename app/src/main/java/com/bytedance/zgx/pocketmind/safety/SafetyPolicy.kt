@@ -84,7 +84,11 @@ class SafetyPolicy {
             privateKeyBlockPattern.containsMatchIn(this) ||
             secretAssignmentPattern.containsMatchIn(this) ||
             personalChineseKeywordPattern.containsMatchIn(this) ||
-            personalEnglishKeywordPattern.containsMatchIn(normalized)
+            personalEnglishKeywordPattern.containsMatchIn(normalized) ||
+            sensitiveChineseDomainPattern.containsMatchIn(this) ||
+            sensitiveChineseLocationPattern.containsMatchIn(this) ||
+            sensitiveEnglishDomainPattern.containsMatchIn(normalized) ||
+            sensitiveEnglishLocationPattern.containsMatchIn(normalized)
     }
 
     private companion object {
@@ -117,5 +121,15 @@ class SafetyPolicy {
             Regex("""(我|我的|本人|自己).{0,12}(手机号|电话|邮箱|住址|地址|身份证|工号|银行卡|账号|密码|口令|令牌|密钥|API\s*Key)""")
         val personalEnglishKeywordPattern =
             Regex("""\b(my|mine|personal|private)\b.{0,24}\b(phone|email|address|id|employee\s*id|bank|account|password|token|secret|api\s*key)\b""")
+        val sensitiveChineseDomainPattern = Regex(
+            """(我|我的|本人|自己).{0,16}(HIV|艾滋|怀孕|孕检|心理|抑郁|焦虑|病历|诊断|律师|起诉|破产|债务|贷款|信用卡|保险|理赔|孩子|儿童|未成年)""",
+            RegexOption.IGNORE_CASE,
+        )
+        val sensitiveChineseLocationPattern =
+            Regex("""附近.{0,16}(医院|诊所|心理|咨询|律师|破产|债务|保险|理赔|银行|贷款)""")
+        val sensitiveEnglishDomainPattern =
+            Regex("""\b(my|mine|personal|private)\b.{0,32}\b(hiv|aids|pregnan\w*|therapy|therapist|mental|depress\w*|anxiety|medical|diagnos\w*|bankruptcy|debt|credit\s*card|insurance|claim|lawyer|attorney|child|minor)\b""")
+        val sensitiveEnglishLocationPattern =
+            Regex("""\b(near me|nearby)\b.{0,32}\b(clinic|hospital|therap\w*|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b|\b(clinic|hospital|therap\w*|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b.{0,32}\b(near me|nearby)\b""")
     }
 }

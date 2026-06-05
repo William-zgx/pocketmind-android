@@ -325,13 +325,15 @@ is possible.
 It keeps attachment metadata for local processing. Binary, audio, video, legacy
 Office, and other unsupported attachments remain metadata-only. Automatically
 generated shared-input excerpts and metadata are
-marked `LocalOnly`; remote mode now protects at the reader boundary and does not
-read shared text values, attachment metadata, file streams, text excerpts, or OCR
-before showing a local privacy notice. The in-app picker shows the same remote
-protection notice before selection: it does not read attachment metadata, file
-streams, text excerpts, or OCR excerpts for automatic remote submission. Local
-mode also requires the user to tap send before the staged shared-input prompt
-enters chat generation. LocalOnly
+marked `LocalOnly`. In remote mode, user-provided `image/*` attachments are
+read only after the provider identifies them as images, bounded to an 8 MB data
+URL, and sent directly to the remote vision model request without local OCR.
+If the remote model or API rejects image input, PocketMind reports that image
+input failed instead of falling back to OCR. Remote mode still protects shared
+text, non-image attachments, attachment text excerpts, and OCR excerpts at the
+reader boundary: it does not read or automatically send those contents before
+showing a local privacy notice. Local mode also requires the user to tap send
+before the staged shared-input prompt enters chat generation. LocalOnly
 conversation text is excluded from automatic memory recall and from verbatim
 session-title derivation; explicit long-term facts/preferences still use their
 own memory controls.
@@ -560,6 +562,14 @@ APK with `adb install -r`. The release Gradle build in this repository does not
 commit signing credentials; local debug-keystore signing is only for internal
 device checks and is not a distribution signing process.
 
+## Production Release Readiness
+
+Use `docs/release_checklist.md` as the release-candidate gate before any Play
+or broader production distribution. It covers production signing versus local
+debug keystores, AAB and Play App Signing, versioning, privacy/Data safety
+forms, sensitive permission disclosures, device and emulator test matrix,
+crash/ANR monitoring, and rollback.
+
 ## Project Structure
 
 ```text
@@ -589,7 +599,7 @@ docs/
   agent_core_modules.md    Agent core module ownership and status
   phone_acceptance.md       Manual device acceptance checklist
   privacy_notice.md        Local/remote privacy boundary summary for release review
-  release_checklist.md     Manual release candidate checklist
+  release_checklist.md     Production readiness and release candidate checklist
   release_readiness.md      External distribution checklist
   validation_report.md      Recent validation notes
 scripts/

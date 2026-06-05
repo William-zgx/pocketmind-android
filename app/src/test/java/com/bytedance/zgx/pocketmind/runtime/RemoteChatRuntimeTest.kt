@@ -1,5 +1,6 @@
 package com.bytedance.zgx.pocketmind.runtime
 
+import com.bytedance.zgx.pocketmind.ChatImageAttachment
 import com.bytedance.zgx.pocketmind.ChatMessage
 import com.bytedance.zgx.pocketmind.GenerationParameters
 import com.bytedance.zgx.pocketmind.MessagePrivacy
@@ -94,6 +95,34 @@ class RemoteChatRuntimeTest {
         assertTrue(function.getString("description").contains("独立 web_search 工具调用"))
         assertEquals("object", function.getJSONObject("parameters").getString("type"))
         assertEquals("auto", body.getString("tool_choice"))
+    }
+
+    @Test
+    fun buildChatCompletionBodySerializesImageAttachmentsAsOpenAiContentParts() {
+        val body = buildChatCompletionBody(
+            prompt = "描述这张图",
+            history = emptyList(),
+            parameters = GenerationParameters(),
+            config = RemoteModelConfig("https://api.example.com/v1", "model-a"),
+            imageAttachments = listOf(
+                ChatImageAttachment(
+                    mimeType = "image/png",
+                    dataUrl = "data:image/png;base64,AA==",
+                ),
+            ),
+        )
+
+        val userMessage = body.getJSONArray("messages").getJSONObject(1)
+        val content = userMessage.getJSONArray("content")
+
+        assertEquals("user", userMessage.getString("role"))
+        assertEquals("text", content.getJSONObject(0).getString("type"))
+        assertEquals("描述这张图", content.getJSONObject(0).getString("text"))
+        assertEquals("image_url", content.getJSONObject(1).getString("type"))
+        assertEquals(
+            "data:image/png;base64,AA==",
+            content.getJSONObject(1).getJSONObject("image_url").getString("url"),
+        )
     }
 
     @Test
@@ -506,6 +535,40 @@ class RemoteChatRuntimeTest {
             val message = requireNotNull(failure).message.orEmpty()
             assertTrue(message.contains("401"))
             assertFalse(message.contains("secret-key"))
+        }
+    }
+
+    @Test
+    fun sendWithImageReportsUnsupportedWithoutLeakingResponseBody() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(400)
+                    .body("""{"error":"secret-image-body should not appear"}""")
+                    .build(),
+            )
+            server.start()
+            val runtime = OkHttpRemoteChatRuntime(OkHttpClient())
+
+            val failure = runCatching {
+                runtime.send(
+                    prompt = "描述图片",
+                    history = emptyList(),
+                    parameters = GenerationParameters(),
+                    config = RemoteModelConfig(server.url("/v1").toString().trimEnd('/'), "model-a"),
+                    imageAttachments = listOf(
+                        ChatImageAttachment(
+                            mimeType = "image/png",
+                            dataUrl = "data:image/png;base64,AA==",
+                        ),
+                    ),
+                ).toList()
+            }.exceptionOrNull()
+
+            val message = requireNotNull(failure).message.orEmpty()
+            assertTrue(message.contains("不支持图片输入"))
+            assertTrue(message.contains("400"))
+            assertFalse(message.contains("secret-image-body"))
         }
     }
 

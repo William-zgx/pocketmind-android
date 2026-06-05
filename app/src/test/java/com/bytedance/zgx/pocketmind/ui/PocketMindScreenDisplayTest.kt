@@ -11,13 +11,24 @@ import org.junit.Test
 
 class PocketMindScreenDisplayTest {
     @Test
-    fun remoteAttachmentProtectionNoticeNamesUnreadPickerInputs() {
+    fun remoteAttachmentProtectionNoticeNamesVisionImagePath() {
         assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("远程模型模式"))
-        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("不会读取分享文本"))
-        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("附件元数据"))
-        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("文件流"))
+        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("图片会直接发送"))
+        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("其他附件和分享文本"))
+        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("不会读取正文"))
         assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("OCR 摘录"))
-        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("手动粘贴"))
+        assertTrue(REMOTE_ATTACHMENT_PROTECTION_NOTICE.contains("不支持图片"))
+    }
+
+    @Test
+    fun trustBoundaryCopyNamesLocalRemotePermissionAndDeletionControls() {
+        assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("留在本机"))
+        assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("LocalOnly"))
+        assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("对话上下文"))
+        assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("图片会随请求发送"))
+        assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("OCR 摘录"))
+        assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("Accessibility 文本"))
+        assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("前台一次性确认"))
     }
 
     @Test

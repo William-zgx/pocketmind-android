@@ -1,5 +1,6 @@
 package com.bytedance.zgx.pocketmind.multimodal
 
+import com.bytedance.zgx.pocketmind.ChatImageAttachment
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -18,6 +19,7 @@ data class SharedInput(
 
     fun toPrompt(): String {
         val sharedText = text.toBoundedSharedText()
+        val hasAttachedImages = attachments.any { attachment -> attachment.imageAttachment != null }
         val attachmentBlock = attachments
             .take(MAX_ATTACHMENTS_IN_PROMPT)
             .mapIndexed { index, attachment ->
@@ -40,9 +42,13 @@ data class SharedInput(
             .joinToString(separator = "\n")
         return buildString {
             if (protectedSourceCount > 0) {
-                append(
-                    "已收到受保护分享。为保护隐私，本次未读取分享文本、附件元数据、文本摘录或 OCR；请切换到本地模型后重新分享，或手动粘贴你愿意处理的内容。",
-                )
+                if (hasAttachedImages) {
+                    append("除已附加图片外，还收到受保护分享源；为保护隐私，本次未读取这些分享文本、非图片附件、文本摘录或 OCR。")
+                } else {
+                    append(
+                        "已收到受保护分享。为保护隐私，本次未读取分享文本、附件元数据、文本摘录或 OCR；请切换到本地模型后重新分享，或手动粘贴你愿意处理的内容。",
+                    )
+                }
             }
             if (sharedText.text.isNotBlank()) {
                 if (isNotEmpty()) append("\n\n")
@@ -52,13 +58,23 @@ data class SharedInput(
                 append(sharedText.text)
             } else if (attachments.isNotEmpty()) {
                 if (isNotEmpty()) append("\n\n")
-                append("请根据我分享的附件信息和可用文字摘录进行处理；如果图片没有 OCR 摘录，请明确说明当前无法看到图片视觉内容。")
+                if (hasAttachedImages) {
+                    append("请根据我分享的图片和附件信息进行处理；图片已随本次请求发送给模型。如果当前模型或接口不支持图片输入，请直接说明不支持。")
+                } else {
+                    append("请根据我分享的附件信息和可用文字摘录进行处理；如果图片没有 OCR 摘录，请明确说明当前无法看到图片视觉内容。")
+                }
             }
             if (attachmentBlock.isNotBlank()) {
                 append("\n\n")
-                append(
-                    "已分享附件（默认只读取元数据；text/*/JSON/XML/YAML 文档、RTF/PDF 文本层、PDF 扫描页 OCR、Office Open XML 文档和用户主动提供的 image/* 附件会读取受限文本/OCR 摘录；当前不读取图片视觉内容或像素语义）：\n",
-                )
+                if (hasAttachedImages) {
+                    append(
+                        "已分享附件（图片会随本次远程模型请求发送；分享文本、非图片附件、文本摘录和 OCR 均未发送）：\n",
+                    )
+                } else {
+                    append(
+                        "已分享附件（默认只读取元数据；text/*/JSON/XML/YAML 文档、RTF/PDF 文本层、PDF 扫描页 OCR、Office Open XML 文档和用户主动提供的 image/* 附件会读取受限文本/OCR 摘录；当前不读取图片视觉内容或像素语义）：\n",
+                    )
+                }
                 append(attachmentBlock)
             }
         }.trim()
@@ -72,7 +88,11 @@ data class SharedInput(
 private fun SharedAttachment.unavailablePreviewNotice(): String? =
     when (kind) {
         SharedAttachmentKind.Image ->
-            "图片视觉内容未读取；当前只支持图片 OCR 文字摘录，无法看到照片/画面内容。"
+            if (imageAttachment != null) {
+                "图片已附加到本次模型请求；如果当前模型或接口不支持图片输入，请直接说明不支持。"
+            } else {
+                "图片视觉内容未读取；当前只支持图片 OCR 文字摘录，无法看到照片/画面内容。"
+            }
 
         SharedAttachmentKind.Video ->
             "视频画面和音频内容未读取；当前仅有元数据。"
@@ -111,6 +131,7 @@ data class SharedAttachment(
     val displayName: String?,
     val sizeBytes: Long?,
     val textPreview: SharedTextPreview? = null,
+    val imageAttachment: ChatImageAttachment? = null,
 ) {
     fun safeDisplayNameForPrompt(): String? {
         val normalized = displayName

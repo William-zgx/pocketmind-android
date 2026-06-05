@@ -457,6 +457,48 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun remoteModelSensitiveWebSearchRequiresConfirmationBeforeNetworkAccess() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "帮我检查手机号有没有泄露",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(
+                initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
+                remoteToolScope = RemoteToolScope.ModelPlanning,
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.ModelPlanning,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+
+        val observed = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-sensitive-web-search",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "搜索我的手机号 13800138000 有没有泄露"),
+                reason = "remote public evidence",
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.AwaitingUserConfirmation, observed.run.state)
+        val decision = observed.decision as AgentObservationDecision.PlanNextTool
+        assertEquals(SafetyOutcome.RequireConfirmation, decision.plan.safetyDecision.outcome)
+        assertTrue(decision.plan.draft.requiresConfirmation)
+        assertEquals("call-sensitive-web-search", runtime.latestPendingConfirmation()?.request?.id)
+        assertTrue(observed.steps.any { step -> step is AgentStep.UserConfirmationRequested })
+        assertTrue(observed.steps.none { step -> step is AgentStep.ToolObserved })
+    }
+
+    @Test
     fun remoteModelMultiplePublicEvidenceToolCallsPlanBatchWithoutConfirmation() {
         val runtime = AgentLoopRuntime(
             memoryIndex = MemoryRepository(),
@@ -503,6 +545,53 @@ class AgentLoopRuntimeTest {
         assertEquals(null, runtime.latestPendingConfirmation())
         assertEquals(2, observed.steps.filterIsInstance<AgentStep.ToolRequested>().size)
         assertTrue(observed.steps.none { step -> step is AgentStep.UserConfirmationRequested })
+    }
+
+    @Test
+    fun remoteModelSensitiveWebSearchBatchIsRejectedBeforeAnyNetworkAccess() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "普通远程问题",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        val requests = listOf(
+            ToolRequest(
+                id = "call-weather",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote tool call",
+            ),
+            ToolRequest(
+                id = "call-sensitive",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "搜索我的手机号 13800138000 有没有泄露"),
+                reason = "remote tool call",
+            ),
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+
+        val observed = runtime.observeModelToolRequests(result.run.id, requests)
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Failed, observed.run.state)
+        val decision = observed.decision as AgentObservationDecision.Fail
+        assertTrue(decision.reason.contains("requires confirmation"))
+        assertEquals(null, runtime.latestPendingConfirmation())
+        assertTrue(observed.steps.none { step -> step is AgentStep.ToolRequested })
+        assertTrue(observed.steps.none { step -> step is AgentStep.ToolObserved })
+        assertTrue(observed.steps.any { step ->
+            step is AgentStep.SafetyChecked &&
+                step.decision.outcome == SafetyOutcome.RequireConfirmation
+        })
     }
 
     @Test

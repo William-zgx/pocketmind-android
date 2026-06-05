@@ -698,7 +698,7 @@ class AgentLoopRuntime(
             }
             plans += AgentPlan.UseTool(
                 request = request,
-                draft = draftForRemoteToolRequest(request),
+                draft = draftForRemoteToolRequest(request).withSafetyDecision(safetyDecision),
                 plannedByModel = true,
                 fallbackReason = "remote tool batch",
                 skillRequest = null,
@@ -1328,7 +1328,7 @@ class AgentLoopRuntime(
         return NextObservationPlan.Planned(
             AgentPlan.UseTool(
                 request = request,
-                draft = draft,
+                draft = draft.withSafetyDecision(safetyDecision),
                 plannedByModel = plannedByModel,
                 fallbackReason = fallbackReason,
                 skillRequest = skillPlan?.request,
@@ -1701,7 +1701,7 @@ class AgentLoopRuntime(
         }
         return AgentPlan.UseTool(
             request = request,
-            draft = draft,
+            draft = draft.withSafetyDecision(safetyDecision),
             plannedByModel = plannedByModel,
             fallbackReason = fallbackReason,
             skillRequest = skillPlan?.request,
@@ -2749,6 +2749,13 @@ fun AgentLoopResult.toAssistantRoute(): AssistantRoute =
 
 private fun AgentPlan.UseTool.requiresUserConfirmation(): Boolean =
     safetyDecision.outcome == SafetyOutcome.RequireConfirmation
+
+private fun ActionDraft.withSafetyDecision(safetyDecision: SafetyDecision): ActionDraft =
+    if (safetyDecision.outcome == SafetyOutcome.RequireConfirmation && !requiresConfirmation) {
+        copy(requiresConfirmation = true)
+    } else {
+        this
+    }
 
 private fun AgentPlan.UseTool.nextExecutionState(): AgentRunState =
     if (requiresUserConfirmation()) {

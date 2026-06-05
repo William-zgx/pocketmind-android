@@ -12,7 +12,9 @@ import com.bytedance.zgx.pocketmind.ModelCapability
 import com.bytedance.zgx.pocketmind.ModelCatalog
 import com.bytedance.zgx.pocketmind.RECOMMENDED_MODELS
 import com.bytedance.zgx.pocketmind.RecommendedModel
+import com.bytedance.zgx.pocketmind.isLocalDebugHost
 import java.io.File
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import org.json.JSONObject
@@ -52,6 +54,33 @@ data class ModelDownloadSource(
     fun installedDisplayName(file: File): String =
         modelId?.let { ModelCatalog.recommendedModelById(it).shortName }
             ?: file.nameWithoutExtension
+}
+
+internal fun createCustomModelDownloadSource(downloadUrl: String): ModelDownloadSource? {
+    val trimmedUrl = downloadUrl.trim()
+    val uri = runCatching { URI(trimmedUrl) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase()
+    val host = uri.host?.takeIf { it.isNotBlank() } ?: return null
+    if (!uri.userInfo.isNullOrBlank()) return null
+    when (scheme) {
+        "https" -> Unit
+        "http" -> if (!host.isLocalDebugHost()) return null
+        else -> return null
+    }
+    val fileName = ModelCatalog.sanitizeModelName(
+        uri.path
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: "custom-model$MODEL_FILE_EXTENSION",
+    )
+    return ModelDownloadSource(
+        title = "自定义模型",
+        fileName = fileName,
+        downloadUrl = trimmedUrl,
+        expectedBytes = null,
+        expectedSha256 = null,
+        modelId = null,
+    )
 }
 
 data class TransferProgress(
@@ -240,26 +269,7 @@ class ModelRepository(
             }
 
     override fun createCustomDownloadSource(downloadUrl: String): ModelDownloadSource? {
-        val trimmedUrl = downloadUrl.trim()
-        val uri = runCatching { Uri.parse(trimmedUrl) }.getOrNull() ?: return null
-        val scheme = uri.scheme?.lowercase()
-        if (scheme != "http" && scheme != "https") return null
-        if (uri.host.isNullOrBlank()) return null
-        val fileName = ModelCatalog.sanitizeModelName(
-            uri.lastPathSegment
-                ?.substringAfterLast('/')
-                ?.substringBefore('?')
-                ?.takeIf { it.isNotBlank() }
-                ?: "custom-model$MODEL_FILE_EXTENSION",
-        )
-        return ModelDownloadSource(
-            title = "自定义模型",
-            fileName = fileName,
-            downloadUrl = trimmedUrl,
-            expectedBytes = null,
-            expectedSha256 = null,
-            modelId = null,
-        )
+        return createCustomModelDownloadSource(downloadUrl)
     }
 
     override fun downloadedModelFile(fileName: String): File? =
