@@ -62,15 +62,26 @@ fi
 TMP_FINDINGS="$(mktemp)"
 trap 'rm -f "$TMP_FINDINGS"' EXIT
 
+find_apksigner() {
+  if command -v apksigner >/dev/null 2>&1; then
+    command -v apksigner
+    return
+  fi
+  local sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
+  find "$sdk/build-tools" -name apksigner -type f 2>/dev/null | sort | tail -n 1
+}
+
 artifact_signing_status() {
   local artifact="$1"
   case "$artifact" in
     *.apk)
-      if ! command -v apksigner >/dev/null 2>&1; then
+      local apksigner_bin
+      apksigner_bin="$(find_apksigner)"
+      if [[ -z "$apksigner_bin" || ! -x "$apksigner_bin" ]]; then
         echo "tool-missing"
         return
       fi
-      if apksigner verify "$artifact" >/dev/null 2>&1; then
+      if "$apksigner_bin" verify "$artifact" >/dev/null 2>&1; then
         echo "verified"
       else
         echo "failed"
@@ -81,7 +92,9 @@ artifact_signing_status() {
         echo "tool-missing"
         return
       fi
-      if jarsigner -verify "$artifact" >/dev/null 2>&1; then
+      local output
+      output="$(jarsigner -verify "$artifact" 2>&1 || true)"
+      if grep -q 'jar verified[.]' <<<"$output" && ! grep -qi 'jar is unsigned' <<<"$output"; then
         echo "verified"
       else
         echo "failed"
@@ -97,20 +110,22 @@ artifact_certificate_sha256() {
   local artifact="$1"
   case "$artifact" in
     *.apk)
-      if ! command -v apksigner >/dev/null 2>&1; then
+      local apksigner_bin
+      apksigner_bin="$(find_apksigner)"
+      if [[ -z "$apksigner_bin" || ! -x "$apksigner_bin" ]]; then
         echo ""
         return
       fi
-      (apksigner verify --print-certs "$artifact" 2>/dev/null || true) |
+      ("$apksigner_bin" verify --print-certs "$artifact" 2>/dev/null || true) |
         awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}'
       ;;
     *.aab)
-      if ! command -v jarsigner >/dev/null 2>&1; then
+      if ! command -v keytool >/dev/null 2>&1; then
         echo ""
         return
       fi
-      (jarsigner -verify -certs -verbose "$artifact" 2>/dev/null || true) |
-        awk '/X.509/ {print $NF; exit}'
+      (keytool -printcert -jarfile "$artifact" 2>/dev/null || true) |
+        awk -F': ' '/SHA256:/ {gsub(":", "", $2); print tolower($2); exit}'
       ;;
     *)
       echo ""

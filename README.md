@@ -570,7 +570,10 @@ For an internal ad hoc release install that preserves app data, build release,
 sign the generated unsigned APK outside source control, then install the signed
 APK with `adb install -r`. The release Gradle build in this repository does not
 commit signing credentials; local debug-keystore signing is only for internal
-device checks and is not a distribution signing process.
+device checks and is not a distribution signing process. When production
+keystore material is available in a private environment,
+`scripts/sign_release_artifacts.sh` can sign the release APK/AAB and generate
+certificate reports without storing secrets in the repository.
 
 ## Production Release Readiness
 

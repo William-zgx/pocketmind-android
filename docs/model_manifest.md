@@ -10,6 +10,10 @@ License names, redistribution rights, attribution, and notice requirements must
 be manually checked against the upstream model repositories before a release
 candidate. `VERIFY_MODEL_URLS=1` can verify availability and file metadata; it
 does not verify licensing.
+`scripts/collect_model_license_metadata.sh` records current Hugging Face model
+card license metadata in `docs/model_license_metadata.json`, but that file is
+only an input to human review. The release gate still reads
+`docs/model_license_review.json` for final approval.
 
 | ID | File | Repository | Upstream revision | Bytes | SHA-256 | License status |
 | --- | --- | --- | --- | ---: | --- | --- |

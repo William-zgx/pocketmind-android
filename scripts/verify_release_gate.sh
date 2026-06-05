@@ -6,7 +6,12 @@ cd "$ROOT_DIR"
 
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/release-gate}"
 PERF_BASELINE_FILE="${PERF_BASELINE_FILE:-}"
-RELEASE_APK="${RELEASE_APK:-app/build/outputs/apk/release/app-release-unsigned.apk}"
+DEFAULT_RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+RELEASE_APK_WAS_SET=0
+if [[ -n "${RELEASE_APK+x}" ]]; then
+  RELEASE_APK_WAS_SET=1
+fi
+RELEASE_APK="${RELEASE_APK:-$DEFAULT_RELEASE_APK}"
 RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
@@ -49,7 +54,7 @@ else
 fi
 
 artifact_args=()
-if [[ -f "$RELEASE_APK" ]]; then
+if [[ -f "$RELEASE_APK" && ! ("$REQUIRE_AAB" == "1" && "$REQUIRE_SIGNED_ARTIFACT" == "1" && "$RELEASE_APK_WAS_SET" == "0") ]]; then
   artifact_args+=(--apk "$RELEASE_APK")
 fi
 if [[ -f "$RELEASE_AAB" ]]; then

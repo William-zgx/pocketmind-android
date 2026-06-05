@@ -58,8 +58,14 @@ items below.
   notice requirements, reviewer, and review date. Record the result in
   `docs/model_manifest.md`, `docs/model_license_review.json`, and the release
   checklist. `VERIFY_MODEL_URLS=1` checks URL/content metadata only; it does
-  not establish license readiness.
+  not establish license readiness. `scripts/collect_model_license_metadata.sh`
+  can refresh Hugging Face model-card metadata in
+  `docs/model_license_metadata.json`, but it does not replace legal/release
+  approval.
 - Configure release signing outside source control.
+- Use `scripts/sign_release_artifacts.sh` from the private signing environment
+  to produce signed APK/AAB artifacts and certificate reports once production
+  keystore material is available.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.

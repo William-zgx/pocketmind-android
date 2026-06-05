@@ -20,6 +20,20 @@ class ModelManifestDocumentationTest {
     }
 
     @Test
+    fun modelLicenseMetadataCoversEveryRecommendedModelWithoutReplacingManualReview() {
+        val json = JSONObject(readRepoFile("docs/model_license_metadata.json"))
+        val models = json.getJSONArray("models")
+        val documentedIds = (0 until models.length()).map { index ->
+            val model = models.getJSONObject(index)
+            assertTrue(model.getString("apiUrl").startsWith("https://huggingface.co/api/models/"))
+            assertTrue(model.getBoolean("metadataOnly"))
+            model.getString("id")
+        }
+
+        assertEquals(RECOMMENDED_MODELS.map { model -> model.id }, documentedIds)
+    }
+
+    @Test
     fun modelLicenseApprovalGateRequiresCompleteManualReviewWhenEnabled() {
         if (System.getenv("VERIFY_MODEL_LICENSES") != "1") return
 

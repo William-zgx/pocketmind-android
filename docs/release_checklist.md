@@ -49,6 +49,10 @@ release ticket or PR.
 - [ ] Release signing material is provided outside source control. The release
   record names the signing owner, keystore custody location, upload key alias,
   certificate SHA-256 fingerprint, and recovery contact.
+- [ ] `scripts/sign_release_artifacts.sh` is run from the private signing
+  environment with `RELEASE_KEYSTORE`, `RELEASE_KEY_ALIAS`,
+  `RELEASE_KEYSTORE_PASSWORD`, and `RELEASE_KEY_PASSWORD`; attach
+  `build/verification/signing/signing.properties` and the certificate reports.
 - [ ] For Google Play, Play App Signing is enabled or its status is explicitly
   recorded. The app signing certificate fingerprint and upload certificate
   fingerprint are both captured because they are different trust anchors.

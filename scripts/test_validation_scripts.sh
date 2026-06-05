@@ -265,6 +265,10 @@ grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
 grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_perf_baseline.sh in shell syntax checks"
+grep -q 'scripts/collect_model_license_metadata.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include collect_model_license_metadata.sh in shell syntax checks"
+grep -q 'scripts/sign_release_artifacts.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include sign_release_artifacts.sh in shell syntax checks"
 
 VALID_PERF="$TMP_DIR/perf-baseline.properties"
 cat > "$VALID_PERF" <<'VALID_PERF_BASELINE'
@@ -326,11 +330,13 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
 
 SAFE_APK="$TMP_DIR/safe.apk"
+SAFE_AAB="$TMP_DIR/safe.aab"
 UNSAFE_APK="$TMP_DIR/unsafe.apk"
 mkdir -p "$TMP_DIR/safe-zip/assets" "$TMP_DIR/unsafe-zip/assets"
 printf 'ok\n' > "$TMP_DIR/safe-zip/assets/readme.txt"
 printf 'model\n' > "$TMP_DIR/unsafe-zip/assets/model.litertlm"
 (cd "$TMP_DIR/safe-zip" && zip -qr "$SAFE_APK" .)
+cp "$SAFE_APK" "$SAFE_AAB"
 (cd "$TMP_DIR/unsafe-zip" && zip -qr "$UNSAFE_APK" .)
 expect_success \
   "artifact scan accepts safe zip" \
@@ -348,6 +354,10 @@ expect_failure \
   "artifact scan require-signed rejects unsigned zip" \
   scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-unsigned.properties" "status=failed"
+expect_failure \
+  "artifact scan require-signed rejects unsigned aab" \
+  scripts/scan_android_artifacts.sh --aab "$SAFE_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned-aab.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-unsigned-aab.properties" "status=failed"
 
 expect_failure \
   "release gate requires aab when public gate requests it" \
@@ -359,6 +369,9 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.properties" "status=failed"
+expect_failure \
+  "signing helper requires private keystore environment" \
+  scripts/sign_release_artifacts.sh
 
 COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
 expect_success \

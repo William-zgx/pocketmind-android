@@ -6315,3 +6315,68 @@ scripts/regression_emulator.sh
   `status=passed`；nested emulator/device reports 均 `status=passed`，
   `instrumentation=passed`，`actual_android_test_count=26`，且
   `instrumentation.txt` 非空。
+
+## 2026-06-06 Release signing, AAB, and license evidence
+
+本轮覆盖项：
+
+- 新增 AAB release artifact 生成与扫描验证；`scan_android_artifacts.sh` 现在同时支持
+  APK/AAB，且 AAB 签名验证必须看到 `jar verified.`，不会再把 `jar is unsigned`
+  误判为通过。
+- 新增 `sign_release_artifacts.sh`，生产签名只接受外部注入的
+  `RELEASE_KEYSTORE`、`RELEASE_KEY_ALIAS`、`RELEASE_KEYSTORE_PASSWORD`、
+  `RELEASE_KEY_PASSWORD`，不在仓库内保存私钥或密码。
+- 新增 `collect_model_license_metadata.sh` 与
+  `docs/model_license_metadata.json`，记录 Hugging Face API 返回的 license tag、
+  card license、model sha、last modified 与 gated 状态；该文件只作为证据，
+  不替代 `docs/model_license_review.json` 的人工批准。
+- `verify_release_gate.sh` 在 public AAB 场景下不会把默认本地 unsigned APK 混入
+  signed AAB 扫描；当要求 `REQUIRE_AAB=1` 与
+  `REQUIRE_SIGNED_ARTIFACT=1` 时，最终分发 artifact 必须单独显式通过签名扫描。
+
+验证命令：
+
+```bash
+./gradlew :app:bundleRelease
+scripts/collect_model_license_metadata.sh
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+
+RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
+RELEASE_KEY_ALIAS=androiddebugkey \
+RELEASE_KEYSTORE_PASSWORD=android \
+RELEASE_KEY_PASSWORD=android \
+SIGNED_APK=app/build/outputs/apk/release/app-release-local-signed-smoke.apk \
+SIGNED_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
+REPORT_FILE=build/verification/signing-smoke/signing.properties \
+scripts/sign_release_artifacts.sh
+
+ARTIFACT_DIR=build/verification/release-gate-signed-smoke \
+PERF_BASELINE_FILE=build/verification/release-gate-signed-smoke/perf-baseline.properties \
+RELEASE_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
+REQUIRE_AAB=1 \
+REQUIRE_SIGNED_ARTIFACT=1 \
+VERIFY_MODEL_LICENSES=0 \
+VERIFY_CONTRACT_TESTS=0 \
+scripts/verify_release_gate.sh
+```
+
+结果：
+
+- 通过：AAB 构建与 artifact scan；unsigned AAB 在 `--require-signed` 下会失败。
+- 通过：debug keystore signing smoke，证明 APK/AAB 签名脚本和证书指纹扫描链路可用；
+  该证书不是 production signing，不能作为正式发布签名。
+- 通过：signed AAB release gate smoke（关闭 license gate）；
+  `build/verification/release-gate-signed-smoke/release-gate.properties`
+  `status=passed`。
+- 通过：license 负向门禁；在 signed AAB、privacy scan、artifact scan 和 perf
+  baseline 都通过后，`VERIFY_MODEL_LICENSES=1` 的唯一失败原因是
+  `Model license review is incomplete.`。
+
+仍阻塞正式 RC：
+
+- 需要 release owner 提供 production keystore 并运行 `sign_release_artifacts.sh`。
+- 需要人工完成 `docs/model_license_review.json` 中所有模型的 license /
+  redistribution 批准。
+- 需要在固定真机上生成真实 `perf-baseline`，当前 signed gate smoke 只验证门禁链路，
+  不代表正式性能基线。
