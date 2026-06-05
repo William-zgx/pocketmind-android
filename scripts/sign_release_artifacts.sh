@@ -107,9 +107,14 @@ if [[ "${#scan_args[@]}" -eq 0 ]]; then
   echo "No signed APK or AAB was produced." >&2
   exit 1
 fi
+scan_extra_args=()
+if [[ "$ALLOW_DEBUG_KEYSTORE" == "1" ]]; then
+  scan_extra_args+=(--allow-debug-certificate)
+fi
 scripts/scan_android_artifacts.sh \
   "${scan_args[@]}" \
   --require-signed \
+  "${scan_extra_args[@]}" \
   --report "$REPORT_FILE.artifact-scan.properties"
 
 {

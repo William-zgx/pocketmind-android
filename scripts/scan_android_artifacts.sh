@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPORT_FILE=""
 REQUIRE_SIGNED=0
+ALLOW_DEBUG_CERTIFICATE=0
 ARTIFACTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -17,6 +18,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --require-signed)
       REQUIRE_SIGNED=1
+      shift
+      ;;
+    --allow-debug-certificate)
+      ALLOW_DEBUG_CERTIFICATE=1
       shift
       ;;
     *)
@@ -37,6 +42,7 @@ write_report() {
       printf 'artifactCount=%s\n' "${#ARTIFACTS[@]}"
       printf 'findingCount=%s\n' "$finding_count"
       printf 'requireSigned=%s\n' "$REQUIRE_SIGNED"
+      printf 'allowDebugCertificate=%s\n' "$ALLOW_DEBUG_CERTIFICATE"
       local index=0
       for artifact in "${ARTIFACTS[@]}"; do
         index=$((index + 1))
@@ -47,6 +53,7 @@ write_report() {
           printf 'artifact%sType=%s\n' "$index" "${artifact##*.}"
           printf 'artifact%sSigningStatus=%s\n' "$index" "$(artifact_signing_status "$artifact")"
           printf 'artifact%sCertificateSha256=%s\n' "$index" "$(artifact_certificate_sha256 "$artifact")"
+          printf 'artifact%sCertificateSubject=%s\n' "$index" "$(artifact_certificate_subject "$artifact")"
         fi
       done
     } > "$REPORT_FILE"
@@ -133,6 +140,33 @@ artifact_certificate_sha256() {
   esac
 }
 
+artifact_certificate_subject() {
+  local artifact="$1"
+  case "$artifact" in
+    *.apk)
+      local apksigner_bin
+      apksigner_bin="$(find_apksigner)"
+      if [[ -z "$apksigner_bin" || ! -x "$apksigner_bin" ]]; then
+        echo ""
+        return
+      fi
+      ("$apksigner_bin" verify --print-certs "$artifact" 2>/dev/null || true) |
+        awk -F': ' '/certificate DN/ {print $2; exit}'
+      ;;
+    *.aab)
+      if ! command -v keytool >/dev/null 2>&1; then
+        echo ""
+        return
+      fi
+      (keytool -printcert -jarfile "$artifact" 2>/dev/null || true) |
+        awk -F': ' '/Owner:/ {print $2; exit}'
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
 for artifact in "${ARTIFACTS[@]}"; do
   if [[ ! -f "$artifact" ]]; then
     printf '%s: missing artifact\n' "$artifact" >> "$TMP_FINDINGS"
@@ -153,6 +187,10 @@ for artifact in "${ARTIFACTS[@]}"; do
     signing_status="$(artifact_signing_status "$artifact")"
     if [[ "$signing_status" != "verified" ]]; then
       printf '%s: signing status is %s\n' "$artifact" "$signing_status" >> "$TMP_FINDINGS"
+    fi
+    certificate_subject="$(artifact_certificate_subject "$artifact")"
+    if [[ "$ALLOW_DEBUG_CERTIFICATE" != "1" ]] && grep -qi 'CN=Android Debug' <<<"$certificate_subject"; then
+      printf '%s: signed with Android debug certificate\n' "$artifact" >> "$TMP_FINDINGS"
     fi
   fi
 done

@@ -358,6 +358,33 @@ expect_failure \
   "artifact scan require-signed rejects unsigned aab" \
   scripts/scan_android_artifacts.sh --aab "$SAFE_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned-aab.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-unsigned-aab.properties" "status=failed"
+DEBUG_SCAN_KEYSTORE="$TMP_DIR/debug-scan.keystore"
+DEBUG_SIGNED_AAB="$TMP_DIR/debug-signed.aab"
+cp "$SAFE_AAB" "$DEBUG_SIGNED_AAB"
+keytool -genkeypair \
+  -keystore "$DEBUG_SCAN_KEYSTORE" \
+  -storepass android \
+  -keypass android \
+  -alias androiddebugkey \
+  -dname "CN=Android Debug,O=Android,C=US" \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 >/dev/null
+jarsigner \
+  -keystore "$DEBUG_SCAN_KEYSTORE" \
+  -storepass android \
+  -keypass android \
+  "$DEBUG_SIGNED_AAB" \
+  androiddebugkey >/dev/null
+expect_failure \
+  "artifact scan require-signed rejects debug certificate" \
+  scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-debug-cert.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert.properties" "status=failed"
+expect_success \
+  "artifact scan allows debug certificate only for smoke" \
+  scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --report "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "allowDebugCertificate=1"
 
 expect_failure \
   "release gate requires aab when public gate requests it" \

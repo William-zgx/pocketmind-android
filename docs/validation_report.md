@@ -6388,6 +6388,9 @@ scripts/verify_release_gate.sh
 
 - `sign_release_artifacts.sh` 默认拒绝 Android debug keystore 或 Android Debug
   certificate，避免把本地 smoke 签名误当作 production signing。
+- `scan_android_artifacts.sh --require-signed` 默认拒绝 Android Debug
+  certificate；`--allow-debug-certificate` 只用于 smoke scan，因此 release gate
+  不会接受外部传入的 debug-signed APK/AAB。
 - 只有显式设置 `ALLOW_DEBUG_KEYSTORE=1` 时，debug keystore 才能用于本地 signing
   smoke；生成的 signing report 会记录 `signingMode=debug-smoke`。
 - 通过 SDK adb 检查当前没有 attached device，因此真机安装、真机 instrumentation 和
@@ -6408,15 +6411,28 @@ SIGNED_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
 REPORT_FILE=build/verification/signing-smoke/signing.properties \
 scripts/sign_release_artifacts.sh
 
+ARTIFACT_DIR=build/verification/release-gate-debug-cert-negative \
+PERF_BASELINE_FILE=build/verification/release-gate-signed-smoke/perf-baseline.properties \
+RELEASE_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
+REQUIRE_AAB=1 \
+REQUIRE_SIGNED_ARTIFACT=1 \
+VERIFY_MODEL_LICENSES=0 \
+VERIFY_CONTRACT_TESTS=0 \
+scripts/verify_release_gate.sh
+
 scripts/verify_local.sh
 ```
 
 结果：
 
 - 通过：脚本单测覆盖 “未提供 keystore 环境失败” 和 “debug keystore 默认拒绝”。
+- 通过：脚本单测现场生成 debug-signed fake AAB，确认普通 signed artifact scan
+  拒绝它，只有 `--allow-debug-certificate` smoke scan 会放行。
 - 通过：显式 `ALLOW_DEBUG_KEYSTORE=1` 的 debug signing smoke；
   `build/verification/signing-smoke/signing.properties` 包含
   `status=passed` 和 `signingMode=debug-smoke`。
+- 通过：release gate 负向验证；debug-signed AAB 的 signing status 为
+  `verified`，但 artifact scan 因 `CN=Android Debug` certificate 失败。
 - 通过：`scripts/verify_local.sh`。
 
 仍阻塞正式 RC：

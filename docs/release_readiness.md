@@ -67,6 +67,8 @@ items below.
   to produce signed APK/AAB artifacts and certificate reports once production
   keystore material is available. The script rejects Android debug keystores by
   default; `ALLOW_DEBUG_KEYSTORE=1` is only for local smoke validation.
+  Public release gates also reject Android Debug certificates in signed APK/AAB
+  artifacts.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.
