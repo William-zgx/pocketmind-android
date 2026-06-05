@@ -166,7 +166,12 @@ class SafetyPolicyTest {
             "check my employee id E123456 incident history",
             "搜索我的 HIV 检测结果应该怎么办",
             "查一下附近心理咨询",
+            "附近孕检在哪里",
+            "附近艾滋检测中心",
             "find bankruptcy lawyer near me",
+            "HIV testing near me",
+            "pregnancy test near me",
+            "depression help near me",
             "search my credit card debt options",
             "look up my child's insurance claim",
             "search " + "sk-" + "1234567890abcdef1234567890abcdef",
@@ -204,6 +209,9 @@ class SafetyPolicyTest {
         assertTrue(policy.containsSensitivePersonalOrSecretContent("my employee id E123456 needs a report"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("我的怀孕检查结果怎么解读"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("nearby therapist near me"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("HIV testing near me"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("pregnancy test near me"))
+        assertTrue(policy.containsSensitivePersonalOrSecretContent("附近孕检在哪里"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("my bankruptcy lawyer options"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("check " + "sk-" + "1234567890abcdef1234567890abcdef"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("AWS key AKIA1234567890ABCDEF"))

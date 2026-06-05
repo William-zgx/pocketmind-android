@@ -123,10 +123,12 @@ import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
 import com.bytedance.zgx.pocketmind.LongTermMemorySummary
 import com.bytedance.zgx.pocketmind.MessageRole
 import com.bytedance.zgx.pocketmind.ModelCapability
+import com.bytedance.zgx.pocketmind.ModelHealthState
 import com.bytedance.zgx.pocketmind.PendingAgentConfirmation
 import com.bytedance.zgx.pocketmind.PendingExternalOutcomeConfirmation
 import com.bytedance.zgx.pocketmind.RecommendedModel
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
+import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import com.bytedance.zgx.pocketmind.SetupTier
 import com.bytedance.zgx.pocketmind.SpecialAccessRequirement
 import com.bytedance.zgx.pocketmind.runtimePermissionRequirementsFor
@@ -1663,6 +1665,12 @@ private fun CurrentModelPanel(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                modifier = Modifier.testTag("model_health_summary"),
+                text = modelHealthDisplayText(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BackendChip(
                     modifier = Modifier.testTag("inference_local_chip"),
@@ -2369,16 +2377,54 @@ private fun AgentTraceRunRow(run: AgentTraceRunUiSummary) {
                     maxLines = 1,
                 )
             }
-            run.steps.takeLast(4).forEach { step ->
-                Text(
-                    text = "${step.type} · ${step.summary}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            run.runDataReceipt?.let { receipt ->
+                RunDataReceiptSummary(receipt)
+            }
+            run.steps
+                .filter { step -> step.runDataReceipt == null }
+                .takeLast(4)
+                .forEach { step ->
+                AgentTraceStepRow(step)
             }
         }
+    }
+}
+
+@Composable
+private fun AgentTraceStepRow(step: com.bytedance.zgx.pocketmind.AgentTraceStepUiSummary) {
+    val receipt = step.runDataReceipt
+    if (receipt == null) {
+        Text(
+            text = "${step.type} · ${step.summary}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        return
+    }
+    RunDataReceiptSummary(receipt)
+}
+
+@Composable
+private fun RunDataReceiptSummary(receipt: RunDataReceiptUiSummary) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("run_data_receipt_summary"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "本次数据回执",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = runDataReceiptDisplayText(receipt),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -2880,6 +2926,29 @@ private fun AgentRunState.label(): String =
         AgentRunState.Failed -> "失败"
     }
 
+internal fun runDataReceiptDisplayText(receipt: RunDataReceiptUiSummary): String {
+    val destination = when (receipt.destination) {
+        "Remote" -> "远端"
+        "Local" -> "本机"
+        else -> receipt.destination.ifBlank { "未知" }
+    }
+    val protectedTypes = receipt.protectedContentTypes
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(separator = "、")
+        ?: "无额外保护项"
+    val deletableRecords = receipt.deletableRecordTypes
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(separator = "、")
+        ?: "无"
+    val rawPersisted = if (receipt.rawContentPersisted) "是" else "否"
+    val memoryUsage = if (receipt.memoryContextIncluded) "已使用" else "未带出"
+    val deviceUsage = if (receipt.deviceContextIncluded) "已使用" else "未带出"
+    return "去向：$destination；隐私：${receipt.currentPromptPrivacy}；远端历史：${receipt.remoteHistoryCount}；" +
+        "过滤 LocalOnly：${receipt.localOnlyHistoryFilteredCount}；记忆：$memoryUsage/${receipt.memoryHitCount}；" +
+        "设备上下文：$deviceUsage；图片：${receipt.imageAttachmentCount}；受保护源：${receipt.protectedSourceCount}；" +
+        "保护：$protectedTypes；可删除：$deletableRecords；原文持久化：$rawPersisted"
+}
+
 @Composable
 private fun RecommendedModelCard(
     model: RecommendedModel,
@@ -3138,6 +3207,34 @@ internal fun currentModelStatus(state: ChatUiState): String {
     return "$modelName · ${state.backend.name} · " +
         "${LocalModelTokenLimits.compactDisplayText(state.localMaxTotalTokens)} · $ready"
 }
+
+internal fun modelHealthDisplayText(state: ChatUiState): String {
+    val health = state.modelHealth
+    val parts = mutableListOf("健康：${health.state.label()}")
+    health.backend?.let { backend -> parts += "backend=${backend.label()}" }
+    health.fallbackBackend?.let { fallback -> parts += "fallback=${fallback.label()}" }
+    health.loadMs?.let { loadMs -> parts += "load=${loadMs}ms" }
+    health.firstTokenMs?.let { firstTokenMs -> parts += "first=${firstTokenMs}ms" }
+    health.tokenCount?.let { tokens -> parts += "tokens=$tokens" }
+    health.tokensPerSecond?.takeIf { it > 0.0 }?.let { value ->
+        parts += "speed=${String.format(Locale.US, "%.1f", value)} tok/s"
+    }
+    health.failureReason
+        ?.takeIf { it.isNotBlank() }
+        ?.let { reason -> parts += "reason=${reason.take(80)}" }
+    return parts.joinToString(separator = " · ")
+}
+
+private fun ModelHealthState.label(): String =
+    when (this) {
+        ModelHealthState.NotInstalled -> "未安装"
+        ModelHealthState.InstalledUnverified -> "待校验"
+        ModelHealthState.Verified -> "已校验"
+        ModelHealthState.Loading -> "加载中"
+        ModelHealthState.Loaded -> "已加载"
+        ModelHealthState.LoadFailed -> "加载失败"
+        ModelHealthState.FallbackActive -> "Fallback"
+    }
 
 @Composable
 private fun LocalTokenLimitBlock(maxTotalTokens: Int) {

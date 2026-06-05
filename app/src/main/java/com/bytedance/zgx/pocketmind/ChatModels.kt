@@ -119,6 +119,22 @@ data class AgentTraceStepUiSummary(
     val type: String,
     val summary: String,
     val createdAtMillis: Long,
+    val runDataReceipt: RunDataReceiptUiSummary? = null,
+)
+
+data class RunDataReceiptUiSummary(
+    val destination: String,
+    val currentPromptPrivacy: String,
+    val remoteHistoryCount: Int,
+    val localOnlyHistoryFilteredCount: Int,
+    val memoryHitCount: Int,
+    val memoryContextIncluded: Boolean,
+    val deviceContextIncluded: Boolean,
+    val imageAttachmentCount: Int,
+    val protectedSourceCount: Int,
+    val rawContentPersisted: Boolean,
+    val protectedContentTypes: List<String>,
+    val deletableRecordTypes: List<String>,
 )
 
 data class AgentTraceRunUiSummary(
@@ -126,6 +142,7 @@ data class AgentTraceRunUiSummary(
     val state: AgentRunState,
     val updatedAtMillis: Long,
     val steps: List<AgentTraceStepUiSummary>,
+    val runDataReceipt: RunDataReceiptUiSummary? = null,
 )
 
 data class VoiceInputDraft(
@@ -218,6 +235,10 @@ data class ChatUiState(
     val backend: BackendChoice = BackendChoice.GPU,
     val generationParameters: GenerationParameters = GenerationParameters(),
     val localMaxTotalTokens: Int = LocalModelTokenLimits.MAX_TOTAL_TOKENS,
+    val modelHealth: ModelHealth = ModelHealth(
+        profileId = DEFAULT_CHAT_MODEL_ID,
+        state = ModelHealthState.NotInstalled,
+    ),
     val statusText: String = "未加载模型",
     val isArm64Supported: Boolean = true,
     val availableModelStorageBytes: Long = 0L,

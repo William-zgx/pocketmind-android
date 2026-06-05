@@ -1213,6 +1213,62 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun loadModelFallsBackToCpuWhenGpuInitializationFails() = runTest(dispatcher) {
+        val generationStore = FakeGenerationParametersStore().apply {
+            saveBackend(BackendChoice.GPU)
+        }
+        val runtime = FakeLiteRtRuntime(
+            loadFailures = mapOf(BackendChoice.GPU to IllegalStateException("gpu unavailable")),
+        )
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+            generationStore = generationStore,
+            runtime = runtime,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+
+        viewModel.loadModel()
+        advanceUntilIdle()
+
+        assertEquals(listOf(BackendChoice.GPU, BackendChoice.CPU), runtime.loadCalls)
+        assertEquals(BackendChoice.CPU, viewModel.uiState.value.backend)
+        assertTrue(viewModel.uiState.value.isReady)
+        assertEquals(ModelHealthState.FallbackActive, viewModel.uiState.value.modelHealth.state)
+        assertEquals(BackendChoice.CPU, viewModel.uiState.value.modelHealth.backend)
+        assertEquals(BackendChoice.CPU, viewModel.uiState.value.modelHealth.fallbackBackend)
+        assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains("gpu unavailable"))
+    }
+
+    @Test
+    fun loadModelRecordsBothGpuAndCpuFailureReasonsWhenFallbackFails() = runTest(dispatcher) {
+        val generationStore = FakeGenerationParametersStore().apply {
+            saveBackend(BackendChoice.GPU)
+        }
+        val runtime = FakeLiteRtRuntime(
+            loadFailures = mapOf(
+                BackendChoice.GPU to IllegalStateException("gpu unavailable"),
+                BackendChoice.CPU to IllegalStateException("cpu unavailable"),
+            ),
+        )
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+            generationStore = generationStore,
+            runtime = runtime,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+
+        viewModel.loadModel()
+        advanceUntilIdle()
+
+        assertEquals(listOf(BackendChoice.GPU, BackendChoice.CPU), runtime.loadCalls)
+        assertFalse(viewModel.uiState.value.isReady)
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertTrue(viewModel.uiState.value.statusText.contains("GPU: gpu unavailable"))
+        assertTrue(viewModel.uiState.value.statusText.contains("CPU: cpu unavailable"))
+        assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains("CPU: cpu unavailable"))
+    }
+
+    @Test
     fun currentScreenTextSummaryShareShowsSecondConfirmationAfterLocalSummary() = runTest(dispatcher) {
         val rawScreenText = "当前屏幕里的私密验证码 654321"
         val remoteRuntime = RecordingRemoteChatRuntime()
@@ -5691,10 +5747,12 @@ class PocketMindViewModelTest {
         private val localResponse: String = "本地回复",
         private val failure: Throwable? = null,
         private val hangDuringSend: Boolean = false,
+        private val loadFailures: Map<BackendChoice, Throwable> = emptyMap(),
     ) : LiteRtRuntime {
         val prompts = mutableListOf<String>()
         val recreatedHistories = mutableListOf<List<ChatMessage>>()
         val preparedForSendPrompts = mutableListOf<String>()
+        val loadCalls = mutableListOf<BackendChoice>()
         var stopCallCount: Int = 0
             private set
         var recreateCallCount: Int = 0
@@ -5707,6 +5765,11 @@ class PocketMindViewModelTest {
             history: List<ChatMessage>,
             parameters: GenerationParameters,
         ) {
+            loadCalls += backend
+            loadFailures[backend]?.let { throwable ->
+                isLoaded = false
+                throw throwable
+            }
             isLoaded = true
         }
 

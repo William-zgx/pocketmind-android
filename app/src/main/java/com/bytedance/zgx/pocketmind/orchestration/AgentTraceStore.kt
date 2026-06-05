@@ -38,6 +38,7 @@ data class AgentTraceStepSummary(
 data class AgentTraceRunSummary(
     val run: AgentRun,
     val steps: List<AgentTraceStepSummary>,
+    val runDataReceiptStep: AgentTraceStepSummary? = null,
 )
 
 private val toolObservedCompletionMetadataAllowlist = listOf(
@@ -161,9 +162,11 @@ class InMemoryAgentTraceStore(
             .sortedWith(compareByDescending<AgentRun> { it.updatedAtMillis }.thenByDescending { it.createdAtMillis })
             .take(limit)
             .map { run ->
+                val summaries = stepSummaries(run.id)
                 AgentTraceRunSummary(
                     run = run,
-                    steps = stepSummaries(run.id).takeLast(stepLimit.coerceAtLeast(0)),
+                    steps = summaries.takeLast(stepLimit.coerceAtLeast(0)),
+                    runDataReceiptStep = summaries.lastOrNull { step -> step.type == "RunDataReceiptRecorded" },
                 )
             }
     }
@@ -328,9 +331,11 @@ class RoomAgentTraceStore(
         val safeStepLimit = stepLimit.coerceAtLeast(0)
         return traceDao.recentRuns(limit).map { entity ->
             val run = entity.toDomain()
+            val summaries = stepSummaries(run.id)
             AgentTraceRunSummary(
                 run = run,
-                steps = stepSummaries(run.id).takeLast(safeStepLimit),
+                steps = summaries.takeLast(safeStepLimit),
+                runDataReceiptStep = summaries.lastOrNull { step -> step.type == "RunDataReceiptRecorded" },
             )
         }
     }
@@ -1327,6 +1332,8 @@ private fun AgentStep.traceJson(type: String): JSONObject {
             .put("imageAttachmentCount", receipt.imageAttachmentCount)
             .put("protectedSourceCount", receipt.protectedSourceCount)
             .put("rawContentPersisted", receipt.rawContentPersisted)
+            .put("protectedContentTypes", receipt.protectedContentTypes.toJsonArray())
+            .put("deletableRecordTypes", receipt.deletableRecordTypes.toJsonArray())
 
         is AgentStep.ToolRequested -> json
             .put("requestId", request.id)

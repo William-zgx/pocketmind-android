@@ -72,6 +72,8 @@ data class RunDataReceipt(
     val imageAttachmentCount: Int = 0,
     val protectedSourceCount: Int = 0,
     val rawContentPersisted: Boolean = false,
+    val protectedContentTypes: List<String> = emptyList(),
+    val deletableRecordTypes: List<String> = listOf("对话消息", "Agent 轨迹"),
 ) {
     init {
         require(remoteHistoryCount >= 0) { "remoteHistoryCount must be >= 0" }

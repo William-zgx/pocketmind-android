@@ -3,6 +3,7 @@ set -euo pipefail
 
 BASELINE_FILE=""
 REPORT_FILE=""
+EXPECTED_ARTIFACT_SHA256=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -12,6 +13,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --report)
       REPORT_FILE="${2:?missing report path}"
+      shift 2
+      ;;
+    --artifact-sha256)
+      EXPECTED_ARTIFACT_SHA256="${2:?missing artifact sha256}"
       shift 2
       ;;
     *)
@@ -31,6 +36,7 @@ write_report() {
       printf 'target=perf-baseline\n'
       printf 'baselineFile=%s\n' "${BASELINE_FILE:-}"
       printf 'missingFieldCount=%s\n' "$missing"
+      printf 'expectedArtifactSha256=%s\n' "$EXPECTED_ARTIFACT_SHA256"
     } > "$REPORT_FILE"
   fi
 }
@@ -77,6 +83,19 @@ if ! grep -qx 'status=passed' "$BASELINE_FILE"; then
   missing=$((missing + 1))
 fi
 
+if ! grep -qx 'oomOrAnrObserved=false' "$BASELINE_FILE"; then
+  echo "Perf baseline must record oomOrAnrObserved=false." >&2
+  missing=$((missing + 1))
+fi
+
+if [[ -n "$EXPECTED_ARTIFACT_SHA256" ]]; then
+  recorded_sha="$(awk -F= '$1 == "releaseArtifactSha256" {print $2; exit}' "$BASELINE_FILE")"
+  if [[ "$recorded_sha" != "$EXPECTED_ARTIFACT_SHA256" ]]; then
+    echo "Perf baseline releaseArtifactSha256 does not match release artifact." >&2
+    missing=$((missing + 1))
+  fi
+fi
+
 numeric_fields=(
   androidApi
   firstLaunchInteractiveMs
@@ -100,6 +119,11 @@ tps="$(awk -F= '$1 == "tokensPerSecond" {print $2; exit}' "$BASELINE_FILE")"
 if [[ -n "$tps" && ! "$tps" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   echo "Perf baseline field tokensPerSecond must be numeric." >&2
   missing=$((missing + 1))
+elif [[ -n "$tps" ]]; then
+  awk -v value="$tps" 'BEGIN { exit(value > 0 ? 0 : 1) }' || {
+    echo "Perf baseline field tokensPerSecond must be > 0." >&2
+    missing=$((missing + 1))
+  }
 fi
 
 if [[ "$missing" -gt 0 ]]; then

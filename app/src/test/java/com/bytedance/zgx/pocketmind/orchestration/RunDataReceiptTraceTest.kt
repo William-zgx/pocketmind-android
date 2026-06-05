@@ -25,6 +25,8 @@ class RunDataReceiptTraceTest {
                     imageAttachmentCount = 1,
                     protectedSourceCount = 1,
                     rawContentPersisted = false,
+                    protectedContentTypes = listOf("本地记忆", "LocalOnly 历史"),
+                    deletableRecordTypes = listOf("对话消息", "Agent 轨迹"),
                 ),
             ),
         )
@@ -37,6 +39,32 @@ class RunDataReceiptTraceTest {
         assertEquals("Remote", json.getString("destination"))
         assertEquals(1, json.getInt("imageAttachmentCount"))
         assertFalse(json.getBoolean("memoryContextIncluded"))
+        assertEquals("本地记忆", json.getJSONArray("protectedContentTypes").getString(0))
+        assertEquals("Agent 轨迹", json.getJSONArray("deletableRecordTypes").getString(1))
         assertFalse(json.toString().contains("raw prompt"))
+    }
+
+    @Test
+    fun recentRunSummaryPinsRunDataReceiptOutsideVisibleStepWindow() {
+        val store = InMemoryAgentTraceStore(clockMillis = { 1L })
+        val run = store.createRun("raw prompt should not appear", sessionId = "session")
+        store.appendStep(
+            run.id,
+            AgentStep.RunDataReceiptRecorded(
+                RunDataReceipt(
+                    destination = RunDataDestination.Remote,
+                    currentPromptPrivacy = "RemoteEligible",
+                ),
+            ),
+        )
+        repeat(6) { index ->
+            store.appendStep(run.id, AgentStep.AssistantResponded("step-$index"))
+        }
+
+        val summary = store.recentRunSummaries(limit = 1, stepLimit = 2).single()
+
+        assertEquals(2, summary.steps.size)
+        assertFalse(summary.steps.any { step -> step.type == "RunDataReceiptRecorded" })
+        assertEquals("RunDataReceiptRecorded", summary.runDataReceiptStep?.type)
     }
 }

@@ -9,6 +9,10 @@ PERF_BASELINE_FILE="${PERF_BASELINE_FILE:-}"
 RELEASE_APK="${RELEASE_APK:-app/build/outputs/apk/release/app-release-unsigned.apk}"
 RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
+REQUIRE_AAB="${REQUIRE_AAB:-0}"
+REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
+VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
+GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -19,10 +23,30 @@ write_gate_report() {
     printf 'target=release-gate\n'
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
+    printf 'requireAab=%s\n' "$REQUIRE_AAB"
+    printf 'requireSignedArtifact=%s\n' "$REQUIRE_SIGNED_ARTIFACT"
+    printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
   } > "$ARTIFACT_DIR/release-gate.properties"
 }
 
 scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" app/src/main docs scripts
+
+if [[ "$VERIFY_CONTRACT_TESTS" == "1" ]]; then
+  "$GRADLE_CMD" :app:testDebugUnitTest \
+    --tests com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest \
+    --tests com.bytedance.zgx.pocketmind.docs.ModelManifestDocumentationTest \
+    --tests com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest
+  {
+    printf 'status=passed\n'
+    printf 'target=contract-tests\n'
+  } > "$ARTIFACT_DIR/contract-tests.properties"
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=contract-tests\n'
+    printf 'reason=VERIFY_CONTRACT_TESTS-not-enabled\n'
+  } > "$ARTIFACT_DIR/contract-tests.properties"
+fi
 
 artifact_args=()
 if [[ -f "$RELEASE_APK" ]]; then
@@ -31,9 +55,23 @@ fi
 if [[ -f "$RELEASE_AAB" ]]; then
   artifact_args+=(--aab "$RELEASE_AAB")
 fi
+if [[ "$REQUIRE_AAB" == "1" && ! -f "$RELEASE_AAB" ]]; then
+  {
+    printf 'status=failed\n'
+    printf 'target=android-artifact-scan\n'
+    printf 'reason=REQUIRE_AAB-but-release-aab-missing\n'
+    printf 'releaseAab=%s\n' "$RELEASE_AAB"
+  } > "$ARTIFACT_DIR/android-artifact-scan.properties"
+  echo "REQUIRE_AAB=1 but release AAB is missing: $RELEASE_AAB" >&2
+  write_gate_report failed
+  exit 1
+fi
 if [[ "${#artifact_args[@]}" -gt 0 ]]; then
-  scripts/scan_android_artifacts.sh "${artifact_args[@]}" \
-    --report "$ARTIFACT_DIR/android-artifact-scan.properties"
+  scan_args=("${artifact_args[@]}" --report "$ARTIFACT_DIR/android-artifact-scan.properties")
+  if [[ "$REQUIRE_SIGNED_ARTIFACT" == "1" ]]; then
+    scan_args+=(--require-signed)
+  fi
+  scripts/scan_android_artifacts.sh "${scan_args[@]}"
 else
   {
     printf 'status=skipped\n'
@@ -43,9 +81,16 @@ else
 fi
 
 if [[ -n "$PERF_BASELINE_FILE" ]]; then
-  scripts/verify_perf_baseline.sh \
+  perf_args=(
     --file "$PERF_BASELINE_FILE" \
     --report "$ARTIFACT_DIR/perf-baseline-verification.properties"
+  )
+  if [[ -f "$RELEASE_AAB" ]]; then
+    perf_args+=(--artifact-sha256 "$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')")
+  elif [[ -f "$RELEASE_APK" ]]; then
+    perf_args+=(--artifact-sha256 "$(shasum -a 256 "$RELEASE_APK" | awk '{print $1}')")
+  fi
+  scripts/verify_perf_baseline.sh "${perf_args[@]}"
 else
   {
     printf 'status=failed\n'

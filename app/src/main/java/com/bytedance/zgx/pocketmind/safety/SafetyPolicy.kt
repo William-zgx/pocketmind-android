@@ -126,10 +126,10 @@ class SafetyPolicy {
             RegexOption.IGNORE_CASE,
         )
         val sensitiveChineseLocationPattern =
-            Regex("""附近.{0,16}(医院|诊所|心理|咨询|律师|破产|债务|保险|理赔|银行|贷款)""")
+            Regex("""(附近|本地|周边).{0,16}(医院|诊所|HIV|艾滋|怀孕|孕检|心理|抑郁|焦虑|咨询|律师|破产|债务|保险|理赔|银行|贷款)""", RegexOption.IGNORE_CASE)
         val sensitiveEnglishDomainPattern =
             Regex("""\b(my|mine|personal|private)\b.{0,32}\b(hiv|aids|pregnan\w*|therapy|therapist|mental|depress\w*|anxiety|medical|diagnos\w*|bankruptcy|debt|credit\s*card|insurance|claim|lawyer|attorney|child|minor)\b""")
         val sensitiveEnglishLocationPattern =
-            Regex("""\b(near me|nearby)\b.{0,32}\b(clinic|hospital|therap\w*|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b|\b(clinic|hospital|therap\w*|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b.{0,32}\b(near me|nearby)\b""")
+            Regex("""\b(near me|nearby|in my area|local)\b.{0,40}\b(hiv|aids|pregnan\w*|clinic|hospital|therap\w*|mental|depress\w*|anxiety|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b|\b(hiv|aids|pregnan\w*|clinic|hospital|therap\w*|mental|depress\w*|anxiety|lawyer|attorney|bankruptcy|debt|insurance|bank|loan)\b.{0,40}\b(near me|nearby|in my area|local)\b""")
     }
 }

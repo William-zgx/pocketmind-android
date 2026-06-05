@@ -134,7 +134,8 @@ release ticket or PR.
   reviewed manually.
 - [ ] `PERF_BASELINE_FILE=<rc perf-baseline.properties>
   scripts/verify_release_gate.sh` passes before release sign-off. Set
-  `VERIFY_MODEL_LICENSES=1` when checking the public-distribution gate.
+  `VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1 REQUIRE_SIGNED_ARTIFACT=1` when
+  checking the public-distribution gate.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

@@ -96,6 +96,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val MAX_VOICE_TRANSCRIPT_CHARS = 2_000
 private const val VOICE_WAVEFORM_SAMPLE_COUNT = 9
@@ -728,6 +730,19 @@ class PocketMindViewModel(
                 } else {
                     "请先下载或导入本地模型"
                 },
+                modelHealth = ModelHealth(
+                    profileId = it.activeModelProfileId(),
+                    state = if (runtime.isLoaded) {
+                        ModelHealthState.Loaded
+                    } else if (it.modelPath != null) {
+                        it.modelHealth.state.takeIf { state ->
+                            state == ModelHealthState.Verified || state == ModelHealthState.InstalledUnverified
+                        } ?: ModelHealthState.Verified
+                    } else {
+                        ModelHealthState.NotInstalled
+                    },
+                    backend = it.backend.takeIf { _ -> it.modelPath != null },
+                ),
             )
         }
     }
@@ -798,6 +813,11 @@ class PocketMindViewModel(
                 downloadedBytes = 0L,
                 totalBytes = 0L,
                 statusText = "正在初始化 ${backendChoice.label()}",
+                modelHealth = ModelHealth(
+                    profileId = it.activeModelProfileId(),
+                    state = ModelHealthState.Loading,
+                    backend = backendChoice,
+                ),
             )
         }
 
@@ -824,10 +844,16 @@ class PocketMindViewModel(
                             downloadedBytes = 0L,
                             totalBytes = 0L,
                             statusText = "就绪 · ${it.backend.label()}",
+                            modelHealth = ModelHealth(
+                                profileId = it.activeModelProfileId(),
+                                state = ModelHealthState.Loaded,
+                                backend = backendChoice,
+                            ),
                         )
                     }
                 },
                 onFailure = { throwable ->
+                    var fallbackFailure: Throwable? = null
                     if (backendChoice == BackendChoice.GPU) {
                         val cpuResult = runCatching {
                             runtimeLock.withLock {
@@ -850,11 +876,22 @@ class PocketMindViewModel(
                                     downloadedBytes = 0L,
                                     totalBytes = 0L,
                                     statusText = "GPU 不可用，已切到 CPU",
+                                    modelHealth = ModelHealth(
+                                        profileId = it.activeModelProfileId(),
+                                        state = ModelHealthState.FallbackActive,
+                                        backend = BackendChoice.CPU,
+                                        fallbackBackend = BackendChoice.CPU,
+                                        failureReason = "GPU 初始化失败：${throwable.cleanMessage()}",
+                                    ),
                                 )
                             }
                             return@launch
                         }
+                        fallbackFailure = cpuResult.exceptionOrNull()
                     }
+                    val failureReason = fallbackFailure?.let { cpuThrowable ->
+                        "GPU: ${throwable.cleanMessage()}；CPU: ${cpuThrowable.cleanMessage()}"
+                    } ?: throwable.cleanMessage()
                     _uiState.update {
                         it.copy(
                             isBusy = false,
@@ -863,7 +900,13 @@ class PocketMindViewModel(
                             downloadProgressPercent = null,
                             downloadedBytes = 0L,
                             totalBytes = 0L,
-                            statusText = "初始化失败：${throwable.cleanMessage()}",
+                            statusText = "初始化失败：$failureReason",
+                            modelHealth = ModelHealth(
+                                profileId = it.activeModelProfileId(),
+                                state = ModelHealthState.LoadFailed,
+                                backend = backendChoice,
+                                failureReason = failureReason,
+                            ),
                         )
                     }
                 },
@@ -2540,6 +2583,13 @@ class PocketMindViewModel(
                                     message.privacy == MessagePrivacy.LocalOnly
                                 },
                                 rawContentPersisted = false,
+                                protectedContentTypes = listOf(
+                                    "本地记忆",
+                                    "设备上下文",
+                                    "LocalOnly 历史",
+                                    "本地工具结果",
+                                ),
+                                deletableRecordTypes = listOf("对话消息", "Agent 轨迹"),
                             ),
                         )
                     }
@@ -3128,6 +3178,10 @@ class PocketMindViewModel(
                 it.copy(
                     isReady = false,
                     statusText = "正在恢复会话",
+                    modelHealth = it.modelHealth.copy(
+                        state = ModelHealthState.Loading,
+                        backend = it.backend,
+                    ),
                 )
             } else {
                 it
@@ -3149,6 +3203,11 @@ class PocketMindViewModel(
                             current.copy(
                                 isReady = true,
                                 statusText = "$successPrefix · ${current.backend.label()}",
+                                modelHealth = current.modelHealth.copy(
+                                    state = ModelHealthState.Loaded,
+                                    backend = current.backend,
+                                    failureReason = null,
+                                ),
                             )
                         } else {
                             current
@@ -3161,6 +3220,11 @@ class PocketMindViewModel(
                             current.copy(
                                 isReady = false,
                                 statusText = "恢复会话失败：${throwable.cleanMessage()}",
+                                modelHealth = current.modelHealth.copy(
+                                    state = ModelHealthState.LoadFailed,
+                                    backend = current.backend,
+                                    failureReason = throwable.cleanMessage(),
+                                ),
                             )
                         } else {
                             current
@@ -3178,6 +3242,7 @@ class PocketMindViewModel(
 
     private fun createInitialState(): ChatUiState {
         val modelState = modelRepository.currentState()
+        val backend = generationParametersRepository.loadBackend()
         syncTaskStateMemories()
         syncSemanticMemoryRuntime()
         return ChatUiState(
@@ -3187,7 +3252,8 @@ class PocketMindViewModel(
             selectedModelId = modelState.selectedModelId,
             inferenceMode = remoteModelRepository.loadMode(),
             remoteModelConfig = remoteModelRepository.loadConfig(),
-            backend = generationParametersRepository.loadBackend(),
+            backend = backend,
+            modelHealth = modelState.modelHealthForCurrentSelection(backend),
             showFirstRunSetup = !firstRunSetupRepository.isSetupDismissed(),
             memoryEnabled = firstRunSetupRepository.isMemoryEnabled(),
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
@@ -3215,6 +3281,7 @@ class PocketMindViewModel(
                 activeInstalledModelId = modelState.activeInstalledModelId,
                 installedModels = modelState.installedModels,
                 selectedModelId = modelState.selectedModelId,
+                modelHealth = modelState.modelHealthForCurrentSelection(it.backend),
                 semanticMemoryEnabled = currentSemanticMemoryEnabled(),
                 semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
             )
@@ -3257,6 +3324,11 @@ class PocketMindViewModel(
                 } else {
                     "请配置远程模型"
                 },
+                modelHealth = ModelHealth(
+                    profileId = config.modelProfile().id,
+                    state = if (config.isConfigured) ModelHealthState.Loaded else ModelHealthState.LoadFailed,
+                    failureReason = if (config.isConfigured) null else "远程模型未配置",
+                ),
             )
         }
     }
@@ -3589,9 +3661,32 @@ class PocketMindViewModel(
                     type = step.type,
                     summary = step.summary,
                     createdAtMillis = step.createdAtMillis,
+                    runDataReceipt = step.runDataReceiptUiSummaryOrNull(),
                 )
             },
+            runDataReceipt = runDataReceiptStep?.runDataReceiptUiSummaryOrNull()
+                ?: steps.lastOrNull { step -> step.type == "RunDataReceiptRecorded" }?.runDataReceiptUiSummaryOrNull(),
         )
+
+    private fun com.bytedance.zgx.pocketmind.orchestration.AgentTraceStepSummary.runDataReceiptUiSummaryOrNull():
+        RunDataReceiptUiSummary? {
+        if (type != "RunDataReceiptRecorded") return null
+        val json = runCatching { JSONObject(json) }.getOrNull() ?: return null
+        return RunDataReceiptUiSummary(
+            destination = json.optString("destination"),
+            currentPromptPrivacy = json.optString("currentPromptPrivacy"),
+            remoteHistoryCount = json.optInt("remoteHistoryCount"),
+            localOnlyHistoryFilteredCount = json.optInt("localOnlyHistoryFilteredCount"),
+            memoryHitCount = json.optInt("memoryHitCount"),
+            memoryContextIncluded = json.optBoolean("memoryContextIncluded"),
+            deviceContextIncluded = json.optBoolean("deviceContextIncluded"),
+            imageAttachmentCount = json.optInt("imageAttachmentCount"),
+            protectedSourceCount = json.optInt("protectedSourceCount"),
+            rawContentPersisted = json.optBoolean("rawContentPersisted"),
+            protectedContentTypes = json.optJSONArray("protectedContentTypes").toStringList(),
+            deletableRecordTypes = json.optJSONArray("deletableRecordTypes").toStringList(),
+        )
+    }
 
     private fun restorePendingAgentConfirmationIfAny(clearMissing: Boolean = false) {
         val route = assistantOrchestrator.restorePendingAction(sessionRepository.activeSessionId)
@@ -3717,6 +3812,28 @@ class PocketMindViewModel(
                 } else {
                     "已停止 · ${it.backend.label()}"
                 },
+                modelHealth = if (remoteMode) {
+                    ModelHealth(
+                        profileId = it.remoteModelConfig.modelProfile().id,
+                        state = if (it.remoteModelConfig.isConfigured) {
+                            ModelHealthState.Loaded
+                        } else {
+                            ModelHealthState.LoadFailed
+                        },
+                        failureReason = if (it.remoteModelConfig.isConfigured) null else "远程模型未配置",
+                    )
+                } else {
+                    it.modelHealth.copy(
+                        state = if (runtime.isLoaded) {
+                            ModelHealthState.Loaded
+                        } else if (it.modelPath != null) {
+                            ModelHealthState.Verified
+                        } else {
+                            ModelHealthState.NotInstalled
+                        },
+                        backend = it.backend,
+                    )
+                },
             )
         }
     }
@@ -3765,7 +3882,26 @@ class PocketMindViewModel(
                 )
                 updatedMessages[index] = updatedMessages[index].copy(generationStats = enrichedStats)
             }
-            state.copy(messages = updatedMessages)
+            state.copy(
+                messages = updatedMessages,
+                modelHealth = state.modelHealth.copy(
+                    state = if (state.modelHealth.state == ModelHealthState.FallbackActive) {
+                        ModelHealthState.FallbackActive
+                    } else {
+                        ModelHealthState.Loaded
+                    },
+                    backend = stats.backend ?: state.backend,
+                    loadMs = stats.loadMs ?: state.modelHealth.loadMs,
+                    firstTokenMs = stats.firstTokenMs ?: state.modelHealth.firstTokenMs,
+                    tokenCount = stats.tokenCount,
+                    tokensPerSecond = stats.tokensPerSecond,
+                    fallbackBackend = if (stats.usedFallbackBackend) {
+                        stats.backend ?: state.modelHealth.fallbackBackend
+                    } else {
+                        state.modelHealth.fallbackBackend
+                    },
+                ),
+            )
         }
     }
 
@@ -4019,6 +4155,27 @@ private fun SharedInput.isRemoteVisionSendable(): Boolean =
                 attachment.textPreview == null
         }
 
+private fun ModelSelectionState.modelHealthForCurrentSelection(backend: BackendChoice): ModelHealth {
+    val activeModel = installedModels.firstOrNull { model -> model.id == activeInstalledModelId }
+    val profileId = activeModel?.recommendedModelId ?: selectedModelId
+    val healthState = when {
+        activeModel == null && activeModelPath == null -> ModelHealthState.NotInstalled
+        activeModel?.verificationStatus == ModelVerificationStatus.VerifiedRecommended -> ModelHealthState.Verified
+        activeModel?.recommendedModelId == null && activeModelPath != null -> ModelHealthState.InstalledUnverified
+        activeModelPath != null -> ModelHealthState.InstalledUnverified
+        else -> ModelHealthState.NotInstalled
+    }
+    return ModelHealth(
+        profileId = profileId,
+        state = healthState,
+        backend = backend.takeIf { activeModelPath != null },
+    )
+}
+
+private fun ChatUiState.activeModelProfileId(): String =
+    installedModels.firstOrNull { model -> model.id == activeInstalledModelId }?.recommendedModelId
+        ?: selectedModelId
+
 private fun AssistantRoute.runIdOrNull(): String? =
     when (this) {
         is AssistantRoute.Chat -> runId
@@ -4038,22 +4195,49 @@ private fun AssistantRoute.runDataReceipt(
     val memoryHits = (this as? AssistantRoute.Chat)?.memoryHits.orEmpty()
     val deviceContext = (this as? AssistantRoute.Chat)?.deviceContext
     val isRemote = destination == RunDataDestination.Remote
+    val localOnlyHistoryFilteredCount = if (isRemote) {
+        stateBeforeSend.messages.count { message -> message.privacy == MessagePrivacy.LocalOnly }
+    } else {
+        0
+    }
+    val memoryContextIncluded = !isRemote && memoryHits.isNotEmpty()
+    val deviceContextIncluded = !isRemote && deviceContext != null
     return RunDataReceipt(
         destination = destination,
         currentPromptPrivacy = currentPromptPrivacy.name,
         remoteHistoryCount = if (isRemote) remoteHistoryCount else 0,
-        localOnlyHistoryFilteredCount = if (isRemote) {
-            stateBeforeSend.messages.count { message -> message.privacy == MessagePrivacy.LocalOnly }
-        } else {
-            0
-        },
+        localOnlyHistoryFilteredCount = localOnlyHistoryFilteredCount,
         memoryHitCount = memoryHits.size,
-        memoryContextIncluded = !isRemote && memoryHits.isNotEmpty(),
-        deviceContextIncluded = !isRemote && deviceContext != null,
+        memoryContextIncluded = memoryContextIncluded,
+        deviceContextIncluded = deviceContextIncluded,
         imageAttachmentCount = if (isRemote) imageAttachmentCount else 0,
         protectedSourceCount = protectedSourceCount,
         rawContentPersisted = false,
+        protectedContentTypes = buildList {
+            if (isRemote) {
+                add("本地记忆")
+                add("设备上下文")
+            }
+            if (localOnlyHistoryFilteredCount > 0) add("LocalOnly 历史")
+            if (protectedSourceCount > 0) add("受保护分享源")
+            if (isRemote && imageAttachmentCount == 0) add("非图片附件")
+        },
+        deletableRecordTypes = buildList {
+            add("对话消息")
+            add("Agent 轨迹")
+            if (memoryHits.isNotEmpty()) add("显式记忆")
+        },
     )
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            val value = optString(index).trim()
+            if (value.isNotBlank()) add(value)
+        }
+    }
 }
 
 private fun Float.normalizedVoiceInputLevel(): Float =

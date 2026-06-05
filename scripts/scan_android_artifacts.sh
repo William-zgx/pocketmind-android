@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPORT_FILE=""
+REQUIRE_SIGNED=0
 ARTIFACTS=()
 
 while [[ $# -gt 0 ]]; do
@@ -13,6 +14,10 @@ while [[ $# -gt 0 ]]; do
     --report)
       REPORT_FILE="${2:?missing report path}"
       shift 2
+      ;;
+    --require-signed)
+      REQUIRE_SIGNED=1
+      shift
       ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -31,6 +36,19 @@ write_report() {
       printf 'target=android-artifact-scan\n'
       printf 'artifactCount=%s\n' "${#ARTIFACTS[@]}"
       printf 'findingCount=%s\n' "$finding_count"
+      printf 'requireSigned=%s\n' "$REQUIRE_SIGNED"
+      local index=0
+      for artifact in "${ARTIFACTS[@]}"; do
+        index=$((index + 1))
+        printf 'artifact%sPath=%s\n' "$index" "$artifact"
+        if [[ -f "$artifact" ]]; then
+          printf 'artifact%sSha256=%s\n' "$index" "$(shasum -a 256 "$artifact" | awk '{print $1}')"
+          printf 'artifact%sSizeBytes=%s\n' "$index" "$(wc -c < "$artifact" | tr -d ' ')"
+          printf 'artifact%sType=%s\n' "$index" "${artifact##*.}"
+          printf 'artifact%sSigningStatus=%s\n' "$index" "$(artifact_signing_status "$artifact")"
+          printf 'artifact%sCertificateSha256=%s\n' "$index" "$(artifact_certificate_sha256 "$artifact")"
+        fi
+      done
     } > "$REPORT_FILE"
   fi
 }
@@ -43,6 +61,62 @@ fi
 
 TMP_FINDINGS="$(mktemp)"
 trap 'rm -f "$TMP_FINDINGS"' EXIT
+
+artifact_signing_status() {
+  local artifact="$1"
+  case "$artifact" in
+    *.apk)
+      if ! command -v apksigner >/dev/null 2>&1; then
+        echo "tool-missing"
+        return
+      fi
+      if apksigner verify "$artifact" >/dev/null 2>&1; then
+        echo "verified"
+      else
+        echo "failed"
+      fi
+      ;;
+    *.aab)
+      if ! command -v jarsigner >/dev/null 2>&1; then
+        echo "tool-missing"
+        return
+      fi
+      if jarsigner -verify "$artifact" >/dev/null 2>&1; then
+        echo "verified"
+      else
+        echo "failed"
+      fi
+      ;;
+    *)
+      echo "unknown"
+      ;;
+  esac
+}
+
+artifact_certificate_sha256() {
+  local artifact="$1"
+  case "$artifact" in
+    *.apk)
+      if ! command -v apksigner >/dev/null 2>&1; then
+        echo ""
+        return
+      fi
+      (apksigner verify --print-certs "$artifact" 2>/dev/null || true) |
+        awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}'
+      ;;
+    *.aab)
+      if ! command -v jarsigner >/dev/null 2>&1; then
+        echo ""
+        return
+      fi
+      (jarsigner -verify -certs -verbose "$artifact" 2>/dev/null || true) |
+        awk '/X.509/ {print $NF; exit}'
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
 
 for artifact in "${ARTIFACTS[@]}"; do
   if [[ ! -f "$artifact" ]]; then
@@ -60,6 +134,12 @@ for artifact in "${ARTIFACTS[@]}"; do
     sed "s#^#$artifact:string:#" /tmp/pocketmind-artifact-strings.$$ >> "$TMP_FINDINGS"
   fi
   rm -f /tmp/pocketmind-artifact-strings.$$
+  if [[ "$REQUIRE_SIGNED" == "1" ]]; then
+    signing_status="$(artifact_signing_status "$artifact")"
+    if [[ "$signing_status" != "verified" ]]; then
+      printf '%s: signing status is %s\n' "$artifact" "$signing_status" >> "$TMP_FINDINGS"
+    fi
+  fi
 done
 
 FINDING_COUNT="$(grep -c . "$TMP_FINDINGS" || true)"

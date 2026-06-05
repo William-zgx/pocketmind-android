@@ -674,6 +674,80 @@ class SharedInputTest {
     }
 
     @Test
+    fun trustedRemoteImageMimeTypeRequiresConcreteProviderTypeOrKnownExtension() {
+        assertEquals(
+            "image/png",
+            trustedRemoteImageMimeType(
+                resolverMimeType = "image/png",
+                displayName = "private.txt",
+            ),
+        )
+        assertEquals(
+            "image/jpeg",
+            trustedRemoteImageMimeType(
+                resolverMimeType = "image/*",
+                displayName = "Receipt.JPG",
+            ),
+        )
+        assertNull(
+            trustedRemoteImageMimeType(
+                resolverMimeType = null,
+                displayName = "unknown-file",
+            ),
+        )
+        assertNull(
+            trustedRemoteImageMimeType(
+                resolverMimeType = "text/plain",
+                displayName = "Receipt.JPG",
+            ),
+        )
+        assertNull(
+            trustedRemoteImageMimeType(
+                resolverMimeType = "image/*",
+                displayName = "unknown-file",
+            ),
+        )
+        assertNull(
+            trustedRemoteImageMimeType(
+                resolverMimeType = "image/svg+xml",
+                displayName = "diagram.svg",
+            ),
+        )
+    }
+
+    @Test
+    fun remoteImageBytesMustMatchDeclaredSupportedImageType() {
+        val pngBytes = byteArrayOf(
+            0x89.toByte(),
+            'P'.code.toByte(),
+            'N'.code.toByte(),
+            'G'.code.toByte(),
+            0x0D.toByte(),
+            0x0A.toByte(),
+            0x1A.toByte(),
+            0x0A.toByte(),
+            0x00,
+        )
+        val jpgBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val webpBytes = "RIFF".encodeToByteArray() + byteArrayOf(0, 0, 0, 0) + "WEBP".encodeToByteArray()
+        val gifBytes = "GIF89a".encodeToByteArray()
+        val bmpBytes = "BM".encodeToByteArray() + byteArrayOf(0, 0)
+        val heicBytes = byteArrayOf(0, 0, 0, 24) + "ftypheic".encodeToByteArray()
+
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/png", pngBytes))
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/jpeg", jpgBytes))
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/webp", webpBytes))
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/gif", gifBytes))
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/bmp", bmpBytes))
+        assertTrue(remoteImageBytesMatchDeclaredMimeType("image/heic", heicBytes))
+
+        assertFalse(remoteImageBytesMatchDeclaredMimeType("image/png", "not a png".encodeToByteArray()))
+        assertFalse(remoteImageBytesMatchDeclaredMimeType("image/jpeg", pngBytes))
+        assertFalse(remoteImageBytesMatchDeclaredMimeType("image/svg+xml", "<svg/>".encodeToByteArray()))
+        assertFalse(remoteImageBytesMatchDeclaredMimeType("image/*", pngBytes))
+    }
+
+    @Test
     fun textPreviewReaderAllowsTextAndTextLikeApplicationMediaTypes() {
         assertTrue(canReadTextPreviewFor("text/plain"))
         assertTrue(canReadTextPreviewFor(" text/markdown; charset=utf-8 "))

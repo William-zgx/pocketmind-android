@@ -15,7 +15,8 @@ items below.
   privacy/license review, signing, test gates, and rollback planning.
 - Machine-readable release gates now cover capability matrix drift,
   privacy scanning, APK/AAB artifact scanning, model license review records,
-  and RC perf-baseline verification.
+  RC perf-baseline verification, artifact SHA matching, and optional public
+  release enforcement for signed artifacts plus AAB presence.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -62,6 +63,10 @@ items below.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.
-- Record final physical-device SLOs in a `perf-baseline.properties` file based
-  on `docs/perf_baseline_template.properties`, then pass it to
+- Record final physical-device SLOs with `scripts/collect_perf_baseline.sh`
+  or an equivalent measured `perf-baseline.properties` based on
+  `docs/perf_baseline_template.properties`, then pass it to
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`.
+- For public distribution, run the release gate with
+  `VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1 REQUIRE_SIGNED_ARTIFACT=1` after
+  production signing and bundle generation are complete.

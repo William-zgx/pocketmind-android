@@ -59,6 +59,31 @@ CLEAN_DEVICE=1 scripts/install_and_test_device.sh
 
 需要保留真机安装时，不要直接运行 `./gradlew :app:connectedDebugAndroidTest`；Android Gradle Plugin 可能会在 instrumentation 结束后清理安装包。
 
+## RC 性能基线
+
+正式 RC 需要把真机实测指标写成 `perf-baseline.properties`，并与签名 APK/AAB 的
+SHA-256 绑定。脚本只记录已经测得的值，不会生成推测值：
+
+```bash
+OUT_FILE=build/verification/rc/perf-baseline.properties \
+RELEASE_ARTIFACT=app/build/outputs/apk/release/app-release-signed.apk \
+ANDROID_SERIAL=<physical-device-serial> \
+APP_VERSION=<versionName-versionCode> \
+MODEL_ID=chat-e2b \
+BACKEND=GPU \
+FIRST_LAUNCH_INTERACTIVE_MS=<measured> \
+MODEL_LOAD_MS=<measured> \
+FIRST_TOKEN_MS=<measured> \
+TOKENS_PER_SECOND=<measured> \
+STOP_GENERATION_RECOVERY_MS=<measured> \
+GPU_FALLBACK_STATUS=<not-needed|cpu-fallback-passed> \
+VISION_INPUT_MS=<measured> \
+MEMORY_SEARCH_5K_MS=<measured> \
+MEMORY_PEAK_MB=<measured> \
+OOM_OR_ANR_OBSERVED=false \
+scripts/collect_perf_baseline.sh
+```
+
 ## Ad Hoc Release 覆盖安装
 
 内部真机 smoke 可以使用 release 构建加本地临时签名覆盖安装，以验证混淆/压缩后的

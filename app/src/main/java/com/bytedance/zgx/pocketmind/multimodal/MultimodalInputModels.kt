@@ -259,14 +259,14 @@ fun canUseTextPreviewFor(attachment: SharedAttachment): Boolean =
         null -> false
     }
 
-private fun String?.normalizedMediaType(): String? =
+internal fun String?.normalizedMediaType(): String? =
     this
         ?.substringBefore(';')
         ?.trim()
         ?.lowercase(Locale.ROOT)
         ?.takeIf { it.isNotBlank() }
 
-private fun String?.inferredMimeTypeFromExtension(): String? {
+internal fun String?.inferredMimeTypeFromExtension(): String? {
     val safeName = this
         ?.replace('\\', '/')
         ?.substringAfterLast('/')
@@ -281,10 +281,88 @@ private fun String?.inferredMimeTypeFromExtension(): String? {
     return extensionMimeTypes[extension]
 }
 
-private fun String?.isConcreteSharedMimeType(): Boolean {
+internal fun String?.isConcreteSharedMimeType(): Boolean {
     val normalized = this ?: return false
     if (normalized in abstractMimeTypes) return false
     return !normalized.endsWith("/*") && !normalized.contains('*')
+}
+
+internal fun trustedRemoteImageMimeType(
+    resolverMimeType: String?,
+    displayName: String?,
+): String? {
+    val normalizedResolverType = resolverMimeType.normalizedMediaType()
+    if (normalizedResolverType.isConcreteSharedMimeType()) {
+        return normalizedResolverType.takeIf { it.isSupportedRemoteImageMimeType() }
+    }
+    return displayName
+        .inferredMimeTypeFromExtension()
+        ?.takeIf { inferred -> inferred.isSupportedRemoteImageMimeType() }
+}
+
+internal fun remoteImageBytesMatchDeclaredMimeType(
+    mimeType: String?,
+    bytes: ByteArray,
+): Boolean =
+    when (mimeType.normalizedMediaType()) {
+        "image/jpeg", "image/jpg", "image/pjpeg" -> bytes.hasJpegHeader()
+        "image/png" -> bytes.hasPngHeader()
+        "image/webp" -> bytes.hasWebpHeader()
+        "image/gif" -> bytes.hasGifHeader()
+        "image/bmp" -> bytes.hasBmpHeader()
+        "image/heic", "image/heif" -> bytes.hasHeifFamilyHeader()
+        else -> false
+    }
+
+private fun String?.isSupportedRemoteImageMimeType(): Boolean =
+    when (normalizedMediaType()) {
+        "image/jpeg", "image/jpg", "image/pjpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+        "image/heic",
+        "image/heif",
+        -> true
+
+        else -> false
+    }
+
+private fun ByteArray.hasJpegHeader(): Boolean =
+    size >= 3 &&
+        this[0] == 0xFF.toByte() &&
+        this[1] == 0xD8.toByte() &&
+        this[2] == 0xFF.toByte()
+
+private fun ByteArray.hasPngHeader(): Boolean =
+    size >= pngMagic.size && pngMagic.indices.all { index -> this[index] == pngMagic[index] }
+
+private fun ByteArray.hasWebpHeader(): Boolean =
+    size >= 12 &&
+        asciiEquals(offset = 0, value = "RIFF") &&
+        asciiEquals(offset = 8, value = "WEBP")
+
+private fun ByteArray.hasGifHeader(): Boolean =
+    size >= 6 &&
+        (asciiEquals(offset = 0, value = "GIF87a") || asciiEquals(offset = 0, value = "GIF89a"))
+
+private fun ByteArray.hasBmpHeader(): Boolean =
+    size >= 2 && this[0] == 'B'.code.toByte() && this[1] == 'M'.code.toByte()
+
+private fun ByteArray.hasHeifFamilyHeader(): Boolean {
+    if (size < 12 || !asciiEquals(offset = 4, value = "ftyp")) return false
+    val brands = heifCompatibleBrands
+    var offset = 8
+    while (offset + 4 <= size && offset <= 64) {
+        if (brands.any { brand -> asciiEquals(offset, brand) }) return true
+        offset += 4
+    }
+    return false
+}
+
+private fun ByteArray.asciiEquals(offset: Int, value: String): Boolean {
+    if (offset < 0 || offset + value.length > size) return false
+    return value.indices.all { index -> this[offset + index] == value[index].code.toByte() }
 }
 
 object TextAttachmentPreviewReader {
@@ -434,4 +512,26 @@ private val extensionMimeTypes = mapOf(
     "bmp" to "image/bmp",
     "heic" to "image/heic",
     "heif" to "image/heif",
+)
+
+private val pngMagic = byteArrayOf(
+    0x89.toByte(),
+    'P'.code.toByte(),
+    'N'.code.toByte(),
+    'G'.code.toByte(),
+    0x0D.toByte(),
+    0x0A.toByte(),
+    0x1A.toByte(),
+    0x0A.toByte(),
+)
+
+private val heifCompatibleBrands = setOf(
+    "heic",
+    "heix",
+    "hevc",
+    "hevx",
+    "heif",
+    "heis",
+    "mif1",
+    "msf1",
 )

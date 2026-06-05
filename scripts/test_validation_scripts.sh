@@ -263,6 +263,8 @@ grep -q 'scripts/verify_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_perf_baseline.sh in shell syntax checks"
 grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
+grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include collect_perf_baseline.sh in shell syntax checks"
 
 VALID_PERF="$TMP_DIR/perf-baseline.properties"
 cat > "$VALID_PERF" <<'VALID_PERF_BASELINE'
@@ -291,6 +293,10 @@ expect_success \
   "perf baseline verifier accepts complete record" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --report "$ARTIFACT_DIR/perf.properties"
 assert_report_contains "$ARTIFACT_DIR/perf.properties" "status=passed"
+expect_success \
+  "perf baseline verifier accepts matching artifact sha" \
+  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 abc123 --report "$ARTIFACT_DIR/perf-sha.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-sha.properties" "expectedArtifactSha256=abc123"
 
 INVALID_PERF="$TMP_DIR/perf-baseline-invalid.properties"
 printf 'status=failed\n' > "$INVALID_PERF"
@@ -298,6 +304,10 @@ expect_failure \
   "perf baseline verifier rejects incomplete record" \
   scripts/verify_perf_baseline.sh --file "$INVALID_PERF" --report "$ARTIFACT_DIR/perf-invalid.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-invalid.properties" "status=failed"
+expect_failure \
+  "perf baseline verifier rejects mismatched artifact sha" \
+  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 different-sha --report "$ARTIFACT_DIR/perf-sha-failed.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-sha-failed.properties" "status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
@@ -326,10 +336,55 @@ expect_success \
   "artifact scan accepts safe zip" \
   scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --report "$ARTIFACT_DIR/artifact.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact.properties" "status=passed"
+grep -q '^artifact1Sha256=' "$ARTIFACT_DIR/artifact.properties" ||
+  fail "artifact scan report must include artifact sha"
+grep -q '^artifact1SizeBytes=' "$ARTIFACT_DIR/artifact.properties" ||
+  fail "artifact scan report must include artifact size"
 expect_failure \
   "artifact scan rejects bundled model" \
   scripts/scan_android_artifacts.sh --apk "$UNSAFE_APK" --report "$ARTIFACT_DIR/artifact-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-failed.properties" "status=failed"
+expect_failure \
+  "artifact scan require-signed rejects unsigned zip" \
+  scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-unsigned.properties" "status=failed"
+
+expect_failure \
+  "release gate requires aab when public gate requests it" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-require-aab" \
+  PERF_BASELINE_FILE="$VALID_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  REQUIRE_AAB=1 \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.properties" "status=failed"
+
+COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
+expect_success \
+  "perf baseline collector writes verifiable record from measured inputs" \
+  env ADB="$TMP_DIR/missing-adb" \
+  OUT_FILE="$COLLECTED_PERF" \
+  RELEASE_ARTIFACT="$SAFE_APK" \
+  ANDROID_SERIAL=device-a \
+  DEVICE_MODEL="Pixel Test" \
+  ANDROID_API=36 \
+  ABI=arm64-v8a \
+  APP_VERSION=1.0 \
+  MODEL_ID=chat-e2b \
+  BACKEND=GPU \
+  FIRST_LAUNCH_INTERACTIVE_MS=1200 \
+  MODEL_LOAD_MS=3500 \
+  FIRST_TOKEN_MS=900 \
+  TOKENS_PER_SECOND=12.5 \
+  STOP_GENERATION_RECOVERY_MS=200 \
+  GPU_FALLBACK_STATUS=not-needed \
+  VISION_INPUT_MS=500 \
+  MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_PEAK_MB=512 \
+  OOM_OR_ANR_OBSERVED=false \
+  scripts/collect_perf_baseline.sh
+assert_report_contains "$COLLECTED_PERF" "status=passed"
 
 expect_success \
   "doctor local without adb" \

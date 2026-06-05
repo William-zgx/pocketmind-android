@@ -4,7 +4,10 @@ import com.bytedance.zgx.pocketmind.BackendChoice
 import com.bytedance.zgx.pocketmind.ChatUiState
 import com.bytedance.zgx.pocketmind.InferenceMode
 import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
+import com.bytedance.zgx.pocketmind.ModelHealth
+import com.bytedance.zgx.pocketmind.ModelHealthState
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
+import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,5 +106,61 @@ class PocketMindScreenDisplayTest {
         assertTrue(status.contains("remote-test-model"))
         assertTrue(status.contains("远程"))
         assertTrue(!status.contains("上下文"))
+    }
+
+    @Test
+    fun runDataReceiptDisplayNamesDestinationProtectionDeletionAndPersistence() {
+        val text = runDataReceiptDisplayText(
+            RunDataReceiptUiSummary(
+                destination = "Remote",
+                currentPromptPrivacy = "RemoteEligible",
+                remoteHistoryCount = 3,
+                localOnlyHistoryFilteredCount = 2,
+                memoryHitCount = 1,
+                memoryContextIncluded = false,
+                deviceContextIncluded = false,
+                imageAttachmentCount = 1,
+                protectedSourceCount = 4,
+                rawContentPersisted = false,
+                protectedContentTypes = listOf("本地记忆", "设备上下文", "LocalOnly 历史"),
+                deletableRecordTypes = listOf("对话消息", "Agent 轨迹", "显式记忆"),
+            ),
+        )
+
+        assertTrue(text.contains("去向：远端"))
+        assertTrue(text.contains("远端历史：3"))
+        assertTrue(text.contains("过滤 LocalOnly：2"))
+        assertTrue(text.contains("保护：本地记忆、设备上下文、LocalOnly 历史"))
+        assertTrue(text.contains("可删除：对话消息、Agent 轨迹、显式记忆"))
+        assertTrue(text.contains("原文持久化：否"))
+    }
+
+    @Test
+    fun modelHealthDisplayShowsStructuredFallbackAndTimingMetrics() {
+        val text = modelHealthDisplayText(
+            ChatUiState(
+                backend = BackendChoice.CPU,
+                modelHealth = ModelHealth(
+                    profileId = "chat-e2b",
+                    state = ModelHealthState.FallbackActive,
+                    backend = BackendChoice.CPU,
+                    loadMs = 1234,
+                    firstTokenMs = 456,
+                    tokenCount = 42,
+                    tokensPerSecond = 7.25,
+                    fallbackBackend = BackendChoice.CPU,
+                    failureReason = "GPU 初始化失败",
+                ),
+            ),
+        )
+
+        assertTrue(text.contains("健康：Fallback"))
+        assertTrue(text.contains("backend=CPU"))
+        assertTrue(text.contains("fallback=CPU"))
+        assertTrue(text.contains("load=1234ms"))
+        assertTrue(text.contains("first=456ms"))
+        assertTrue(text.contains("tokens=42"))
+        assertTrue(text.contains("speed=7.3 tok/s"))
+        assertTrue(text.contains("reason=GPU 初始化失败"))
     }
 }
