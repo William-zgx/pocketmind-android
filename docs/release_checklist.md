@@ -53,6 +53,7 @@ release ticket or PR.
   environment with `RELEASE_KEYSTORE`, `RELEASE_KEY_ALIAS`,
   `RELEASE_KEYSTORE_PASSWORD`, and `RELEASE_KEY_PASSWORD`; attach
   `build/verification/signing/signing.properties` and the certificate reports.
+  `ALLOW_DEBUG_KEYSTORE` must be unset for production signing.
 - [ ] For Google Play, Play App Signing is enabled or its status is explicitly
   recorded. The app signing certificate fingerprint and upload certificate
   fingerprint are both captured because they are different trust anchors.

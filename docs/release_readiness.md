@@ -65,7 +65,8 @@ items below.
 - Configure release signing outside source control.
 - Use `scripts/sign_release_artifacts.sh` from the private signing environment
   to produce signed APK/AAB artifacts and certificate reports once production
-  keystore material is available.
+  keystore material is available. The script rejects Android debug keystores by
+  default; `ALLOW_DEBUG_KEYSTORE=1` is only for local smoke validation.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.

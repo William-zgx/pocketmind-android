@@ -372,6 +372,17 @@ assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh
+DEBUG_KEYSTORE="$TMP_DIR/debug.keystore"
+printf 'not-a-real-keystore\n' > "$DEBUG_KEYSTORE"
+expect_failure \
+  "signing helper rejects debug keystore by default" \
+  env RELEASE_KEYSTORE="$DEBUG_KEYSTORE" \
+  RELEASE_KEY_ALIAS=androiddebugkey \
+  RELEASE_KEYSTORE_PASSWORD=android \
+  RELEASE_KEY_PASSWORD=android \
+  scripts/sign_release_artifacts.sh
+grep -q 'Refusing Android debug keystore' <<<"$LAST_OUTPUT" ||
+  fail "Expected signing helper to refuse debug keystore before signing"
 
 COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
 expect_success \

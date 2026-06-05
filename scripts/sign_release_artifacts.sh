@@ -15,6 +15,7 @@ SIGNED_APK="${SIGNED_APK:-app/build/outputs/apk/release/app-release-signed.apk}"
 SIGNED_AAB="${SIGNED_AAB:-app/build/outputs/bundle/release/app-release-signed.aab}"
 ALIGNED_APK="${ALIGNED_APK:-${SIGNED_APK%.apk}-aligned.apk}"
 REPORT_FILE="${REPORT_FILE:-build/verification/signing/signing.properties}"
+ALLOW_DEBUG_KEYSTORE="${ALLOW_DEBUG_KEYSTORE:-0}"
 
 require_env() {
   local name="$1"
@@ -41,6 +42,26 @@ require_env RELEASE_KEY_PASSWORD
 if [[ ! -f "$RELEASE_KEYSTORE" ]]; then
   echo "Release keystore not found: $RELEASE_KEYSTORE" >&2
   exit 1
+fi
+
+if [[ "$ALLOW_DEBUG_KEYSTORE" != "1" ]]; then
+  keystore_name="$(basename "$RELEASE_KEYSTORE" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$keystore_name" == "debug.keystore" ]]; then
+    echo "Refusing Android debug keystore for release signing. Set ALLOW_DEBUG_KEYSTORE=1 only for local smoke validation." >&2
+    exit 1
+  fi
+  if command -v keytool >/dev/null 2>&1; then
+    keytool_output="$(
+      keytool -list -v \
+        -keystore "$RELEASE_KEYSTORE" \
+        -alias "$RELEASE_KEY_ALIAS" \
+        -storepass "$RELEASE_KEYSTORE_PASSWORD" 2>/dev/null || true
+    )"
+    if grep -qi 'CN=Android Debug' <<<"$keytool_output"; then
+      echo "Refusing Android debug certificate for release signing. Set ALLOW_DEBUG_KEYSTORE=1 only for local smoke validation." >&2
+      exit 1
+    fi
+  fi
 fi
 
 require_tool "$ZIPALIGN" zipalign
@@ -94,6 +115,11 @@ scripts/scan_android_artifacts.sh \
 {
   printf 'status=passed\n'
   printf 'target=release-signing\n'
+  if [[ "$ALLOW_DEBUG_KEYSTORE" == "1" ]]; then
+    printf 'signingMode=debug-smoke\n'
+  else
+    printf 'signingMode=production\n'
+  fi
   printf 'signedApk=%s\n' "$SIGNED_APK"
   printf 'signedAab=%s\n' "$SIGNED_AAB"
   if [[ -f "$SIGNED_APK" ]]; then

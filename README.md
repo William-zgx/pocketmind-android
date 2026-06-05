@@ -573,7 +573,9 @@ commit signing credentials; local debug-keystore signing is only for internal
 device checks and is not a distribution signing process. When production
 keystore material is available in a private environment,
 `scripts/sign_release_artifacts.sh` can sign the release APK/AAB and generate
-certificate reports without storing secrets in the repository.
+certificate reports without storing secrets in the repository. The helper
+rejects Android debug keystores by default; set `ALLOW_DEBUG_KEYSTORE=1` only
+for explicit local signing smoke checks.
 
 ## Production Release Readiness
 

@@ -6346,6 +6346,7 @@ RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
 RELEASE_KEY_ALIAS=androiddebugkey \
 RELEASE_KEYSTORE_PASSWORD=android \
 RELEASE_KEY_PASSWORD=android \
+ALLOW_DEBUG_KEYSTORE=1 \
 SIGNED_APK=app/build/outputs/apk/release/app-release-local-signed-smoke.apk \
 SIGNED_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
 REPORT_FILE=build/verification/signing-smoke/signing.properties \
@@ -6380,3 +6381,47 @@ scripts/verify_release_gate.sh
   redistribution 批准。
 - 需要在固定真机上生成真实 `perf-baseline`，当前 signed gate smoke 只验证门禁链路，
   不代表正式性能基线。
+
+## 2026-06-06 Debug-keystore release signing guard
+
+本轮覆盖项：
+
+- `sign_release_artifacts.sh` 默认拒绝 Android debug keystore 或 Android Debug
+  certificate，避免把本地 smoke 签名误当作 production signing。
+- 只有显式设置 `ALLOW_DEBUG_KEYSTORE=1` 时，debug keystore 才能用于本地 signing
+  smoke；生成的 signing report 会记录 `signingMode=debug-smoke`。
+- 通过 SDK adb 检查当前没有 attached device，因此真机安装、真机 instrumentation 和
+  真机 perf baseline 仍不能完成。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+
+RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
+RELEASE_KEY_ALIAS=androiddebugkey \
+RELEASE_KEYSTORE_PASSWORD=android \
+RELEASE_KEY_PASSWORD=android \
+ALLOW_DEBUG_KEYSTORE=1 \
+SIGNED_APK=app/build/outputs/apk/release/app-release-local-signed-smoke.apk \
+SIGNED_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
+REPORT_FILE=build/verification/signing-smoke/signing.properties \
+scripts/sign_release_artifacts.sh
+
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 “未提供 keystore 环境失败” 和 “debug keystore 默认拒绝”。
+- 通过：显式 `ALLOW_DEBUG_KEYSTORE=1` 的 debug signing smoke；
+  `build/verification/signing-smoke/signing.properties` 包含
+  `status=passed` 和 `signingMode=debug-smoke`。
+- 通过：`scripts/verify_local.sh`。
+
+仍阻塞正式 RC：
+
+- 需要 release owner 提供非 debug 的 production keystore 并保持
+  `ALLOW_DEBUG_KEYSTORE` 未设置。
+- 需要连接固定目标真机后运行正式设备验收和真实 perf baseline。
+- 需要人工完成模型 license / redistribution review。
