@@ -246,8 +246,11 @@ internal fun buildChatCompletionBody(
     config: RemoteModelConfig,
     tools: List<ToolSpec> = emptyList(),
     imageAttachments: List<ChatImageAttachment> = emptyList(),
-): JSONObject =
-    JSONObject()
+): JSONObject {
+    require(imageAttachments.isEmpty() || config.supportsVisionInput) {
+        "当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。"
+    }
+    return JSONObject()
         .put("model", config.modelName)
         .put("stream", true)
         .put("temperature", parameters.temperature.toDouble())
@@ -268,6 +271,7 @@ internal fun buildChatCompletionBody(
                 put("tool_choice", "auto")
             }
         }
+}
 
 private fun userMessageJson(prompt: String, imageAttachments: List<ChatImageAttachment>): JSONObject {
     val message = JSONObject().put("role", "user")

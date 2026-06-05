@@ -1231,6 +1231,7 @@ private fun AgentStep.traceType(): String =
         is AgentStep.ContextLoaded -> "ContextLoaded"
         is AgentStep.ModelPlanned -> "ModelPlanned"
         is AgentStep.RemoteToolsExposed -> "RemoteToolsExposed"
+        is AgentStep.RunDataReceiptRecorded -> "RunDataReceiptRecorded"
         is AgentStep.ToolRequested -> "ToolRequested"
         is AgentStep.SkillPlanned -> "SkillPlanned"
         is AgentStep.SafetyChecked -> "SafetyChecked"
@@ -1258,6 +1259,9 @@ private fun AgentStep.traceSummary(): String =
         is AgentStep.ModelPlanned -> plan.traceSummary()
         is AgentStep.RemoteToolsExposed ->
             "Exposed ${toolNames.size} remote tool(s) in ${scope.name} scope."
+        is AgentStep.RunDataReceiptRecorded ->
+            "Data receipt ${receipt.destination.name}: remoteHistory=${receipt.remoteHistoryCount}, " +
+                "memoryHitCount=${receipt.memoryHitCount}, images=${receipt.imageAttachmentCount}."
         is AgentStep.ToolRequested -> "Requested tool ${request.toolName}."
         is AgentStep.SkillPlanned -> "Planned skill ${request.skillId} with ${plan?.steps?.size ?: 0} step(s)."
         is AgentStep.SafetyChecked -> "Safety ${decision.outcome}: ${decision.reason.shortTraceText()}"
@@ -1311,6 +1315,18 @@ private fun AgentStep.traceJson(type: String): JSONObject {
         is AgentStep.RemoteToolsExposed -> json
             .put("scope", scope.name)
             .put("toolNames", toolNames.sorted())
+
+        is AgentStep.RunDataReceiptRecorded -> json
+            .put("destination", receipt.destination.name)
+            .put("currentPromptPrivacy", receipt.currentPromptPrivacy)
+            .put("remoteHistoryCount", receipt.remoteHistoryCount)
+            .put("localOnlyHistoryFilteredCount", receipt.localOnlyHistoryFilteredCount)
+            .put("memoryHitCount", receipt.memoryHitCount)
+            .put("memoryContextIncluded", receipt.memoryContextIncluded)
+            .put("deviceContextIncluded", receipt.deviceContextIncluded)
+            .put("imageAttachmentCount", receipt.imageAttachmentCount)
+            .put("protectedSourceCount", receipt.protectedSourceCount)
+            .put("rawContentPersisted", receipt.rawContentPersisted)
 
         is AgentStep.ToolRequested -> json
             .put("requestId", request.id)

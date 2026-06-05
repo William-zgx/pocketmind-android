@@ -255,6 +255,81 @@ grep -q 'scripts/regression_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
+grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include privacy_scan.sh in shell syntax checks"
+grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include scan_android_artifacts.sh in shell syntax checks"
+grep -q 'scripts/verify_perf_baseline.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_perf_baseline.sh in shell syntax checks"
+grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
+
+VALID_PERF="$TMP_DIR/perf-baseline.properties"
+cat > "$VALID_PERF" <<'VALID_PERF_BASELINE'
+status=passed
+deviceSerial=device-a
+deviceModel=Pixel Test
+androidApi=36
+abi=arm64-v8a
+appVersion=1.0
+releaseArtifactSha256=abc123
+modelId=chat-e2b
+backend=GPU
+firstLaunchInteractiveMs=1200
+modelLoadMs=3500
+firstTokenMs=900
+tokensPerSecond=12.5
+stopGenerationRecoveryMs=200
+gpuFallbackStatus=not-needed
+visionInputMs=500
+memorySearch5kMs=25
+memoryPeakMb=512
+oomOrAnrObserved=false
+recordedAt=2026-06-06T00:00:00Z
+VALID_PERF_BASELINE
+expect_success \
+  "perf baseline verifier accepts complete record" \
+  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --report "$ARTIFACT_DIR/perf.properties"
+assert_report_contains "$ARTIFACT_DIR/perf.properties" "status=passed"
+
+INVALID_PERF="$TMP_DIR/perf-baseline-invalid.properties"
+printf 'status=failed\n' > "$INVALID_PERF"
+expect_failure \
+  "perf baseline verifier rejects incomplete record" \
+  scripts/verify_perf_baseline.sh --file "$INVALID_PERF" --report "$ARTIFACT_DIR/perf-invalid.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-invalid.properties" "status=failed"
+
+SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
+mkdir -p "$SAFE_PRIVACY_DIR"
+printf 'hello pocketmind\n' > "$SAFE_PRIVACY_DIR/readme.txt"
+expect_success \
+  "privacy scan accepts safe directory" \
+  scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy.properties" "$SAFE_PRIVACY_DIR"
+assert_report_contains "$ARTIFACT_DIR/privacy.properties" "status=passed"
+
+UNSAFE_PRIVACY_DIR="$TMP_DIR/privacy-unsafe"
+mkdir -p "$UNSAFE_PRIVACY_DIR"
+printf 'token=sk-%s\n' "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" > "$UNSAFE_PRIVACY_DIR/secret.txt"
+expect_failure \
+  "privacy scan rejects high-confidence token" \
+  scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-failed.properties" "$UNSAFE_PRIVACY_DIR"
+assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
+
+SAFE_APK="$TMP_DIR/safe.apk"
+UNSAFE_APK="$TMP_DIR/unsafe.apk"
+mkdir -p "$TMP_DIR/safe-zip/assets" "$TMP_DIR/unsafe-zip/assets"
+printf 'ok\n' > "$TMP_DIR/safe-zip/assets/readme.txt"
+printf 'model\n' > "$TMP_DIR/unsafe-zip/assets/model.litertlm"
+(cd "$TMP_DIR/safe-zip" && zip -qr "$SAFE_APK" .)
+(cd "$TMP_DIR/unsafe-zip" && zip -qr "$UNSAFE_APK" .)
+expect_success \
+  "artifact scan accepts safe zip" \
+  scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --report "$ARTIFACT_DIR/artifact.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact.properties" "status=passed"
+expect_failure \
+  "artifact scan rejects bundled model" \
+  scripts/scan_android_artifacts.sh --apk "$UNSAFE_APK" --report "$ARTIFACT_DIR/artifact-failed.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-failed.properties" "status=failed"
 
 expect_success \
   "doctor local without adb" \

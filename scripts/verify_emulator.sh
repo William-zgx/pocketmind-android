@@ -162,10 +162,13 @@ if [[ -n "${AVD_NAME:-}" ]]; then
   if [[ -n "${EMULATOR_ARGS:-}" ]]; then
     read -r -a EXTRA_EMULATOR_ARGS <<< "$EMULATOR_ARGS"
   fi
+  EMULATOR_CMD=("$EMULATOR_BIN" -avd "$AVD_NAME")
+  if [[ "${#EXTRA_EMULATOR_ARGS[@]}" -gt 0 ]]; then
+    EMULATOR_CMD+=("${EXTRA_EMULATOR_ARGS[@]}")
+  fi
   echo "Starting emulator AVD: $AVD_NAME"
   echo "Emulator log: $EMULATOR_LOG"
-  "$EMULATOR_BIN" -avd "$AVD_NAME" "${EXTRA_EMULATOR_ARGS[@]}" \
-    > "$EMULATOR_LOG" 2>&1 &
+  "${EMULATOR_CMD[@]}" > "$EMULATOR_LOG" 2>&1 &
 fi
 
 wait_for_emulator_selection

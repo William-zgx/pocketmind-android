@@ -13,6 +13,9 @@ items below.
   tools, audit traces, and retention controls.
 - Manual release checklist added for store metadata, screenshots,
   privacy/license review, signing, test gates, and rollback planning.
+- Machine-readable release gates now cover capability matrix drift,
+  privacy scanning, APK/AAB artifact scanning, model license review records,
+  and RC perf-baseline verification.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -52,9 +55,13 @@ items below.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in
-  `docs/model_manifest.md` or the release checklist. `VERIFY_MODEL_URLS=1`
-  checks URL/content metadata only; it does not establish license readiness.
+  `docs/model_manifest.md`, `docs/model_license_review.json`, and the release
+  checklist. `VERIFY_MODEL_URLS=1` checks URL/content metadata only; it does
+  not establish license readiness.
 - Configure release signing outside source control.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.
+- Record final physical-device SLOs in a `perf-baseline.properties` file based
+  on `docs/perf_baseline_template.properties`, then pass it to
+  `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`.

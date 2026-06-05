@@ -19,6 +19,9 @@ Google AI Edge LiteRT-LM.
 - Custom `.litertlm` download links and local file import.
 - Model manager for switching downloaded or imported models.
 - Configurable streaming remote chat backend for OpenAI-compatible `/v1/chat/completions` services.
+- Remote image sharing defaults to sending image attachments to a configured
+  vision-capable remote model. If that remote profile disables image input,
+  PocketMind records a LocalOnly notice and does not force OCR as a fallback.
 - Lightweight local memory recall over previous conversation context.
 - Experimental local mobile action planning with deterministic rule fallback and explicit confirmation.
 - Schema-driven tool validation plus Agent run tracing for plan-confirm-observe execution, safety checks, read-only bounded retry, and persistent audit events.
@@ -50,6 +53,10 @@ Google AI Edge LiteRT-LM.
 - JVM tool executor matrix tests cover registry validation, routing, permission
   failures, provider failures, structured error codes, and LocalOnly device
   context outputs.
+- Release-only gates use machine-readable artifacts for capability matrix
+  drift, privacy scanning, APK/AAB scanning, model license review, and
+  physical-device perf baselines; run `scripts/verify_release_gate.sh` with
+  `PERF_BASELINE_FILE=...` for release candidates.
 - Minimal device context snapshots plus confirmed clipboard, calendar, contact,
   current-app notification summary, foreground-app usage-stats estimates,
   recent-file metadata, and

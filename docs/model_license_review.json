@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "policy": "Release builds require VERIFY_MODEL_LICENSES=1 and approved records before public distribution.",
+  "models": [
+    {
+      "id": "chat-e2b",
+      "status": "pending_manual_review",
+      "licenseName": "",
+      "licenseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm",
+      "redistributionDecision": "not_approved",
+      "attributionNotice": "",
+      "reviewer": "",
+      "reviewDate": ""
+    },
+    {
+      "id": "memory-embedding-300m",
+      "status": "pending_manual_review",
+      "licenseName": "",
+      "licenseUrl": "https://huggingface.co/kontextdev/embeddinggemma-300m-litertlm",
+      "redistributionDecision": "not_approved",
+      "attributionNotice": "",
+      "reviewer": "",
+      "reviewDate": ""
+    },
+    {
+      "id": "mobile-action-270m",
+      "status": "pending_manual_review",
+      "licenseName": "",
+      "licenseUrl": "https://huggingface.co/litert-community/functiongemma-mobile-actions_q8_ekv1024.litertlm",
+      "redistributionDecision": "not_approved",
+      "attributionNotice": "",
+      "reviewer": "",
+      "reviewDate": ""
+    },
+    {
+      "id": "chat-e4b",
+      "status": "pending_manual_review",
+      "licenseName": "",
+      "licenseUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm",
+      "redistributionDecision": "not_approved",
+      "attributionNotice": "",
+      "reviewer": "",
+      "reviewDate": ""
+    }
+  ]
+}

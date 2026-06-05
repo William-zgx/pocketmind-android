@@ -61,6 +61,9 @@ class RealLiteRtRuntime(
 ) : LiteRtRuntime {
     private var engine: Engine? = null
     private var conversation: Conversation? = null
+    private var currentBackend: BackendChoice? = null
+    private var lastLoadMs: Long? = null
+    private var lastFirstTokenMs: Long? = null
 
     override val isLoaded: Boolean
         get() = engine != null && conversation != null
@@ -72,19 +75,20 @@ class RealLiteRtRuntime(
         parameters: GenerationParameters,
     ) {
         close()
-        val createdEngine = Engine(
-            defaultEngineConfig(
-                modelPath = modelPath,
-                backend = backend,
-                cacheDir = cacheDir,
-            ),
-        )
+        val loadStartedAtNanos = System.nanoTime()
+        val createdEngine = Engine(defaultEngineConfig(modelPath = modelPath, backend = backend, cacheDir = cacheDir))
         try {
             createdEngine.initialize()
             engine = createdEngine
             conversation = createdEngine.createConversation(defaultConversationConfig(history, parameters))
+            currentBackend = backend
+            lastLoadMs = elapsedMillisSince(loadStartedAtNanos)
+            lastFirstTokenMs = null
         } catch (throwable: Throwable) {
             runCatching { createdEngine.close() }
+            currentBackend = null
+            lastLoadMs = null
+            lastFirstTokenMs = null
             throw throwable
         }
     }
@@ -116,8 +120,16 @@ class RealLiteRtRuntime(
 
     override fun send(prompt: String): Flow<String> {
         val activeConversation = conversation ?: error("模型尚未就绪")
+        val startedAtNanos = System.nanoTime()
+        lastFirstTokenMs = null
         return activeConversation.sendMessageAsync(prompt)
-            .map { chunk -> chunk.textContent().ifBlank { chunk.toString() } }
+            .map { chunk ->
+                val text = chunk.textContent().ifBlank { chunk.toString() }
+                if (text.isNotBlank() && lastFirstTokenMs == null) {
+                    lastFirstTokenMs = elapsedMillisSince(startedAtNanos)
+                }
+                text
+            }
     }
 
     @OptIn(ExperimentalApi::class)
@@ -128,6 +140,9 @@ class RealLiteRtRuntime(
         return GenerationStats(
             tokenCount = benchmark.lastDecodeTokenCount,
             tokensPerSecond = benchmark.lastDecodeTokensPerSecond,
+            backend = currentBackend,
+            loadMs = lastLoadMs,
+            firstTokenMs = lastFirstTokenMs,
         ).takeIf { it.isUsable() }
     }
 
@@ -140,6 +155,9 @@ class RealLiteRtRuntime(
         conversation = null
         engine?.close()
         engine = null
+        currentBackend = null
+        lastLoadMs = null
+        lastFirstTokenMs = null
     }
 
     companion object {
@@ -148,6 +166,9 @@ class RealLiteRtRuntime(
         }
     }
 }
+
+private fun elapsedMillisSince(startedAtNanos: Long): Long =
+    ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
 
 internal fun defaultEngineConfig(
     modelPath: String,

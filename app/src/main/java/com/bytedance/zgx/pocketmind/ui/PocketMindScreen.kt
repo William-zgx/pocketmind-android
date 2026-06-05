@@ -1791,6 +1791,27 @@ private fun RemoteModelPanel(
                 label = { Text("API Key") },
                 visualTransformation = PasswordVisualTransformation(),
             )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("remote_vision_input_row"),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = "图片输入",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Switch(
+                    checked = config.supportsVisionInput,
+                    enabled = !state.isBusy,
+                    onCheckedChange = {
+                        onRemoteModelConfigChanged(config.copy(supportsVisionInput = it))
+                    },
+                )
+            }
             Text(
                 text = remoteConfigStatusText(config),
                 style = MaterialTheme.typography.bodySmall,
@@ -1815,7 +1836,7 @@ private fun RemoteModelPanel(
 }
 
 private fun RemoteModelConfig.hasAnySavedValue(): Boolean =
-    baseUrl.isNotBlank() || modelName.isNotBlank() || apiKey.isNotBlank()
+    baseUrl.isNotBlank() || modelName.isNotBlank() || apiKey.isNotBlank() || !supportsVisionInput
 
 private fun remoteConfigStatusText(config: RemoteModelConfig): String =
     when {
@@ -3609,7 +3630,13 @@ private fun MessageBubble(
 }
 
 private fun formatGenerationStats(stats: GenerationStats): String =
-    "${stats.tokenCount} tokens · ${String.format(Locale.US, "%.1f", stats.tokensPerSecond)} tokens/s"
+    buildList {
+        stats.backend?.let { backend -> add(backend.label()) }
+        stats.firstTokenMs?.let { firstTokenMs -> add("首 token ${firstTokenMs}ms") }
+        stats.loadMs?.let { loadMs -> add("加载 ${loadMs}ms") }
+        add("${stats.tokenCount} tokens")
+        add("${String.format(Locale.US, "%.1f", stats.tokensPerSecond)} tokens/s")
+    }.joinToString(separator = " · ")
 
 @Composable
 private fun MessageContent(

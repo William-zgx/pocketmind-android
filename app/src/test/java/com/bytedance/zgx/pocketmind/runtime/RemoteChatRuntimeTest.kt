@@ -126,6 +126,31 @@ class RemoteChatRuntimeTest {
     }
 
     @Test
+    fun buildChatCompletionBodyRejectsImagesWhenRemoteProfileDisablesVision() {
+        val error = runCatching {
+            buildChatCompletionBody(
+                prompt = "描述这张图",
+                history = emptyList(),
+                parameters = GenerationParameters(),
+                config = RemoteModelConfig(
+                    baseUrl = "https://api.example.com/v1",
+                    modelName = "text-only",
+                    supportsVisionInput = false,
+                ),
+                imageAttachments = listOf(
+                    ChatImageAttachment(
+                        mimeType = "image/png",
+                        dataUrl = "data:image/png;base64,AA==",
+                    ),
+                ),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertTrue(error?.message.orEmpty().contains("未启用图片输入能力"))
+    }
+
+    @Test
     fun parseChatCompletionChunkText_readsDeltaContent() {
         assertEquals(
             "你",

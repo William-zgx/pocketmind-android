@@ -87,6 +87,8 @@ interface AssistantRouter : AutoCloseable {
         toolNames: Set<String>,
     )
 
+    fun recordRunDataReceipt(runId: String, receipt: RunDataReceipt) = Unit
+
     fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult?
 
     fun observeModelToolRequests(runId: String, requests: List<ToolRequest>): AgentModelObservationResult? =
@@ -217,6 +219,10 @@ class AssistantOrchestrator(
             scope = scope,
             toolNames = toolNames,
         )
+    }
+
+    override fun recordRunDataReceipt(runId: String, receipt: RunDataReceipt) {
+        agentLoopRuntime.recordRunDataReceipt(runId, receipt)
     }
 
     override fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult? =

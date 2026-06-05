@@ -69,6 +69,11 @@ fun List<ChatMessage>.remoteEligibleMessages(): List<ChatMessage> =
 data class GenerationStats(
     val tokenCount: Int,
     val tokensPerSecond: Double,
+    val modelId: String? = null,
+    val backend: BackendChoice? = null,
+    val loadMs: Long? = null,
+    val firstTokenMs: Long? = null,
+    val usedFallbackBackend: Boolean = false,
 )
 
 fun GenerationStats.isUsable(): Boolean =

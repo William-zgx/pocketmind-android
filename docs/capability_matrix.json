@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "source": "CapabilityMatrix and ToolRegistry",
+  "productCapabilities": [
+    {
+      "capabilityId": "local_offline_chat",
+      "entrypoint": "chat_input",
+      "toolName": null,
+      "modelCapability": "Chat",
+      "privacyLevel": "LocalEvidence",
+      "requiresLocalModel": true,
+      "remoteEligible": false,
+      "confirmationPolicy": "NotRequired",
+      "failureBehavior": "本地模型未就绪时停止生成并提示先准备模型。",
+      "requiredTests": ["PocketMindViewModelTest"],
+      "ownerAgent": "EdgeModel"
+    },
+    {
+      "capabilityId": "explicit_memory",
+      "entrypoint": "remember_forget_commands",
+      "toolName": null,
+      "modelCapability": "MemoryEmbedding",
+      "privacyLevel": "LocalEvidence",
+      "requiresLocalModel": false,
+      "remoteEligible": false,
+      "confirmationPolicy": "NotRequired",
+      "failureBehavior": "删除失败时保留现有记忆，不把记忆写入远端请求。",
+      "requiredTests": ["MemoryRepositoryTest", "MemoryQualityContractTest"],
+      "ownerAgent": "Memory"
+    },
+    {
+      "capabilityId": "remote_vision_image_input",
+      "entrypoint": "share_or_attachment_image",
+      "toolName": null,
+      "modelCapability": "Chat",
+      "privacyLevel": "PublicEvidence",
+      "requiresLocalModel": false,
+      "remoteEligible": true,
+      "confirmationPolicy": "NotRequired",
+      "failureBehavior": "远程配置不支持图片输入时直接提示不支持，不强制 OCR。",
+      "requiredTests": ["RemoteChatRuntimeTest", "PocketMindViewModelTest"],
+      "ownerAgent": "Multimodal"
+    }
+  ],
+  "toolMatrixSourceFields": [
+    "name",
+    "title",
+    "capability",
+    "permissions",
+    "riskLevel",
+    "confirmationPolicy",
+    "resultContinuationPolicy",
+    "privateOutputKeys",
+    "pendingArgumentAllowlist",
+    "publicEvidenceBatchEligible",
+    "remoteModelPlanningEligible"
+  ]
+}

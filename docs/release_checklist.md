@@ -61,6 +61,8 @@ release ticket or PR.
   the Play AAB.
 - [ ] APK/AAB inspection confirms no `.litertlm` model binaries, API keys,
   bearer tokens, private hostnames, or release keystore files are bundled.
+- [ ] `scripts/scan_android_artifacts.sh` is run against the final APK/AAB and
+  `android-artifact-scan.properties` is attached to the release record.
 - [ ] Release artifact size is within the documented budget, and model files are
   described as optional/recommended downloads rather than packaged assets.
 
@@ -113,11 +115,16 @@ release ticket or PR.
   manually verified license name, license source URL or file path,
   redistribution decision, attribution or notice requirements, reviewer, and
   review date.
+- [ ] `docs/model_license_review.json` is updated from pending to approved
+  records before broad distribution, and `VERIFY_MODEL_LICENSES=1
+  scripts/verify_release_gate.sh` passes for the release candidate.
 - [ ] README License wording distinguishes app code from third-party model
   artifacts.
 - [ ] No API keys, bearer tokens, private model endpoints, raw prompts, or
   private device-context payloads are present in docs, screenshots, logs, or
   release notes.
+- [ ] `scripts/privacy_scan.sh` passes and its `privacy-scan.properties`
+  artifact is attached.
 
 ## Build Verification
 
@@ -125,6 +132,9 @@ release ticket or PR.
 - [ ] `VERIFY_MODEL_URLS=1 scripts/verify_local.sh` is run when model URL
   availability/provenance needs fresh evidence. License readiness is still
   reviewed manually.
+- [ ] `PERF_BASELINE_FILE=<rc perf-baseline.properties>
+  scripts/verify_release_gate.sh` passes before release sign-off. Set
+  `VERIFY_MODEL_LICENSES=1` when checking the public-distribution gate.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

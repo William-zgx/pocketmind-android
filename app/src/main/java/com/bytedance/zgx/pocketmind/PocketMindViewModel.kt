@@ -63,6 +63,8 @@ import com.bytedance.zgx.pocketmind.orchestration.AssistantRoute
 import com.bytedance.zgx.pocketmind.orchestration.InitialPlanningMode
 import com.bytedance.zgx.pocketmind.orchestration.PendingExternalOutcomeSnapshot
 import com.bytedance.zgx.pocketmind.orchestration.RemoteToolScope
+import com.bytedance.zgx.pocketmind.orchestration.RunDataDestination
+import com.bytedance.zgx.pocketmind.orchestration.RunDataReceipt
 import com.bytedance.zgx.pocketmind.runtime.LiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatEvent
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntime
@@ -1100,6 +1102,18 @@ class PocketMindViewModel(
                     sessionId = stateBeforeSend.activeSessionId,
                     options = agentRunOptions,
                 )
+                route.runIdOrNull()?.let { runId ->
+                    assistantOrchestrator.recordRunDataReceipt(
+                        runId = runId,
+                        receipt = route.runDataReceipt(
+                            stateBeforeSend = stateBeforeSend,
+                            destination = if (useRemoteModel) RunDataDestination.Remote else RunDataDestination.Local,
+                            currentPromptPrivacy = effectiveMessagePrivacy,
+                            remoteHistoryCount = remoteHistory.size,
+                            imageAttachmentCount = imageAttachments.size,
+                        ),
+                    )
+                }
                 when (route) {
                     is AssistantRoute.Action -> {
                         val localUserMessage = userMessage.copy(privacy = MessagePrivacy.LocalOnly)
@@ -1531,6 +1545,12 @@ class PocketMindViewModel(
     fun ingestSharedInput(sharedInput: SharedInput) {
         if (sharedInput.isEmpty) return
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
+            if (sharedInput.hasRemoteImageAttachment() &&
+                !_uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            ) {
+                rejectUnsupportedRemoteVisionInput()
+                return
+            }
             if (!sharedInput.isRemoteVisionSendable()) {
                 protectRemoteSharedInput()
                 return
@@ -1540,9 +1560,17 @@ class PocketMindViewModel(
     }
 
     fun stageSharedInput(sharedInput: SharedInput) {
-        if (_uiState.value.inferenceMode == InferenceMode.Remote && !sharedInput.isRemoteVisionSendable()) {
-            protectRemoteSharedInput()
-            return
+        if (_uiState.value.inferenceMode == InferenceMode.Remote) {
+            if (sharedInput.hasRemoteImageAttachment() &&
+                !_uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            ) {
+                rejectUnsupportedRemoteVisionInput()
+                return
+            }
+            if (!sharedInput.isRemoteVisionSendable()) {
+                protectRemoteSharedInput()
+                return
+            }
         }
         stageSharedInputDraft(sharedInput, statusText = "已选择附件")
     }
@@ -1588,6 +1616,23 @@ class PocketMindViewModel(
         }
     }
 
+    private fun rejectUnsupportedRemoteVisionInput() {
+        replaceActiveSessionMessages(
+            _uiState.value.messages + ChatMessage(
+                role = MessageRole.Assistant,
+                text = "当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。",
+                privacy = MessagePrivacy.LocalOnly,
+            ),
+            persistNow = true,
+        )
+        _uiState.update {
+            it.copy(
+                pendingSharedInputDraft = null,
+                statusText = "当前远程模型不支持图片输入",
+            )
+        }
+    }
+
     fun clearPendingSharedInputDraft(draftId: Long) {
         _uiState.update {
             if (it.pendingSharedInputDraft?.id == draftId) {
@@ -1622,6 +1667,13 @@ class PocketMindViewModel(
             return
         }
         if (state.isBusy || generationJob?.isActive == true) return
+        if (draft.imageAttachments.isNotEmpty() &&
+            state.inferenceMode == InferenceMode.Remote &&
+            !state.remoteModelConfig.modelProfile().supportsVisionInput
+        ) {
+            rejectUnsupportedRemoteVisionInput()
+            return
+        }
 
         _uiState.update {
             if (it.pendingSharedInputDraft?.id == draft.id) {
@@ -2470,6 +2522,25 @@ class PocketMindViewModel(
                             runId = id,
                             scope = remoteToolScope,
                             toolNames = remoteTools.mapTo(linkedSetOf()) { tool -> tool.name },
+                        )
+                        assistantOrchestrator.recordRunDataReceipt(
+                            runId = id,
+                            receipt = RunDataReceipt(
+                                destination = RunDataDestination.Remote,
+                                currentPromptPrivacy = responsePrivacy.name,
+                                remoteHistoryCount = remoteHistory.size,
+                                localOnlyHistoryFilteredCount = stateAtStart.messages.count { message ->
+                                    message.privacy == MessagePrivacy.LocalOnly
+                                },
+                                memoryHitCount = 0,
+                                memoryContextIncluded = false,
+                                deviceContextIncluded = false,
+                                imageAttachmentCount = 0,
+                                protectedSourceCount = stateAtStart.messages.count { message ->
+                                    message.privacy == MessagePrivacy.LocalOnly
+                                },
+                                rawContentPersisted = false,
+                            ),
                         )
                     }
                     remoteRuntime.sendWithTools(
@@ -3688,7 +3759,11 @@ class PocketMindViewModel(
             val updatedMessages = state.messages.toMutableList()
             val index = updatedMessages.indexOfLast { it.role == MessageRole.Assistant }
             if (index >= 0) {
-                updatedMessages[index] = updatedMessages[index].copy(generationStats = stats)
+                val enrichedStats = stats.copy(
+                    modelId = stats.modelId ?: state.activeInstalledModelId ?: state.selectedModelId,
+                    backend = stats.backend ?: state.backend,
+                )
+                updatedMessages[index] = updatedMessages[index].copy(generationStats = enrichedStats)
             }
             state.copy(messages = updatedMessages)
         }
@@ -3932,6 +4007,9 @@ private fun SharedAttachment.composerSummaryLabel(): String {
 private fun SharedInput.remoteImageAttachments(): List<ChatImageAttachment> =
     attachments.mapNotNull { attachment -> attachment.imageAttachment }
 
+private fun SharedInput.hasRemoteImageAttachment(): Boolean =
+    attachments.any { attachment -> attachment.imageAttachment != null }
+
 private fun SharedInput.isRemoteVisionSendable(): Boolean =
     text.isBlank() &&
         attachments.isNotEmpty() &&
@@ -3940,6 +4018,43 @@ private fun SharedInput.isRemoteVisionSendable(): Boolean =
                 attachment.imageAttachment != null &&
                 attachment.textPreview == null
         }
+
+private fun AssistantRoute.runIdOrNull(): String? =
+    when (this) {
+        is AssistantRoute.Chat -> runId
+        is AssistantRoute.Action -> runId
+        is AssistantRoute.ToolRejected,
+        is AssistantRoute.MissingModel -> null
+    }
+
+private fun AssistantRoute.runDataReceipt(
+    stateBeforeSend: ChatUiState,
+    destination: RunDataDestination,
+    currentPromptPrivacy: MessagePrivacy,
+    remoteHistoryCount: Int,
+    imageAttachmentCount: Int,
+    protectedSourceCount: Int = 0,
+): RunDataReceipt {
+    val memoryHits = (this as? AssistantRoute.Chat)?.memoryHits.orEmpty()
+    val deviceContext = (this as? AssistantRoute.Chat)?.deviceContext
+    val isRemote = destination == RunDataDestination.Remote
+    return RunDataReceipt(
+        destination = destination,
+        currentPromptPrivacy = currentPromptPrivacy.name,
+        remoteHistoryCount = if (isRemote) remoteHistoryCount else 0,
+        localOnlyHistoryFilteredCount = if (isRemote) {
+            stateBeforeSend.messages.count { message -> message.privacy == MessagePrivacy.LocalOnly }
+        } else {
+            0
+        },
+        memoryHitCount = memoryHits.size,
+        memoryContextIncluded = !isRemote && memoryHits.isNotEmpty(),
+        deviceContextIncluded = !isRemote && deviceContext != null,
+        imageAttachmentCount = if (isRemote) imageAttachmentCount else 0,
+        protectedSourceCount = protectedSourceCount,
+        rawContentPersisted = false,
+    )
+}
 
 private fun Float.normalizedVoiceInputLevel(): Float =
     ((this + 2f) / 12f).coerceIn(0.08f, 1f)

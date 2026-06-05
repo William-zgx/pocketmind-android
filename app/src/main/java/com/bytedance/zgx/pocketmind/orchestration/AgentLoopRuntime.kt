@@ -542,6 +542,12 @@ class AgentLoopRuntime(
         )
     }
 
+    fun recordRunDataReceipt(runId: String, receipt: RunDataReceipt) {
+        val run = traceStore.run(runId) ?: return
+        if (run.state in terminalRunStates) return
+        traceStore.appendStep(runId, AgentStep.RunDataReceiptRecorded(receipt))
+    }
+
     fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult? {
         val run = traceStore.run(runId) ?: return null
         if (run.state != AgentRunState.GeneratingAnswer) return null
