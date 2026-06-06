@@ -756,7 +756,7 @@ private fun ChatEmptyState(
     val readyTitle = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady -> "远程模型已就绪"
         state.isReady -> "本机模型已就绪"
-        else -> "主界面已就绪"
+        else -> PRODUCT_SETUP_TITLE_TEXT
     }
     val readyDescription = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady ->
@@ -764,7 +764,7 @@ private fun ChatEmptyState(
         state.isReady ->
             "当前会话为空，选择一个开场问题，或在底部直接输入。问答和历史记录会保留在本机。"
         else ->
-            "当前没有可用模型。可配置远程模型，或下载、导入本地模型后开始问答。"
+            PRODUCT_SETUP_DESCRIPTION_TEXT
     }
     Column(
         modifier = Modifier
@@ -1003,7 +1003,7 @@ private fun QuickModelSetup(
                 imageVector = Icons.Filled.Cloud,
                 contentDescription = null,
             )
-            Text(" 配置远程模型")
+            Text(" 配置远程模型（无需下载）")
         }
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -2951,6 +2951,12 @@ internal const val PRODUCT_POSITIONING_TEXT =
 
 internal const val PRODUCT_POSITIONING_SHORT_TEXT =
     "隐私优先的随身 AI 助手"
+
+internal const val PRODUCT_SETUP_TITLE_TEXT =
+    "隐私优先的随身 AI 助手"
+
+internal const val PRODUCT_SETUP_DESCRIPTION_TEXT =
+    "本地模型让基础问答离线可用；远程多模态是可选入口；远程发送和设备动作都会先让你确认。"
 
 internal const val PRODUCT_LOCAL_VALUE_TEXT =
     "下载或导入本地模型后，基础问答可在手机上运行；会话、记忆和本地工具结果默认留在本机。"

@@ -1,100 +1,126 @@
 package com.bytedance.zgx.pocketmind
 
+import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Rule
 import org.junit.Test
 
 class MainActivitySmokeTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val composeRule = createEmptyComposeRule()
+
+    private val targetContext: Context = ApplicationProvider.getApplicationContext()
 
     @Test
     fun chatShellShowsModelManager() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("app_title").assertIsDisplayed()
-        composeRule.onNodeWithTag("top_model_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("top_session_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("composer_attachment_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("composer_voice_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("app_title").assertIsDisplayed()
+            composeRule.waitForText("隐私优先的随身 AI 助手")
+            composeRule.waitForText("本地模型让基础问答离线可用；远程多模态是可选入口；远程发送和设备动作都会先让你确认。")
+            composeRule.onNodeWithTag("top_model_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("top_session_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("composer_attachment_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("composer_voice_button").assertIsDisplayed()
 
-        composeRule.onNodeWithTag("top_model_button").performClick()
-        composeRule.waitForTag("model_manager_sheet")
+            composeRule.onNodeWithTag("top_model_button").performClick()
+            composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.onNodeWithText("模型管理").assertIsDisplayed()
-        composeRule.waitForText("当前模型")
-        composeRule.onNodeWithTag("model_tab_advanced").performClick()
-        composeRule.waitForText("生成参数")
-        composeRule.waitForText("Temperature · 创造性")
-        composeRule.onNodeWithTag("model_tab_models").performClick()
-        composeRule.waitForText("推荐模型")
-        composeRule.waitForText("添加模型")
-        composeRule.waitForTag("custom_model_download_button")
+            composeRule.onNodeWithText("模型管理").assertIsDisplayed()
+            composeRule.waitForText("当前模型")
+            composeRule.onNodeWithTag("model_tab_advanced").performClick()
+            composeRule.waitForText("生成参数")
+            composeRule.waitForText("Temperature · 创造性")
+            composeRule.onNodeWithTag("model_tab_models").performClick()
+            composeRule.waitForText("推荐模型")
+            composeRule.waitForText("添加模型")
+            composeRule.waitForTag("custom_model_download_button")
+        }
     }
 
     @Test
     fun customDownloadLinkEntryLivesInModelManager() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("top_model_button").performClick()
-        composeRule.waitForTag("model_manager_sheet")
+            composeRule.onNodeWithTag("top_model_button").performClick()
+            composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.onNodeWithTag("model_tab_models").performClick()
-        composeRule.waitForTag("custom_model_url_input")
-        composeRule.waitForTag("custom_model_download_button")
+            composeRule.onNodeWithTag("model_tab_models").performClick()
+            composeRule.waitForTag("custom_model_url_input")
+            composeRule.waitForTag("custom_model_download_button")
+        }
     }
 
     @Test
     fun quickRemoteConfigEntryOpensRemoteModelForm() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("quick_remote_config_button").performClick()
-        composeRule.waitForTag("model_manager_sheet")
+            composeRule.onNodeWithTag("quick_remote_config_button").performClick()
+            composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.onNodeWithText("远程模型").assertIsDisplayed()
-        composeRule.waitForTag("remote_base_url_input")
+            composeRule.onNodeWithText("远程模型").assertIsDisplayed()
+            composeRule.waitForTag("remote_base_url_input")
+        }
     }
 
     @Test
     fun privacyButtonOpensAppPrivacyNotice() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("top_privacy_button").performClick()
-        composeRule.waitForTag("model_manager_sheet")
+            composeRule.onNodeWithTag("top_privacy_button").performClick()
+            composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
-        composeRule.waitForText("用户控制")
+            composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
+            composeRule.waitForText("用户控制")
+        }
     }
 
     @Test
     fun sessionManagerShowsSessionControls() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("top_session_button").performClick()
-        composeRule.waitForTag("session_manager_title")
+            composeRule.onNodeWithTag("top_session_button").performClick()
+            composeRule.waitForTag("session_manager_title")
 
-        composeRule.onNodeWithTag("session_manager_title").assertIsDisplayed()
-        composeRule.onNodeWithTag("session_create_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("session_manager_title").assertIsDisplayed()
+            composeRule.onNodeWithTag("session_create_button").assertIsDisplayed()
+        }
     }
 
     @Test
     fun backgroundTaskManagerShowsEmptyState() {
-        dismissFirstRunSetupIfPresent()
+        launchSmokeActivity().use {
+            composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("top_background_tasks_button").performClick()
-        composeRule.waitForTag("background_task_manager_title")
+            composeRule.onNodeWithTag("top_background_tasks_button").performClick()
+            composeRule.waitForTag("background_task_manager_title")
 
-        composeRule.onNodeWithText("后台任务").assertIsDisplayed()
-        composeRule.onNodeWithTag("background_task_refresh_button").assertIsDisplayed()
-        composeRule.onNodeWithTag("periodic_check_policy_section").assertIsDisplayed()
+            composeRule.onNodeWithText("后台任务").assertIsDisplayed()
+            composeRule.onNodeWithTag("background_task_refresh_button").assertIsDisplayed()
+            composeRule.onNodeWithTag("periodic_check_policy_section").assertIsDisplayed()
+        }
+    }
+
+    private fun launchSmokeActivity(): ActivityScenario<MainActivity> {
+        resetMainActivityPersistentState(
+            context = targetContext,
+            inferenceMode = InferenceMode.Local,
+        )
+        return ActivityScenario.launch(mainActivitySkipStartupIntent(targetContext))
     }
 
     private fun ComposeTestRule.waitForTag(tag: String) {
@@ -106,15 +132,6 @@ class MainActivitySmokeTest {
     private fun ComposeTestRule.waitForText(text: String) {
         waitUntil(timeoutMillis = 5_000) {
             onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
-    private fun dismissFirstRunSetupIfPresent() {
-        val skipNodes = composeRule.onAllNodesWithText("先跳过").fetchSemanticsNodes()
-        if (skipNodes.isNotEmpty()) {
-            composeRule.onNodeWithText("准备基础能力包").assertIsDisplayed()
-            composeRule.onNodeWithText("下载选中的模型").performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText("先跳过").performScrollTo().performClick()
         }
     }
 }

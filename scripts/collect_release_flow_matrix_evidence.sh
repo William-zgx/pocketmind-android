@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 VALIDATION_RECORD_FILE="${VALIDATION_RECORD_FILE:-docs/release_validation_record.json}"
+ANDROID_TEST_SOURCE_DIR="${ANDROID_TEST_SOURCE_DIR:-app/src/androidTest}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/release-flow-matrix-current}"
 REPORT_FILE="${REPORT_FILE:-$ARTIFACT_DIR/release-flow-matrix-candidate-evidence.properties}"
 OWNER="${OWNER:-QA Automation}"
@@ -29,23 +30,33 @@ REQUIRED_FLOWS=(
 
 GENERATED_FLOWS=(
   firstInstall
+  localModelDownloadVerification
   customModelImportOrUrlRejection
   remoteHttpsConfiguration
   encryptedApiKeyClear
   sessionPersistence
   memoryControls
+  remindersAfterReboot
+  shareAndPickerInput
+  voiceInput
   accessibilityText
+  recentMediaOcr
   mediaProjectionCancellation
 )
 
 FAILED_TARGET=""
 FAILURE_REASON=""
 GENERATED_EVIDENCE_PATHS=()
+SOURCE_ANDROID_TEST_COUNT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --file)
       VALIDATION_RECORD_FILE="${2:?missing validation record file}"
+      shift 2
+      ;;
+    --android-test-source-dir)
+      ANDROID_TEST_SOURCE_DIR="${2:?missing AndroidTest source directory}"
       shift 2
       ;;
     --artifact-dir)
@@ -69,6 +80,11 @@ done
 join_csv() {
   local IFS=,
   printf '%s' "$*"
+}
+
+count_android_tests() {
+  find "$ANDROID_TEST_SOURCE_DIR" \( -name '*.kt' -o -name '*.java' \) -print0 |
+    xargs -0 awk '/^[[:space:]]*@(org[.]junit[.])?Test([[:space:](]|$)/ {count += 1} END {print count + 0}'
 }
 
 sha256_file() {
@@ -106,6 +122,10 @@ write_report() {
   local reason="$2"
   local passed_flows="${3:-}"
   local pending_flows="${4:-}"
+  local generated_candidate_evidence_paths=""
+  if [[ ${#GENERATED_EVIDENCE_PATHS[@]} -gt 0 ]]; then
+    generated_candidate_evidence_paths="$(join_csv "${GENERATED_EVIDENCE_PATHS[@]}")"
+  fi
   mkdir -p "$(dirname "$REPORT_FILE")"
   {
     printf 'status=%s\n' "$status"
@@ -113,12 +133,14 @@ write_report() {
     printf 'failedTarget=%s\n' "$FAILED_TARGET"
     printf 'reason=%s\n' "$reason"
     printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
+    printf 'androidTestSourceDir=%s\n' "$ANDROID_TEST_SOURCE_DIR"
+    printf 'sourceAndroidTestCount=%s\n' "$SOURCE_ANDROID_TEST_COUNT"
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
     printf 'requiredFlows=%s\n' "$(join_csv "${REQUIRED_FLOWS[@]}")"
     printf 'generatedCandidateFlows=%s\n' "$(join_csv "${GENERATED_FLOWS[@]}")"
-    printf 'generatedCandidateEvidencePaths=%s\n' "$(join_csv "${GENERATED_EVIDENCE_PATHS[@]}")"
+    printf 'generatedCandidateEvidencePaths=%s\n' "$generated_candidate_evidence_paths"
     printf 'passedRecordFlows=%s\n' "$passed_flows"
     printf 'pendingRecordFlows=%s\n' "$pending_flows"
   } > "$REPORT_FILE"
@@ -138,6 +160,9 @@ flow_summary() {
     firstInstall)
       printf 'Clean API 36 emulator regression covers first-run setup dismissal, chat shell rendering, model manager entry, session controls, and background task empty state.'
       ;;
+    localModelDownloadVerification)
+      printf 'API 36 emulator regression covers custom .litertlm DownloadManager handoff; repository tests cover recommended model verification metadata, trusted model surfaces, and failure-state UI contracts.'
+      ;;
     customModelImportOrUrlRejection)
       printf 'API 36 emulator regression covers custom model URL rejection and custom .litertlm DownloadManager handoff; JVM URL contract rejects malformed, credentialed, and public HTTP URLs.'
       ;;
@@ -153,8 +178,20 @@ flow_summary() {
     memoryControls)
       printf 'API 36 emulator regression and memory panel UI tests cover explicit memory creation, forget, and clear controls.'
       ;;
+    remindersAfterReboot)
+      printf 'Repository tests cover BOOT_COMPLETED and package-replaced reminder rescheduling, catch-up scheduling, stale-running recovery, and metadata-only reminder audit boundaries.'
+      ;;
+    shareAndPickerInput)
+      printf 'API 36 emulator regression covers ACTION_SEND text and image staging; JVM shared-input tests cover in-app picker attachment prompts, remote-mode protection, document excerpts, and no implicit image OCR.'
+      ;;
+    voiceInput)
+      printf 'API 36 emulator accessibility regression covers the voice entry disclosure and button label; ViewModel tests cover one-shot transcript drafts, partial transcript state, cancellation, and no auto-send.'
+      ;;
     accessibilityText)
       printf 'API 36 emulator regression covers current screen Accessibility text confirmation, cancellation, audit evidence, and trace recording.'
+      ;;
+    recentMediaOcr)
+      printf 'JVM tool, skill, and orchestration tests cover recent screenshot/image OCR routing, confirmation, one-item screenshot limits, local-only result handling, and remote-mode leakage prevention.'
       ;;
     mediaProjectionCancellation)
       printf 'API 36 emulator regression covers current screenshot OCR confirmation and user cancellation before MediaProjection execution, with audit and trace evidence.'
@@ -167,6 +204,12 @@ flow_source_files() {
     firstInstall)
       printf '%s\n' \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySmokeTest.kt
+      ;;
+    localModelDownloadVerification)
+      printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityComprehensiveTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/data/ModelRepositoryTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/ChatUiStateModelVerificationTest.kt
       ;;
     customModelImportOrUrlRejection)
       printf '%s\n' \
@@ -194,10 +237,34 @@ flow_source_files() {
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityLongTermMemoryUiTest.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/memory/MemoryQualityContractTest.kt
       ;;
+    remindersAfterReboot)
+      printf '%s\n' \
+        app/src/test/java/com/bytedance/zgx/pocketmind/background/ScheduledTaskRepositoryTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/background/ReminderAlarmReceiverTest.kt \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/background/AndroidReminderAlarmPendingIntentTest.kt
+      ;;
+    shareAndPickerInput)
+      printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySharedIntentTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/multimodal/SharedInputTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt
+      ;;
+    voiceInput)
+      printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityAdaptiveUiTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/PocketMindViewModelTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt
+      ;;
     accessibilityText)
       printf '%s\n' \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySkillUiTest.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/tool/ToolRegistryTest.kt
+      ;;
+    recentMediaOcr)
+      printf '%s\n' \
+        app/src/test/java/com/bytedance/zgx/pocketmind/skill/BuiltInSkillRuntimeTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/tool/DeviceContextToolExecutorTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/orchestration/AgentLoopRuntimeTest.kt
       ;;
     mediaProjectionCancellation)
       printf '%s\n' \
@@ -209,6 +276,15 @@ flow_source_files() {
 
 if [[ ! -f "$VALIDATION_RECORD_FILE" ]]; then
   fail validation-record missing-validation-record-file "Release validation record file is missing: $VALIDATION_RECORD_FILE"
+fi
+if [[ ! -d "$ANDROID_TEST_SOURCE_DIR" ]]; then
+  fail android-test-source missing-android-test-source-dir \
+    "AndroidTest source directory is missing: $ANDROID_TEST_SOURCE_DIR"
+fi
+SOURCE_ANDROID_TEST_COUNT="$(count_android_tests)"
+if [[ ! "$SOURCE_ANDROID_TEST_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+  fail android-test-source android-test-source-count-invalid \
+    "AndroidTest source count must be a positive integer; got ${SOURCE_ANDROID_TEST_COUNT:-<empty>}."
 fi
 
 EMULATOR_REPORT_PATH="$(json_value emulatorRegression.reportPath)"
@@ -232,6 +308,23 @@ fi
 if [[ "$(property_value clean_device "$EMULATOR_REPORT_PATH")" != "1" ]]; then
   fail source-regression emulator-regression-not-clean \
     "Release flow matrix candidate evidence requires clean_device=1."
+fi
+REGRESSION_SOURCE_ANDROID_TEST_COUNT="$(property_value source_android_test_count "$EMULATOR_REPORT_PATH")"
+if [[ "$REGRESSION_SOURCE_ANDROID_TEST_COUNT" != "$SOURCE_ANDROID_TEST_COUNT" ]]; then
+  fail source-regression emulator-regression-source-test-count-mismatch \
+    "Release flow matrix candidate evidence requires source_android_test_count=$SOURCE_ANDROID_TEST_COUNT in $EMULATOR_REPORT_PATH, got ${REGRESSION_SOURCE_ANDROID_TEST_COUNT:-<missing>}."
+fi
+REGRESSION_EXPECTED_ANDROID_TEST_COUNT="$(property_value expected_android_test_count "$EMULATOR_REPORT_PATH")"
+if [[ ! "$REGRESSION_EXPECTED_ANDROID_TEST_COUNT" =~ ^[0-9]+$ ||
+  "$REGRESSION_EXPECTED_ANDROID_TEST_COUNT" -lt "$SOURCE_ANDROID_TEST_COUNT" ]]; then
+  fail source-regression emulator-regression-expected-test-count-invalid \
+    "Release flow matrix candidate evidence requires expected_android_test_count to cover current AndroidTest source count $SOURCE_ANDROID_TEST_COUNT."
+fi
+REGRESSION_ACTUAL_ANDROID_TEST_COUNT="$(property_value actual_android_test_count "$EMULATOR_REPORT_PATH")"
+if [[ ! "$REGRESSION_ACTUAL_ANDROID_TEST_COUNT" =~ ^[0-9]+$ ||
+  "$REGRESSION_ACTUAL_ANDROID_TEST_COUNT" -lt "$SOURCE_ANDROID_TEST_COUNT" ]]; then
+  fail source-regression emulator-regression-actual-test-count-invalid \
+    "Release flow matrix candidate evidence requires actual_android_test_count to cover current AndroidTest source count $SOURCE_ANDROID_TEST_COUNT."
 fi
 
 mkdir -p "$ARTIFACT_DIR"

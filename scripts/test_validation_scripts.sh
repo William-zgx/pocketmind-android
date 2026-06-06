@@ -212,7 +212,7 @@ FAKE_PACKAGE_DUMPSYS
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
         ;;
       /sdcard/pocketmind-fresh-start.xml)
-        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-主界面已就绪}" > "$destination"
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-隐私优先的随身 AI 助手}" > "$destination"
         ;;
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
@@ -1267,6 +1267,8 @@ cat > "$VALIDATION_EMULATOR_REPORT" <<VALIDATION_EMULATOR_REPORT_PROPERTIES
 status=passed
 target=regression-emulator
 clean_device=1
+source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 avd=test-avd
 api_level=36
@@ -1949,15 +1951,19 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-validation-unsanitized.properties" "status=failed"
 
 FLOW_CANDIDATE_EMULATOR_REPORT="$TMP_DIR/flow-candidate-regression-emulator.properties"
+FLOW_CANDIDATE_STALE_EMULATOR_REPORT="$TMP_DIR/flow-candidate-stale-regression-emulator.properties"
 FLOW_CANDIDATE_RECORD_PENDING="$TMP_DIR/flow-candidate-pending.json"
 FLOW_CANDIDATE_RECORD_APPROVED="$TMP_DIR/flow-candidate-approved.json"
 FLOW_CANDIDATE_RECORD_BAD_SHA="$TMP_DIR/flow-candidate-bad-sha.json"
+FLOW_CANDIDATE_RECORD_STALE_REPORT="$TMP_DIR/flow-candidate-stale-report.json"
 FLOW_CANDIDATE_EVIDENCE_DIR="$TMP_DIR/flow-candidate-approved-evidence"
 mkdir -p "$FLOW_CANDIDATE_EVIDENCE_DIR"
 cat > "$FLOW_CANDIDATE_EMULATOR_REPORT" <<FLOW_CANDIDATE_EMULATOR_REPORT_PROPERTIES
 status=passed
 target=regression-emulator
 clean_device=1
+source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 avd=test-avd
 api_level=36
@@ -1988,8 +1994,51 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "target=release-flow-matrix-candidate-evidence"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "failedTarget=flow-matrix"
 assert_report_contains_text "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "missing-approved-release-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "generatedCandidateFlows=firstInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "candidateOnly=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "releaseFlowPassed=false"
+for generated_flow_key in \
+  firstInstall localModelDownloadVerification customModelImportOrUrlRejection \
+  remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
+  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
+  mediaProjectionCancellation; do
+  assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "status=passed"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "target=release-flow-matrix-candidate-evidence"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "flow=$generated_flow_key"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "candidateOnly=true"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "releaseFlowPassed=false"
+done
+cat > "$FLOW_CANDIDATE_STALE_EMULATOR_REPORT" <<FLOW_CANDIDATE_STALE_EMULATOR_REPORT_PROPERTIES
+status=passed
+target=regression-emulator
+clean_device=1
+source_android_test_count=$LOW_ANDROID_TEST_COUNT
+expected_android_test_count=$LOW_ANDROID_TEST_COUNT
+actual_android_test_count=$LOW_ANDROID_TEST_COUNT
+avd=test-avd
+api_level=36
+abi=arm64-v8a
+FLOW_CANDIDATE_STALE_EMULATOR_REPORT_PROPERTIES
+FLOW_CANDIDATE_STALE_EMULATOR_SHA="$(shasum -a 256 "$FLOW_CANDIDATE_STALE_EMULATOR_REPORT" | awk '{print $1}')"
+python3 - "$FLOW_CANDIDATE_RECORD_PENDING" "$FLOW_CANDIDATE_RECORD_STALE_REPORT" "$FLOW_CANDIDATE_STALE_EMULATOR_REPORT" "$FLOW_CANDIDATE_STALE_EMULATOR_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["emulatorRegression"]["reportPath"] = sys.argv[3]
+record["emulatorRegression"]["reportSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release flow matrix collector rejects stale emulator regression source count" \
+  scripts/collect_release_flow_matrix_evidence.sh \
+    --file "$FLOW_CANDIDATE_RECORD_STALE_REPORT" \
+    --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-stale-report" \
+    --report "$ARTIFACT_DIR/release-flow-candidate-stale-report.properties"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-stale-report.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-stale-report.properties" "failedTarget=source-regression"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-stale-report.properties" "reason=emulator-regression-source-test-count-mismatch"
 for flow_key in \
   firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \

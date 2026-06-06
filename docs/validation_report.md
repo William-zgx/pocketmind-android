@@ -23,6 +23,65 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Product positioning entry and flow matrix guard
+
+本轮覆盖项：
+
+- 无模型首屏从“主界面已就绪”收敛为“隐私优先的随身 AI 助手”，并在首屏说明中直接回答
+  为什么安装：本地模型让基础问答离线可用，远程多模态是可选入口，远程发送和设备动作都先确认。
+- 待准备主操作补充“配置远程模型（无需下载）”，降低 2.4 GB 本地模型下载前的启动门槛。
+- Smoke instrumentation 固定首屏定位文案、远程模型直达表单和 App 内隐私说明入口。
+- release flow matrix 候选证据扩展到本地模型下载校验、重启后提醒、分享/文件输入、
+  语音输入、最近媒体 OCR 等核心链路；同时修复候选证据失败路径在空 evidence path
+  数组下触发 `set -u` 崩溃的问题。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugKotlin \
+  :app:compileDebugAndroidTestKotlin :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+ARTIFACT_DIR=build/verification/product-positioning-entry-smoke-rerun \
+  CLEAN_DEVICE=1 \
+  ANDROID_SERIAL=emulator-5554 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#quickRemoteConfigEntryOpensRemoteModelForm,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#privacyButtonOpensAppPrivacyNotice' \
+  scripts/verify_emulator.sh
+ARTIFACT_DIR=build/verification/product-positioning-fresh-start-current \
+  ANDROID_SERIAL=emulator-5554 \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ARTIFACT_DIR=build/verification/release-flow-matrix-expanded-current \
+  scripts/collect_release_flow_matrix_evidence.sh
+/Users/bytedance/Library/Android/sdk/build-tools/36.0.0/aapt dump badging \
+  app/build/outputs/apk/debug/app-debug.apk
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 exec-out screencap -p \
+  > build/verification/product-positioning-entry-screen/current.png
+```
+
+结果：
+
+- 通过：debug Kotlin、androidTest Kotlin 编译和 `PocketMindScreenDisplayTest`。
+- 通过：API 36 arm64 干净模拟器 targeted smoke，
+  `build/verification/product-positioning-entry-smoke-rerun/emulator-verification.properties`
+  包含 `status=passed`、`avd=pocketmind_api36_arm64`；嵌套
+  `device-verification.properties` 包含 `status=passed`、`instrumentation_test_count=3`。
+- 通过：API 36 arm64 真实 fresh-start，
+  `build/verification/product-positioning-fresh-start-current/fresh-start-main-shell.properties`
+  包含 `status=passed`、`first_run_setup_visible=false`、`main_shell_copy_visible=true`。
+- 通过：`scripts/test_validation_scripts.sh`，确认 release-flow 脚本自测通过，且 debug
+  APK 自测后恢复为有效 APK；`aapt dump badging` 读取到
+  `package: name='com.bytedance.zgx.pocketmind' versionCode='1' versionName='0.1.0'`。
+- 通过：最新首屏截图和 UI dump 已保存到
+  `build/verification/product-positioning-entry-screen/current.png` 和同名 XML；截图显示
+  “隐私优先的随身 AI 助手”和“配置远程模型（无需下载）”。
+- 未通过但按预期生成失败证据：当前 flow matrix 候选报告
+  `build/verification/release-flow-matrix-expanded-current/release-flow-matrix-candidate-evidence.properties`
+  包含 `status=failed`、`failedTarget=source-regression`、
+  `reason=emulator-regression-source-test-count-mismatch`；当前源测试数为 35，
+  既有 regression artifact 记录为 28。需要重跑完整 regression 后，才能把扩展 flow
+  matrix 作为 release gate 通过证据。
+
 ## 2026-06-07 Model path guidance and sensitive input disclosure
 
 本轮覆盖项：
