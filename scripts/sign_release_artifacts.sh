@@ -17,6 +17,7 @@ ALIGNED_APK="${ALIGNED_APK:-${SIGNED_APK%.apk}-aligned.apk}"
 REPORT_FILE="${REPORT_FILE:-build/verification/signing/signing.properties}"
 ALLOW_DEBUG_KEYSTORE="${ALLOW_DEBUG_KEYSTORE:-0}"
 EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
+REQUIRE_AAB="${REQUIRE_AAB:-1}"
 
 require_env() {
   local name="$1"
@@ -67,6 +68,16 @@ fi
 
 if [[ "$ALLOW_DEBUG_KEYSTORE" != "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
   echo "Production release signing requires EXPECTED_SIGNING_CERT_SHA256." >&2
+  exit 1
+fi
+
+if [[ "$ALLOW_DEBUG_KEYSTORE" != "1" && "$REQUIRE_AAB" != "1" ]]; then
+  echo "Production release signing requires REQUIRE_AAB=1." >&2
+  exit 1
+fi
+
+if [[ "$REQUIRE_AAB" == "1" && ! -f "$UNSIGNED_AAB" ]]; then
+  echo "Release signing requires unsigned AAB: $UNSIGNED_AAB" >&2
   exit 1
 fi
 
@@ -134,13 +145,14 @@ scripts/scan_android_artifacts.sh \
   else
     printf 'signingMode=production\n'
   fi
+  printf 'requireAab=%s\n' "$REQUIRE_AAB"
   printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
-  printf 'signedApk=%s\n' "$SIGNED_APK"
-  printf 'signedAab=%s\n' "$SIGNED_AAB"
   if [[ -f "$SIGNED_APK" ]]; then
+    printf 'signedApk=%s\n' "$SIGNED_APK"
     printf 'signedApkSha256=%s\n' "$(shasum -a 256 "$SIGNED_APK" | awk '{print $1}')"
   fi
   if [[ -f "$SIGNED_AAB" ]]; then
+    printf 'signedAab=%s\n' "$SIGNED_AAB"
     printf 'signedAabSha256=%s\n' "$(shasum -a 256 "$SIGNED_AAB" | awk '{print $1}')"
   fi
 } > "$REPORT_FILE"

@@ -75,7 +75,8 @@ release ticket or PR.
   outside source control, labeled as non-Play evidence, and not confused with
   the Play AAB.
 - [ ] APK/AAB inspection confirms no `.litertlm` model binaries, API keys,
-  bearer tokens, private hostnames, or release keystore files are bundled.
+  bearer tokens, private hostnames, or release keystore files are bundled, and
+  the artifact is a readable APK/AAB with the expected manifest structure.
 - [ ] `scripts/scan_android_artifacts.sh` is run against the final APK/AAB and
   `android-artifact-scan.properties` is attached to the release record.
 - [ ] Release artifact size is within the documented budget, and model files are

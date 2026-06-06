@@ -182,9 +182,31 @@ for artifact in "${ARTIFACTS[@]}"; do
     printf '%s: missing artifact\n' "$artifact" >> "$TMP_FINDINGS"
     continue
   fi
-  if unzip -Z1 "$artifact" | grep -E '(^|/)[^/]+[.](litertlm|jks|keystore|pem|p12)$' >/tmp/pocketmind-artifact-files.$$; then
+  entry_list="$(mktemp)"
+  if ! unzip -Z1 "$artifact" > "$entry_list" 2>/dev/null; then
+    printf '%s: artifact is not a readable zip archive\n' "$artifact" >> "$TMP_FINDINGS"
+    rm -f "$entry_list"
+    continue
+  fi
+  case "$artifact" in
+    *.apk)
+      if ! grep -qx 'AndroidManifest.xml' "$entry_list"; then
+        printf '%s: APK is missing AndroidManifest.xml\n' "$artifact" >> "$TMP_FINDINGS"
+      fi
+      ;;
+    *.aab)
+      if ! grep -qx 'BundleConfig.pb' "$entry_list"; then
+        printf '%s: AAB is missing BundleConfig.pb\n' "$artifact" >> "$TMP_FINDINGS"
+      fi
+      if ! grep -qx 'base/manifest/AndroidManifest.xml' "$entry_list"; then
+        printf '%s: AAB is missing base/manifest/AndroidManifest.xml\n' "$artifact" >> "$TMP_FINDINGS"
+      fi
+      ;;
+  esac
+  if grep -E '(^|/)[^/]+[.](litertlm|jks|keystore|pem|p12)$' "$entry_list" >/tmp/pocketmind-artifact-files.$$; then
     sed "s#^#$artifact:#" /tmp/pocketmind-artifact-files.$$ >> "$TMP_FINDINGS"
   fi
+  rm -f "$entry_list"
   rm -f /tmp/pocketmind-artifact-files.$$
   if unzip -p "$artifact" 2>/dev/null |
     strings |

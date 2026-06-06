@@ -191,18 +191,28 @@ else
 fi
 
 if [[ "$VERIFY_RELEASE_RECORD" == "1" ]]; then
+  release_record_artifact_path=""
+  release_record_artifact_type=""
+  release_record_artifact_sha256=""
+  if [[ -f "$RELEASE_AAB" ]]; then
+    release_record_artifact_path="$RELEASE_AAB"
+    release_record_artifact_type="aab"
+    release_record_artifact_sha256="$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')"
+  elif [[ -f "$RELEASE_APK" ]]; then
+    release_record_artifact_path="$RELEASE_APK"
+    release_record_artifact_type="apk"
+    release_record_artifact_sha256="$(shasum -a 256 "$RELEASE_APK" | awk '{print $1}')"
+  fi
   release_record_env=(
     "PUBLIC_RELEASE_CONTEXT=$PUBLIC_RELEASE"
     "EXPECTED_SIGNING_CERT_SHA256=$EXPECTED_SIGNING_CERT_SHA256"
   )
-  if [[ "$PUBLIC_RELEASE" == "1" ]]; then
+  if [[ -n "$release_record_artifact_path" ]]; then
     release_record_env+=(
-      "EXPECTED_RELEASE_ARTIFACT_PATH=$RELEASE_AAB"
-      "EXPECTED_RELEASE_ARTIFACT_TYPE=aab"
+      "EXPECTED_RELEASE_ARTIFACT_PATH=$release_record_artifact_path"
+      "EXPECTED_RELEASE_ARTIFACT_TYPE=$release_record_artifact_type"
+      "EXPECTED_RELEASE_ARTIFACT_SHA256=$release_record_artifact_sha256"
     )
-    if [[ -f "$RELEASE_AAB" ]]; then
-      release_record_env+=("EXPECTED_RELEASE_ARTIFACT_SHA256=$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')")
-    fi
   fi
   if ! env "${release_record_env[@]}" scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
     write_gate_report failed

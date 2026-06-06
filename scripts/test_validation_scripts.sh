@@ -1066,13 +1066,19 @@ assert_report_contains "$ARTIFACT_DIR/model-license-future.properties" "status=f
 
 SAFE_APK="$TMP_DIR/safe.apk"
 SAFE_AAB="$TMP_DIR/safe.aab"
+BAD_AAB="$TMP_DIR/bad.aab"
 UNSAFE_APK="$TMP_DIR/unsafe.apk"
-mkdir -p "$TMP_DIR/safe-zip/assets" "$TMP_DIR/unsafe-zip/assets"
-printf 'ok\n' > "$TMP_DIR/safe-zip/assets/readme.txt"
+mkdir -p "$TMP_DIR/safe-apk/assets" "$TMP_DIR/safe-aab/base/manifest" "$TMP_DIR/unsafe-zip/assets"
+printf '<manifest />\n' > "$TMP_DIR/safe-apk/AndroidManifest.xml"
+printf 'bundle-config\n' > "$TMP_DIR/safe-aab/BundleConfig.pb"
+printf '<manifest />\n' > "$TMP_DIR/safe-aab/base/manifest/AndroidManifest.xml"
+printf 'ok\n' > "$TMP_DIR/safe-apk/assets/readme.txt"
+printf 'ok\n' > "$TMP_DIR/safe-aab/base/readme.txt"
 printf 'model\n' > "$TMP_DIR/unsafe-zip/assets/model.litertlm"
-(cd "$TMP_DIR/safe-zip" && zip -qr "$SAFE_APK" .)
-cp "$SAFE_APK" "$SAFE_AAB"
+(cd "$TMP_DIR/safe-apk" && zip -qr "$SAFE_APK" .)
+(cd "$TMP_DIR/safe-aab" && zip -qr "$SAFE_AAB" .)
 (cd "$TMP_DIR/unsafe-zip" && zip -qr "$UNSAFE_APK" .)
+printf 'not a bundle\n' > "$BAD_AAB"
 expect_success \
   "artifact scan accepts safe zip" \
   scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --report "$ARTIFACT_DIR/artifact.properties"
@@ -1085,6 +1091,10 @@ expect_failure \
   "artifact scan rejects bundled model" \
   scripts/scan_android_artifacts.sh --apk "$UNSAFE_APK" --report "$ARTIFACT_DIR/artifact-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-failed.properties" "status=failed"
+expect_failure \
+  "artifact scan rejects unreadable aab" \
+  scripts/scan_android_artifacts.sh --aab "$BAD_AAB" --report "$ARTIFACT_DIR/artifact-bad-aab.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-bad-aab.properties" "status=failed"
 expect_failure \
   "artifact scan require-signed rejects unsigned zip" \
   scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned.properties"
@@ -1136,6 +1146,7 @@ assert_report_contains "$ARTIFACT_DIR/artifact-cert-match.properties" "expectedC
 
 VALID_GATE_PERF="$TMP_DIR/perf-baseline-safe-apk.properties"
 SAFE_APK_SHA="$(shasum -a 256 "$SAFE_APK" | awk '{print $1}')"
+SAFE_AAB_SHA="$(shasum -a 256 "$SAFE_AAB" | awk '{print $1}')"
 cat > "$VALID_GATE_PERF" <<VALID_GATE_PERF_BASELINE
 status=passed
 deviceSerial=device-a
@@ -1158,6 +1169,8 @@ memoryPeakMb=512
 oomOrAnrObserved=false
 recordedAt=$PERF_RECORDED_AT
 VALID_GATE_PERF_BASELINE
+VALID_GATE_AAB_PERF="$TMP_DIR/perf-baseline-safe-aab.properties"
+sed "s/releaseArtifactSha256=$SAFE_APK_SHA/releaseArtifactSha256=$SAFE_AAB_SHA/" "$VALID_GATE_PERF" > "$VALID_GATE_AAB_PERF"
 expect_failure \
   "release gate requires approved privacy review when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-review" \
@@ -1222,6 +1235,18 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/release-gate.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
+expect_failure \
+  "release gate binds release record to scanned artifact in non-public mode" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-record-artifact-mismatch" \
+  PERF_BASELINE_FILE="$VALID_GATE_AAB_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$SAFE_AAB" \
+  VERIFY_RELEASE_RECORD=1 \
+  RELEASE_RECORD_FILE="$RELEASE_RECORD_APPROVED" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-record-artifact-mismatch/release-record.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-record-artifact-mismatch/release-record.properties" "expectedReleaseArtifactPath=$SAFE_AAB"
 expect_failure \
   "release gate requires mapping when mapping gate is enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-mapping-gate" \
@@ -1304,6 +1329,18 @@ expect_failure \
   scripts/sign_release_artifacts.sh
 grep -q 'Production release signing requires EXPECTED_SIGNING_CERT_SHA256' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to require expected production certificate before signing"
+expect_failure \
+  "signing helper requires unsigned aab for production signing" \
+  env RELEASE_KEYSTORE="$PRODUCTION_KEYSTORE" \
+  RELEASE_KEY_ALIAS=upload \
+  RELEASE_KEYSTORE_PASSWORD=secret \
+  RELEASE_KEY_PASSWORD=secret \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  UNSIGNED_APK="$SAFE_APK" \
+  UNSIGNED_AAB="$TMP_DIR/missing-release.aab" \
+  scripts/sign_release_artifacts.sh
+grep -q 'Release signing requires unsigned AAB' <<<"$LAST_OUTPUT" ||
+  fail "Expected signing helper to require unsigned AAB before production signing"
 
 COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
 expect_success \

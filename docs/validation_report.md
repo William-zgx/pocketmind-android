@@ -15,6 +15,31 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release artifact integrity hardening
+
+本轮覆盖项：
+
+- `scripts/scan_android_artifacts.sh` 现在拒绝不可读 zip、缺失 APK manifest、缺失 AAB
+  `BundleConfig.pb` 或 `base/manifest/AndroidManifest.xml` 的产物。
+- `scripts/verify_release_gate.sh` 只要启用 release record 校验，就把 gate 实际选择的
+  artifact path/type/sha 传给 `scripts/verify_release_record.sh`，不再只限制 public release。
+- `scripts/sign_release_artifacts.sh` 生产签名默认要求 unsigned AAB 存在，避免 APK-only
+  signing report 被误当成 Play candidate。
+
+验证命令：
+
+```bash
+bash -n scripts/scan_android_artifacts.sh scripts/verify_release_gate.sh scripts/sign_release_artifacts.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests。
+- 通过：local verification，真实 release APK/AAB 通过 artifact integrity scan。
+- 未执行模拟器：本轮只加固 release artifact/record/signing 脚本和文档，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Release AAB gate hardening
 
 本轮覆盖项：
