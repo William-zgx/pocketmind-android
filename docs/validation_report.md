@@ -15,6 +15,31 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release AAB gate hardening
+
+本轮覆盖项：
+
+- `scripts/verify_local.sh` 现在执行 `bundleRelease`，确认 release AAB 存在，并把
+  APK/AAB 一起交给 `scripts/scan_android_artifacts.sh` 扫描。
+- `scripts/verify_release_gate.sh` 在要求 signed AAB 时，默认校验
+  `app/build/outputs/bundle/release/app-release-signed.aab`，避免正式门禁误验未签名
+  `app-release.aab`。
+- `scripts/test_validation_scripts.sh` 增加本地 AAB 扫描契约和 signed AAB 默认路径负测。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_local.sh scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests。
+- 通过：local verification，包含 `bundleRelease` 和 APK/AAB artifact scan。
+- 未执行模拟器：本轮只加固 release/AAB 脚本和文档，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Release record source commit hardening
 
 本轮覆盖项：

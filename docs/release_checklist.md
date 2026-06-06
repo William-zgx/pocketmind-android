@@ -68,8 +68,9 @@ release ticket or PR.
   fingerprint are both captured because they are different trust anchors.
 - [ ] The Play candidate is an Android App Bundle built with release settings:
   `./gradlew :app:bundleRelease`. Record
-  `app/build/outputs/bundle/release/app-release.aab`, SHA-256, file size, and
-  signing certificate fingerprint after external signing.
+  `app/build/outputs/bundle/release/app-release.aab` before signing and
+  `app/build/outputs/bundle/release/app-release-signed.aab` after external
+  signing, including SHA-256, file size, and signing certificate fingerprint.
 - [ ] If an APK is used for internal ad hoc validation, it is separately signed
   outside source control, labeled as non-Play evidence, and not confused with
   the Play AAB.

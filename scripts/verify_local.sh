@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 ANDROID_SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 MAX_RELEASE_APK_BYTES=$((75 * 1024 * 1024))
+MAX_RELEASE_AAB_BYTES=$((75 * 1024 * 1024))
 
 scripts/doctor.sh --local
 bash -n scripts/doctor.sh scripts/verify_local.sh scripts/install_and_test_device.sh scripts/verify_emulator.sh scripts/regression_emulator.sh scripts/live_remote_emulator.sh scripts/test_validation_scripts.sh scripts/privacy_scan.sh scripts/scan_android_artifacts.sh scripts/verify_perf_baseline.sh scripts/verify_privacy_review.sh scripts/verify_release_record.sh scripts/verify_store_policy_record.sh scripts/verify_release_operations_record.sh scripts/verify_release_validation_record.sh scripts/verify_model_license_review.sh scripts/verify_release_mapping.sh scripts/verify_release_gate.sh scripts/collect_perf_baseline.sh scripts/collect_model_license_metadata.sh scripts/sign_release_artifacts.sh
@@ -21,12 +22,14 @@ fi
 # lintDebug's lint models can reference Room/KSP release generated sources.
 # Generate them first so lint does not race assembleRelease for the same files.
 "$GRADLE_CMD" :app:kspReleaseKotlin
-"$GRADLE_CMD" testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease
+"$GRADLE_CMD" testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease bundleRelease
 
 DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
 RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+RELEASE_AAB="app/build/outputs/bundle/release/app-release.aab"
 [[ -f "$DEBUG_APK" ]]
 [[ -f "$RELEASE_APK" ]]
+[[ -f "$RELEASE_AAB" ]]
 
 if unzip -Z1 "$DEBUG_APK" | grep -E '(^|/)[^/]+\.litertlm$' >/dev/null; then
   echo "APK unexpectedly contains a model artifact." >&2
@@ -36,6 +39,15 @@ if unzip -Z1 "$RELEASE_APK" | grep -E '(^|/)[^/]+\.litertlm$' >/dev/null; then
   echo "Release APK unexpectedly contains a model artifact." >&2
   exit 1
 fi
+if unzip -Z1 "$RELEASE_AAB" | grep -E '(^|/)[^/]+\.litertlm$' >/dev/null; then
+  echo "Release AAB unexpectedly contains a model artifact." >&2
+  exit 1
+fi
+
+scripts/scan_android_artifacts.sh \
+  --apk "$RELEASE_APK" \
+  --aab "$RELEASE_AAB" \
+  --report build/verification/local/android-artifact-scan.properties
 
 BADGING="$("$AAPT" dump badging "$DEBUG_APK")"
 grep -q "package: name='com.bytedance.zgx.pocketmind'" <<<"$BADGING"
@@ -48,6 +60,11 @@ grep -q "native-code: 'arm64-v8a'" <<<"$RELEASE_BADGING"
 RELEASE_BYTES="$(wc -c < "$RELEASE_APK" | tr -d ' ')"
 if [[ "$RELEASE_BYTES" -gt "$MAX_RELEASE_APK_BYTES" ]]; then
   echo "Release APK is too large: $RELEASE_BYTES bytes (budget: $MAX_RELEASE_APK_BYTES)." >&2
+  exit 1
+fi
+AAB_BYTES="$(wc -c < "$RELEASE_AAB" | tr -d ' ')"
+if [[ "$AAB_BYTES" -gt "$MAX_RELEASE_AAB_BYTES" ]]; then
+  echo "Release AAB is too large: $AAB_BYTES bytes (budget: $MAX_RELEASE_AAB_BYTES)." >&2
   exit 1
 fi
 

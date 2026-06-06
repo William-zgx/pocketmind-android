@@ -247,10 +247,14 @@ LOW_INSTRUMENTATION_OUTPUT="$(printf 'INSTRUMENTATION_STATUS: numtests=%s\nOK (%
 HIGH_INSTRUMENTATION_OUTPUT="$(printf 'INSTRUMENTATION_STATUS: numtests=%s\nOK (%s tests)' "$HIGH_ANDROID_TEST_COUNT" "$HIGH_ANDROID_TEST_COUNT")"
 
 ksp_line="$(grep -n 'GRADLE_CMD.*:app:kspReleaseKotlin' scripts/verify_local.sh | cut -d: -f1 | head -n 1)"
-verify_line="$(grep -n 'GRADLE_CMD.*testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease' scripts/verify_local.sh | cut -d: -f1 | head -n 1)"
+verify_line="$(grep -n 'GRADLE_CMD.*testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease bundleRelease' scripts/verify_local.sh | cut -d: -f1 | head -n 1)"
 if [[ -z "$ksp_line" || -z "$verify_line" || "$ksp_line" -ge "$verify_line" ]]; then
   fail "verify_local.sh must generate release KSP sources before lintDebug"
 fi
+grep -q 'RELEASE_AAB="app/build/outputs/bundle/release/app-release.aab"' scripts/verify_local.sh ||
+  fail "verify_local.sh must verify the release AAB artifact"
+grep -q -- '--aab "$RELEASE_AAB"' scripts/verify_local.sh ||
+  fail "verify_local.sh must scan the release AAB artifact"
 grep -q 'scripts/regression_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
@@ -1205,6 +1209,19 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.properties" "status=failed"
+expect_failure \
+  "release gate defaults signed aab path when signed aab is required" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-signed-default-aab" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  REQUIRE_AAB=1 \
+  REQUIRE_SIGNED_ARTIFACT=1 \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
+assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/release-gate.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
 expect_failure \
   "release gate requires mapping when mapping gate is enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-mapping-gate" \

@@ -7,12 +7,18 @@ cd "$ROOT_DIR"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/release-gate}"
 PERF_BASELINE_FILE="${PERF_BASELINE_FILE:-}"
 DEFAULT_RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+DEFAULT_RELEASE_AAB="app/build/outputs/bundle/release/app-release.aab"
+DEFAULT_SIGNED_RELEASE_AAB="app/build/outputs/bundle/release/app-release-signed.aab"
 RELEASE_APK_WAS_SET=0
 if [[ -n "${RELEASE_APK+x}" ]]; then
   RELEASE_APK_WAS_SET=1
 fi
+RELEASE_AAB_WAS_SET=0
+if [[ -n "${RELEASE_AAB+x}" ]]; then
+  RELEASE_AAB_WAS_SET=1
+fi
 RELEASE_APK="${RELEASE_APK:-$DEFAULT_RELEASE_APK}"
-RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
+RELEASE_AAB="${RELEASE_AAB:-$DEFAULT_RELEASE_AAB}"
 PUBLIC_RELEASE="${PUBLIC_RELEASE:-0}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
@@ -47,6 +53,10 @@ if [[ "$PUBLIC_RELEASE" == "1" ]]; then
   VERIFY_RELEASE_MAPPING=1
 fi
 
+if [[ "$REQUIRE_AAB" == "1" && "$REQUIRE_SIGNED_ARTIFACT" == "1" && "$RELEASE_AAB_WAS_SET" == "0" ]]; then
+  RELEASE_AAB="$DEFAULT_SIGNED_RELEASE_AAB"
+fi
+
 write_gate_report() {
   local status="$1"
   {
@@ -70,6 +80,8 @@ write_gate_report() {
     printf 'releaseMappingFile=%s\n' "$RELEASE_MAPPING_FILE"
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
     printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
+    printf 'releaseApk=%s\n' "$RELEASE_APK"
+    printf 'releaseAab=%s\n' "$RELEASE_AAB"
   } > "$ARTIFACT_DIR/release-gate.properties"
 }
 
