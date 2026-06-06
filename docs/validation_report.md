@@ -17,6 +17,40 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation manual evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在会校验 `manualAcceptance`
+  evidence 文件本身，而不只校验 evidence object、文件存在和 SHA。
+- manual evidence 必须是正式手工验收报告：`status=passed`、
+  `target=manual-acceptance`、`manualKey` 匹配当前记录 key，并且
+  `manualAcceptance=true`。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为正式
+  manual acceptance 报告，并新增弱证据负例：只有 `status=passed` /
+  `manual=modelSetup` 的文件必须被拒绝。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档，
+  不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation performance evidence hardening
 
 本轮覆盖项：

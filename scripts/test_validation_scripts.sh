@@ -1032,7 +1032,12 @@ for manual_key in \
   modelSetup remoteModePrivacy toolConfirmation permissions backgroundReminders sharing \
   multimodalEntryPoints voiceInput filePicker mediaProjection remoteSinglePublicEvidence \
   remoteMultiEvidenceComparison mixedPrivateActionBatchFailClosed; do
-  printf 'status=passed\nmanual=%s\n' "$manual_key" > "$TMP_DIR/validation-manual-evidence/$manual_key.properties"
+  cat > "$TMP_DIR/validation-manual-evidence/$manual_key.properties" <<VALIDATION_MANUAL_EVIDENCE_PROPERTIES
+status=passed
+target=manual-acceptance
+manualKey=$manual_key
+manualAcceptance=true
+VALIDATION_MANUAL_EVIDENCE_PROPERTIES
 done
 for flow_key in \
   firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
@@ -1264,6 +1269,32 @@ expect_failure \
   "release validation verifier rejects bare passed manual acceptance" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_BARE_MANUAL" --report "$ARTIFACT_DIR/release-validation-bare-manual.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-bare-manual.properties" "manual-modelSetup-evidence-record-invalid"
+VALIDATION_WEAK_MANUAL="$TMP_DIR/release-validation-weak-manual.json"
+VALIDATION_WEAK_MANUAL_EVIDENCE="$TMP_DIR/validation-manual-evidence/weak-modelSetup.properties"
+cat > "$VALIDATION_WEAK_MANUAL_EVIDENCE" <<'VALIDATION_WEAK_MANUAL_EVIDENCE_PROPERTIES'
+status=passed
+manual=modelSetup
+VALIDATION_WEAK_MANUAL_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_MANUAL" "$VALIDATION_WEAK_MANUAL_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["manualAcceptance"]["modelSetup"]["evidencePath"] = str(evidence)
+record["manualAcceptance"]["modelSetup"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak manual acceptance evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_MANUAL" --report "$ARTIFACT_DIR/release-validation-weak-manual.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-manual.properties" "manual-modelSetup-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-manual.properties" "manual-modelSetup-evidence-key-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-manual.properties" "manual-modelSetup-evidence-manual-acceptance-not-true"
 VALIDATION_EMULATOR_BAD_SHA="$TMP_DIR/release-validation-emulator-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_EMULATOR_BAD_SHA" <<'PY'
 import json

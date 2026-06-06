@@ -248,6 +248,10 @@ release ticket or PR.
   with `status=passed`, a summary, an evidence file path that exists in the RC
   artifact bundle, matching `evidenceSha256`, owner, and non-future date; a
   bare string `passed` is not acceptable evidence.
+- [ ] Every `manualAcceptance` evidence file is a formal manual acceptance
+  report with `status=passed`, `target=manual-acceptance`, a `manualKey` that
+  matches the record key, and `manualAcceptance=true`; lightweight status-only
+  manual evidence files are not accepted.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.

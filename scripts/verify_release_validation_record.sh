@@ -131,6 +131,8 @@ def validate_evidence_record(section, key, value):
         failures.append(f"{prefix}-evidence-file-missing")
     else:
         validate_file_sha(f"{prefix}-evidence", evidence_path, value.get("evidenceSha256", ""))
+        if section == "manual":
+            validate_manual_evidence(key, evidence_path)
         if section == "flow":
             props = properties_for(evidence_path)
             if props.get("target") == "release-flow-matrix-candidate-evidence" or \
@@ -179,6 +181,18 @@ def validate_performance_evidence(key, evidence_path):
         failures.append(f"{prefix}-baseline-file-missing")
     elif not Path(baseline_file).is_file():
         failures.append(f"{prefix}-baseline-file-read-failed")
+
+def validate_manual_evidence(key, evidence_path):
+    prefix = f"manual-{key}-evidence"
+    props = properties_for(evidence_path)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-status-not-passed")
+    if props.get("target") != "manual-acceptance":
+        failures.append(f"{prefix}-target-invalid")
+    if props.get("manualKey") != key:
+        failures.append(f"{prefix}-key-mismatch")
+    if props.get("manualAcceptance", "").lower() not in {"true", "1", "yes"}:
+        failures.append(f"{prefix}-manual-acceptance-not-true")
 
 def count_android_tests():
     count = 0
