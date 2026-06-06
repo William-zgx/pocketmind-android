@@ -59,6 +59,10 @@ items below.
   environment reports API 36 ready and API 28/32/33/34 missing system images
   and AVDs in
   `build/verification/emulator-api-matrix-readiness.properties`.
+- API matrix environment preparation is now machine-readable. Run
+  `scripts/prepare_emulator_api_matrix.sh` to produce a dry-run report with the
+  exact SDK packages and AVD creation commands; rerun with `APPLY=1` only after
+  approving those installs.
 - API 36 has also passed through the new matrix runner:
   `build/verification/regression-emulator-api36-no-implicit-image-ocr/regression-emulator-api-matrix.properties`
   records `status=passed`, `passedApis=36`, and links the nested API 36
@@ -97,8 +101,10 @@ items below.
 - Prepare API 28/32/33/34 arm64 emulator system images and AVDs before claiming
   API matrix coverage. `scripts/check_emulator_api_matrix.sh` records missing
   packages and AVDs but does not install SDK packages or create AVDs by itself.
-  After those AVDs exist, run `scripts/regression_emulator_api_matrix.sh` to
-  generate the matrix-level report and nested per-API regression reports.
+  Use `scripts/prepare_emulator_api_matrix.sh` for a dry-run install/create
+  plan, then rerun it with `APPLY=1` once approved. After those AVDs exist, run
+  `scripts/regression_emulator_api_matrix.sh` to generate the matrix-level
+  report and nested per-API regression reports.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in

@@ -226,6 +226,10 @@ release ticket or PR.
   regression. Attach `emulator-api-matrix-readiness.properties`; if it fails,
   the report must list missing system-image APIs and missing AVD APIs instead
   of silently skipping matrix coverage.
+- [ ] If API matrix readiness fails, run
+  `scripts/prepare_emulator_api_matrix.sh` first in dry-run mode and attach its
+  report. Only run `APPLY=1 scripts/prepare_emulator_api_matrix.sh` after
+  explicitly approving the SDK package install and AVD creation list.
 - [ ] Once API matrix AVDs are prepared,
   `scripts/regression_emulator_api_matrix.sh` passes for API 28/32/33/34/36.
   Attach the top-level `regression-emulator-api-matrix.properties` plus each

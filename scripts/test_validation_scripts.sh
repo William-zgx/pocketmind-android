@@ -268,13 +268,32 @@ create_fake_sdkmanager() {
   cat > "$path" <<'FAKE_SDKMANAGER'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_SDKMANAGER_LOG:-/dev/null}"
 if [[ "$*" == *"--list_installed"* ]]; then
   printf '%s\n' "${FAKE_SDKMANAGER_INSTALLED:-}"
   exit 0
 fi
-echo "unexpected sdkmanager command: $*" >&2
-exit 2
+echo "install complete"
 FAKE_SDKMANAGER
+  chmod +x "$path"
+}
+
+create_fake_avdmanager() {
+  local path="$1"
+  cat > "$path" <<'FAKE_AVDMANAGER'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_AVDMANAGER_LOG:-/dev/null}"
+case "$*" in
+  create\ avd\ *)
+    echo "AVD created"
+    ;;
+  *)
+    echo "unexpected avdmanager command: $*" >&2
+    exit 2
+    ;;
+esac
+FAKE_AVDMANAGER
   chmod +x "$path"
 }
 
@@ -408,6 +427,8 @@ grep -q 'scripts/regression_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator.sh in shell syntax checks"
 grep -q 'scripts/check_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include check_emulator_api_matrix.sh in shell syntax checks"
+grep -q 'scripts/prepare_emulator_api_matrix.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include prepare_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/regression_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
@@ -2061,9 +2082,13 @@ for manual_key in \
 done
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
+FAKE_AVDMANAGER="$TMP_DIR/fake-avdmanager"
 FAKE_MATRIX_REGRESSION="$TMP_DIR/fake-matrix-regression"
 FAKE_AVD_ROOT="$TMP_DIR/fake-avd-root"
+FAKE_SDKMANAGER_LOG="$TMP_DIR/fake-sdkmanager.log"
+FAKE_AVDMANAGER_LOG="$TMP_DIR/fake-avdmanager.log"
 create_fake_sdkmanager "$FAKE_SDKMANAGER"
+create_fake_avdmanager "$FAKE_AVDMANAGER"
 create_fake_matrix_regression "$FAKE_MATRIX_REGRESSION"
 mkdir -p "$FAKE_AVD_ROOT/api28.avd" "$FAKE_AVD_ROOT/api36.avd"
 cat > "$FAKE_AVD_ROOT/api28.avd/config.ini" <<'API28_AVD_CONFIG'
@@ -2092,6 +2117,53 @@ assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" 
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "target=emulator-api-matrix-readiness"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "installedSystemImageApis=28,36"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "availableAvdApis=28,36"
+rm -rf "$FAKE_AVD_ROOT/api32.avd"
+FAKE_SDKMANAGER_INSTALLED_PREPARE=$'system-images;android-36;google_apis;arm64-v8a | 1 | Fake\nplatforms;android-36 | 1 | Fake'
+: > "$FAKE_SDKMANAGER_LOG"
+: > "$FAKE_AVDMANAGER_LOG"
+expect_success \
+  "emulator api matrix prepare dry-run reports missing work without applying" \
+  env ANDROID_HOME="$FAKE_SDK" \
+  FAKE_SDKMANAGER_LOG="$FAKE_SDKMANAGER_LOG" \
+  FAKE_AVDMANAGER_LOG="$FAKE_AVDMANAGER_LOG" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED_PREPARE" \
+  scripts/prepare_emulator_api_matrix.sh \
+    --sdkmanager "$FAKE_SDKMANAGER" \
+    --avdmanager "$FAKE_AVDMANAGER" \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "32 36" \
+    --report "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "status=pending"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "reason=apply-required"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "missingSystemImageApis=32"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "missingAvdApis=32"
+assert_report_contains_text "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "platforms;android-32"
+assert_report_contains_text "$ARTIFACT_DIR/emulator-api-matrix-prepare-dry-run.properties" "system-images;android-32;google_apis;arm64-v8a"
+if grep -q 'system-images;android-32;google_apis;arm64-v8a' "$FAKE_SDKMANAGER_LOG"; then
+  fail "prepare dry-run must not install missing SDK packages"
+fi
+if [[ -s "$FAKE_AVDMANAGER_LOG" ]]; then
+  fail "prepare dry-run must not create AVDs"
+fi
+: > "$FAKE_SDKMANAGER_LOG"
+: > "$FAKE_AVDMANAGER_LOG"
+expect_success \
+  "emulator api matrix prepare applies missing packages and avds" \
+  env ANDROID_HOME="$FAKE_SDK" \
+  FAKE_SDKMANAGER_LOG="$FAKE_SDKMANAGER_LOG" \
+  FAKE_AVDMANAGER_LOG="$FAKE_AVDMANAGER_LOG" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED_PREPARE" \
+  APPLY=1 scripts/prepare_emulator_api_matrix.sh \
+    --sdkmanager "$FAKE_SDKMANAGER" \
+    --avdmanager "$FAKE_AVDMANAGER" \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "32 36" \
+    --report "$ARTIFACT_DIR/emulator-api-matrix-prepare-apply.properties"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-apply.properties" "status=passed"
+grep -q -- '--sdk_root=.*platforms;android-32.*system-images;android-32;google_apis;arm64-v8a' "$FAKE_SDKMANAGER_LOG" ||
+  fail "prepare apply must install missing API 32 platform and system image"
+grep -q -- 'create avd --force --name pocketmind_api32_arm64_v8a --package system-images;android-32;google_apis;arm64-v8a' "$FAKE_AVDMANAGER_LOG" ||
+  fail "prepare apply must create the missing API 32 arm64 AVD"
 rm -rf "$FAKE_AVD_ROOT/api28.avd"
 FAKE_SDKMANAGER_INSTALLED=$'system-images;android-36;google_apis;arm64-v8a | 1 | Fake'
 expect_failure \
