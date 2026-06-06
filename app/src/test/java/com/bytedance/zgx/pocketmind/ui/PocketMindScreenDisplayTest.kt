@@ -6,6 +6,8 @@ import com.bytedance.zgx.pocketmind.InferenceMode
 import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
 import com.bytedance.zgx.pocketmind.ModelHealth
 import com.bytedance.zgx.pocketmind.ModelHealthState
+import com.bytedance.zgx.pocketmind.MessagePrivacy
+import com.bytedance.zgx.pocketmind.PendingRemoteSendDisclosure
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
@@ -167,6 +169,33 @@ class PocketMindScreenDisplayTest {
         assertTrue(text.contains("保护：本地记忆、设备上下文、LocalOnly 历史"))
         assertTrue(text.contains("可删除：对话消息、Agent 轨迹、显式记忆"))
         assertTrue(text.contains("原文持久化：否"))
+    }
+
+    @Test
+    fun remoteSendDisclosureRowsNameDestinationAndProtectedData() {
+        val text = remoteSendDisclosureDisplayRows(
+            PendingRemoteSendDisclosure(
+                prompt = "不要展示密钥",
+                messagePrivacy = MessagePrivacy.RemoteEligible,
+                remoteHost = "api.example.com",
+                remoteModelName = "model-a",
+                remoteHistoryCount = 2,
+                localOnlyHistoryFilteredCount = 3,
+                imageAttachmentCount = 1,
+                protectedSourceCount = 3,
+                apiKeyConfigured = true,
+            ),
+        ).joinToString("\n")
+
+        assertTrue(text.contains("api.example.com"))
+        assertTrue(text.contains("model-a"))
+        assertTrue(text.contains("可远程发送历史 2 条"))
+        assertTrue(text.contains("图片 1 张"))
+        assertTrue(text.contains("LocalOnly 历史 3 条"))
+        assertTrue(text.contains("本地记忆"))
+        assertTrue(text.contains("设备上下文"))
+        assertTrue(text.contains("已配置 API Key"))
+        assertTrue(!text.contains("不要展示密钥"))
     }
 
     @Test

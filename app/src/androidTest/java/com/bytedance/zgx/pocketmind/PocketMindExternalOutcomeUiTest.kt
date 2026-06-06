@@ -68,6 +68,8 @@ class PocketMindExternalOutcomeUiTest {
                         recorded = currentPending to outcome
                     },
                     onOpenRecoveryAction = {},
+                    onConfirmRemoteSendDisclosure = {},
+                    onDismissRemoteSendDisclosure = {},
                     onSendMessage = {},
                     onSendPendingSharedInput = {},
                     onClearPendingSharedInput = {},

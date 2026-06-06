@@ -63,7 +63,7 @@ class MainActivityComprehensiveTest {
             )
             server.assertNoPost()
 
-            sendPrompt("用一句话介绍端侧 AI")
+            sendPrompt("用一句话介绍端侧 AI", server)
             composeRule.waitForText("模拟器回答")
             val firstRequest = server.awaitPost()
             assertTrue(firstRequest.path.endsWith("/v1/chat/completions"))
@@ -74,7 +74,7 @@ class MainActivityComprehensiveTest {
             assertFalse(firstRequest.body.contains("本地记忆已关闭"))
             assertFalse(firstRequest.body.contains("本地记忆暂不可用"))
 
-            sendPrompt("蓝色机器人偏好是什么")
+            sendPrompt("蓝色机器人偏好是什么", server)
             val memoryRequest = server.awaitPost()
             assertFalse(memoryRequest.body.contains("本地记忆："))
             assertFalse(memoryRequest.body.contains("设备上下文："))
@@ -85,12 +85,12 @@ class MainActivityComprehensiveTest {
             assertFalse(memoryRequest.body.contains("本地记忆暂不可用"))
             composeRule.waitForText("记忆回答")
 
-            sendPrompt("打开 Wi-Fi 设置")
+            sendPrompt("打开 Wi-Fi 设置", server)
             composeRule.waitForText("规则回退", substring = true)
             composeRule.waitForText("打开 Wi-Fi 设置")
             composeRule.onNodeWithTag("action_dismiss_button").performClick()
 
-            sendPrompt("请慢慢回答")
+            sendPrompt("请慢慢回答", server)
             composeRule.waitForText("慢")
             val streamingRequest = server.awaitPost()
             assertFalse(streamingRequest.body.contains("请记住"))
@@ -113,7 +113,7 @@ class MainActivityComprehensiveTest {
             dismissFirstRunSetupIfPresent()
             configureRemoteModel(server.baseUrl)
 
-            sendPrompt(REMOTE_TOOL_CALL_PROMPT)
+            sendPrompt(REMOTE_TOOL_CALL_PROMPT, server)
             val request = server.awaitPost()
             assertTrue(request.path.endsWith("/v1/chat/completions"))
             assertRemoteToolRequestBody(request)
@@ -161,11 +161,23 @@ class MainActivityComprehensiveTest {
         closeSheet("model_manager_sheet")
     }
 
-    private fun sendPrompt(prompt: String) {
+    private fun sendPrompt(prompt: String, server: LocalOpenAiServer? = null) {
         composeRule.onNodeWithTag("composer_input")
             .performTextClearance()
         composeRule.onNodeWithTag("composer_input").performTextInput(prompt)
         composeRule.onNodeWithTag("composer_send_button").performClick()
+        confirmRemoteSendIfPresent(server)
+    }
+
+    private fun confirmRemoteSendIfPresent(server: LocalOpenAiServer? = null) {
+        val needsConfirmation = composeRule.waitForOptionalTag(
+            tag = "remote_send_disclosure_sheet",
+            timeoutMillis = 1_500,
+        )
+        if (!needsConfirmation) return
+        server?.assertNoPost(timeoutMillis = 250)
+        composeRule.onNodeWithTag("remote_send_confirm_button").performClick()
+        composeRule.waitForTagGone("remote_send_disclosure_sheet", timeoutMillis = 5_000)
     }
 
     private fun createAndSwitchSessions() {
@@ -305,6 +317,12 @@ class MainActivityComprehensiveTest {
     private fun ComposeTestRule.waitForOptionalText(text: String, timeoutMillis: Long): Boolean =
         runCatching {
             waitForText(text, timeoutMillis = timeoutMillis)
+            true
+        }.getOrDefault(false)
+
+    private fun ComposeTestRule.waitForOptionalTag(tag: String, timeoutMillis: Long): Boolean =
+        runCatching {
+            waitForTag(tag, timeoutMillis = timeoutMillis)
             true
         }.getOrDefault(false)
 

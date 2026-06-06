@@ -23,6 +23,50 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Remote send disclosure gate
+
+本轮覆盖项：
+
+- 远程模型模式下，用户主动发送文本或远程视觉图片前必须先展示发送预览；确认前不调用
+  `RemoteChatRuntime`，也不会对 mock OpenAI-compatible server 发出 POST。
+- 预览显示远程 host、模型名、可远程发送历史数量、图片数量、LocalOnly 历史过滤数量、
+  本地记忆/设备上下文/非图片附件保护说明和 API Key 配置状态；不展示 API Key 原文。
+- 远程图片分享确认后保留 `ChatImageAttachment`，直接交给支持视觉的远程模型；不做强制
+  OCR 兜底。
+- public evidence 工具结果续写也复用同一个远程发送预览；确认前不会进行第二次远程模型
+  请求，取消会把工具结果续写标记为未发送。
+- 远程模式下的动作/权限 UI 测试已适配新的远程发送确认层，继续验证本地工具确认页。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteSendDisclosureBlocksRuntimeUntilConfirmed' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteImageDisclosureKeepsAttachmentForConfirmedVisionSend' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remotePublicEvidenceToolCallBatchExecutesAndContinuesWithModel' \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest.remoteSendDisclosureRowsNameDestinationAndProtectedData'
+scripts/verify_local.sh
+ARTIFACT_DIR=build/verification/remote-send-disclosure-emulator-rerun \
+  AVD_NAME=pocketmind_api36_arm64 \
+  EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+  BOOT_TIMEOUT_SECONDS=360 \
+  scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：目标 JVM 测试覆盖文本发送确认、图片附件确认、public evidence 工具结果续写确认和
+  远程发送预览文案。
+- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 通过：API 36 arm64 emulator regression，
+  `build/verification/remote-send-disclosure-emulator-rerun/regression-emulator.properties`
+  包含 `status=passed`、`actual_android_test_count=30`、`avd=pocketmind_api36_arm64`、
+  `abi=arm64-v8a`。
+- 首次尝试 `build/verification/remote-send-disclosure-emulator/regression-emulator.properties`
+  未进入测试，`failedTarget=emulator-verification`，原因是脚本等待单一授权 emulator 时
+  当前 emulator 掉线；已用显式 `AVD_NAME=pocketmind_api36_arm64` 重跑并通过。
+
 ## 2026-06-07 Product positioning and CI emulator regression wiring
 
 本轮覆盖项：

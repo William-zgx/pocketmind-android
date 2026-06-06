@@ -86,6 +86,7 @@ import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.EXTERNAL_OUTCOME_CONFIRMED_SUMMARY_PREFIX
 import com.bytedance.zgx.pocketmind.tool.UNVERIFIED_EXTERNAL_LAUNCH_SUMMARY_PREFIX
 import java.io.File
+import java.io.IOException
 import java.util.Collections
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CoroutineDispatcher
@@ -145,6 +146,114 @@ class PocketMindViewModelTest {
             sessionStore.messages.map { it.privacy },
         )
         assertTrue(sessionStore.messages.first().text.contains("私密输入"))
+    }
+
+    @Test
+    fun remoteSendDisclosureBlocksRuntimeUntilConfirmed() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        val disclosure = requireNotNull(viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertEquals("普通远程问题", disclosure.prompt)
+        assertEquals(MessagePrivacy.RemoteEligible, disclosure.messagePrivacy)
+        assertEquals("api.example.com", disclosure.remoteHost)
+        assertEquals("model-a", disclosure.remoteModelName)
+        assertEquals(0, disclosure.remoteHistoryCount)
+        assertEquals(0, disclosure.imageAttachmentCount)
+        assertTrue(remoteRuntime.calls.isEmpty())
+
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertEquals("普通远程问题", remoteRuntime.calls.single().prompt)
+    }
+
+    @Test
+    fun remoteSendDisclosureCancelKeepsRuntimeIdle() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.pendingRemoteSendDisclosure != null)
+
+        viewModel.dismissRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals("已取消远程发送", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun remoteImageDisclosureKeepsAttachmentForConfirmedVisionSend() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.stageSharedInput(
+            SharedInput(
+                text = "",
+                attachments = listOf(
+                    SharedAttachment(
+                        kind = SharedAttachmentKind.Image,
+                        mimeType = "image/png",
+                        displayName = "screen.png",
+                        sizeBytes = 12L,
+                        imageAttachment = ChatImageAttachment(
+                            mimeType = "image/png",
+                            dataUrl = "data:image/png;base64,AA==",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.sendPendingSharedInput("描述这张图")
+        advanceUntilIdle()
+
+        val disclosure = requireNotNull(viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertEquals(1, disclosure.imageAttachmentCount)
+        assertEquals("data:image/png;base64,AA==", disclosure.imageAttachments.single().dataUrl)
+        assertTrue(remoteRuntime.calls.isEmpty())
+
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        val call = remoteRuntime.calls.single()
+        assertTrue(call.prompt.contains("描述这张图"))
+        assertEquals("data:image/png;base64,AA==", call.imageAttachments.single().dataUrl)
     }
 
     @Test
@@ -3080,11 +3189,23 @@ class PocketMindViewModelTest {
             assistantRouter = assistantRouter,
             actionExecutor = executor,
             modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+            requireRemoteSendDisclosure = true,
         )
         viewModel.restoreStartupState(skipModelRuntimeWork = true)
         advanceUntilIdle()
 
         viewModel.sendMessage("北京和上海今天温差多少？")
+        advanceUntilIdle()
+
+        assertEquals("远程发送待确认", viewModel.uiState.value.statusText)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals("远程续写待确认", viewModel.uiState.value.statusText)
+        assertEquals(1, remoteRuntime.calls.size)
+        assertEquals("北京和上海今天温差多少？", remoteRuntime.calls.single().prompt)
+        viewModel.confirmRemoteSendDisclosure()
         advanceUntilIdle()
 
         assertEquals(null, viewModel.uiState.value.pendingConfirmation)
@@ -3405,11 +3526,17 @@ class PocketMindViewModelTest {
             assistantRouter = assistantRouter,
             actionExecutor = executor,
             modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+            requireRemoteSendDisclosure = true,
         )
         viewModel.restoreStartupState(skipModelRuntimeWork = true)
         advanceUntilIdle()
 
         viewModel.sendMessage("执行远程工具")
+        advanceUntilIdle()
+
+        assertEquals("远程发送待确认", viewModel.uiState.value.statusText)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        viewModel.confirmRemoteSendDisclosure()
         advanceUntilIdle()
 
         assertEquals(null, viewModel.uiState.value.pendingConfirmation)
@@ -3428,6 +3555,52 @@ class PocketMindViewModelTest {
         assertFalse(sessionStore.messages.last().text.contains("动作草稿"))
         assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
         assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains(parseError))
+    }
+
+    @Test
+    fun remoteNetworkFailureShowsReadableFailureAndFailsTrace() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-network-failure",
+                promptForModel = "普通远程问题",
+                memoryHits = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime(failure = IOException())
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertEquals("远程发送待确认", viewModel.uiState.value.statusText)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        val readableFailure = "远程模型网络连接失败，请检查网络或远程模型配置后重试"
+        assertEquals("远程生成失败", viewModel.uiState.value.statusText)
+        assertEquals(1, remoteRuntime.calls.size)
+        assertEquals(1, assistantRouter.failModelGenerationCallCount)
+        assertEquals("run-remote-network-failure", assistantRouter.lastFailedModelRunId)
+        assertEquals(readableFailure, assistantRouter.lastFailedModelReason)
+        assertEquals(AgentRunState.Failed, viewModel.uiState.value.agentTraceRuns.single().state)
+        assertTrue(viewModel.uiState.value.agentTraceRuns.single().steps.single().summary.contains(readableFailure))
+        assertTrue(sessionStore.messages.last().text.contains(readableFailure))
+        assertFalse(sessionStore.messages.last().text.contains("IOException"))
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertEquals(readableFailure, viewModel.uiState.value.modelHealth.failureReason)
     }
 
     @Test
@@ -5972,6 +6145,7 @@ class PocketMindViewModelTest {
         toolAuditLog: ToolAuditLog = FakeToolAuditLog(),
         assistantRouter: AssistantRouter = FakeAssistantRouter(),
         ioDispatcher: CoroutineDispatcher = dispatcher,
+        requireRemoteSendDisclosure: Boolean = false,
         actionExecutor: ToolExecutor = object : ToolExecutor {
             override fun execute(request: ToolRequest): ToolResult =
                 ToolResult(
@@ -5998,6 +6172,7 @@ class PocketMindViewModelTest {
             assistantOrchestrator = assistantRouter,
             isArm64DeviceProvider = { true },
             ioDispatcher = ioDispatcher,
+            requireRemoteSendDisclosure = requireRemoteSendDisclosure,
         )
 
     private fun assertRemoteProtectedSharedInput(
@@ -6071,6 +6246,7 @@ class PocketMindViewModelTest {
     private class RecordingRemoteChatRuntime(
         private val events: List<RemoteChatEvent> = listOf(RemoteChatEvent.TextDelta("远程回复")),
         private val eventBatches: List<List<RemoteChatEvent>> = emptyList(),
+        private val failure: Throwable? = null,
     ) : RemoteChatRuntime {
         val calls = mutableListOf<RemoteCall>()
 
@@ -6082,6 +6258,9 @@ class PocketMindViewModelTest {
             imageAttachments: List<ChatImageAttachment>,
         ): Flow<String> {
             calls += RemoteCall(prompt, history, imageAttachments = imageAttachments)
+            failure?.let { throwable ->
+                return flow { throw throwable }
+            }
             return flowOf("远程回复")
         }
 
@@ -6095,6 +6274,9 @@ class PocketMindViewModelTest {
         ): Flow<RemoteChatEvent> {
             val callIndex = calls.size
             calls += RemoteCall(prompt, history, tools, imageAttachments)
+            failure?.let { throwable ->
+                return flow { throw throwable }
+            }
             val eventsForCall = eventBatches.getOrNull(callIndex) ?: events
             return flowOf(*eventsForCall.toTypedArray())
         }

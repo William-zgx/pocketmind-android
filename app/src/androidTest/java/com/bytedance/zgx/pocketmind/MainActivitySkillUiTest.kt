@@ -122,6 +122,14 @@ class MainActivitySkillUiTest {
         onNodeWithTag("composer_input").performTextClearance()
         onNodeWithTag("composer_input").performTextInput(prompt)
         onNodeWithTag("composer_send_button").performClick()
+        confirmRemoteSendIfPresent()
+    }
+
+    private fun ComposeTestRule.confirmRemoteSendIfPresent() {
+        val needsConfirmation = waitForOptionalTag("remote_send_disclosure_sheet", timeoutMillis = 1_500)
+        if (!needsConfirmation) return
+        onNodeWithTag("remote_send_confirm_button").performClick()
+        waitForTagGone("remote_send_disclosure_sheet")
     }
 
     private fun ComposeTestRule.waitForTag(tag: String, timeoutMillis: Long = 5_000) {
@@ -135,6 +143,12 @@ class MainActivitySkillUiTest {
             onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
         }
     }
+
+    private fun ComposeTestRule.waitForOptionalTag(tag: String, timeoutMillis: Long): Boolean =
+        runCatching {
+            waitForTag(tag, timeoutMillis = timeoutMillis)
+            true
+        }.getOrDefault(false)
 
     private fun ComposeTestRule.assertTagAbsent(tag: String, timeoutMillis: Long = 5_000) {
         waitUntil(timeoutMillis = timeoutMillis) {

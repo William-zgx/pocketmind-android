@@ -126,6 +126,7 @@ import com.bytedance.zgx.pocketmind.ModelCapability
 import com.bytedance.zgx.pocketmind.ModelHealthState
 import com.bytedance.zgx.pocketmind.PendingAgentConfirmation
 import com.bytedance.zgx.pocketmind.PendingExternalOutcomeConfirmation
+import com.bytedance.zgx.pocketmind.PendingRemoteSendDisclosure
 import com.bytedance.zgx.pocketmind.RecommendedModel
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
@@ -190,6 +191,8 @@ fun PocketMindScreen(
     onDismissAgentConfirmation: (PendingAgentConfirmation?) -> Unit,
     onRecordExternalOutcome: (PendingExternalOutcomeConfirmation, AgentExternalOutcome) -> Unit,
     onOpenRecoveryAction: (AgentRecoveryAction) -> Unit,
+    onConfirmRemoteSendDisclosure: () -> Unit,
+    onDismissRemoteSendDisclosure: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSendPendingSharedInput: (String) -> Unit,
     onClearPendingSharedInput: (Long) -> Unit,
@@ -398,6 +401,19 @@ fun PocketMindScreen(
                         onCancelBackgroundTask = onCancelBackgroundTask,
                         onSetPeriodicCheckPolicy = onSetPeriodicCheckPolicy,
                         onDisablePeriodicCheckPolicy = onDisablePeriodicCheckPolicy,
+                    )
+                }
+            }
+
+            state.pendingRemoteSendDisclosure?.let { disclosure ->
+                ModalBottomSheet(
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    onDismissRequest = onDismissRemoteSendDisclosure,
+                ) {
+                    RemoteSendDisclosureSheet(
+                        disclosure = disclosure,
+                        onConfirm = onConfirmRemoteSendDisclosure,
+                        onDismiss = onDismissRemoteSendDisclosure,
                     )
                 }
             }
@@ -987,6 +1003,85 @@ private fun QuickModelSetup(
         }
     }
 }
+
+@Composable
+private fun RemoteSendDisclosureSheet(
+    disclosure: PendingRemoteSendDisclosure,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp)
+            .testTag("remote_send_disclosure_sheet"),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        SectionTitle(
+            text = "即将发送到远程模型",
+            subtitle = "确认后才会把本次输入交给远程模型；API Key 只作为请求凭据使用，不在界面显示。",
+        )
+        RemoteSendDisclosureRows(disclosure)
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("remote_send_confirm_button"),
+            onClick = onConfirm,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Cloud,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("确认发送")
+        }
+        OutlinedButton(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("remote_send_dismiss_button"),
+            onClick = onDismiss,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("取消")
+        }
+    }
+}
+
+@Composable
+private fun RemoteSendDisclosureRows(disclosure: PendingRemoteSendDisclosure) {
+    val rows = remoteSendDisclosureDisplayRows(disclosure)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("remote_send_disclosure_rows"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        rows.forEach { row ->
+            Text(
+                text = row,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+internal fun remoteSendDisclosureDisplayRows(disclosure: PendingRemoteSendDisclosure): List<String> =
+    listOf(
+        "远程地址：${disclosure.remoteHost}",
+        "模型：${disclosure.remoteModelName}",
+        "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张",
+        "不会发送：LocalOnly 历史 ${disclosure.localOnlyHistoryFilteredCount} 条、本地记忆、设备上下文、非图片附件",
+        "凭据状态：${if (disclosure.apiKeyConfigured) "已配置 API Key" else "未配置 API Key"}",
+    )
 
 @Composable
 private fun ActionDraftSheet(

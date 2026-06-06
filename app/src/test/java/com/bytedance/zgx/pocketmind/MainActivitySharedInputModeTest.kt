@@ -11,6 +11,7 @@ class MainActivitySharedInputModeTest {
             SharedInputReadMode.LocalPrompt,
             sharedInputReadModeFor(
                 inferenceMode = InferenceMode.Local,
+                remoteConfigured = false,
                 remoteSupportsVisionInput = false,
             ),
         )
@@ -18,6 +19,7 @@ class MainActivitySharedInputModeTest {
             SharedInputReadMode.RemoteVision,
             sharedInputReadModeFor(
                 inferenceMode = InferenceMode.Remote,
+                remoteConfigured = true,
                 remoteSupportsVisionInput = true,
             ),
         )
@@ -25,7 +27,16 @@ class MainActivitySharedInputModeTest {
             SharedInputReadMode.RemoteVisionUnsupportedSignal,
             sharedInputReadModeFor(
                 inferenceMode = InferenceMode.Remote,
+                remoteConfigured = true,
                 remoteSupportsVisionInput = false,
+            ),
+        )
+        assertEquals(
+            SharedInputReadMode.RemoteVisionUnsupportedSignal,
+            sharedInputReadModeFor(
+                inferenceMode = InferenceMode.Remote,
+                remoteConfigured = false,
+                remoteSupportsVisionInput = true,
             ),
         )
     }

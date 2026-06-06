@@ -178,6 +178,19 @@ data class PendingAgentConfirmation(
     val fallbackReason: String?,
 )
 
+data class PendingRemoteSendDisclosure(
+    val prompt: String,
+    val messagePrivacy: MessagePrivacy,
+    val remoteHost: String,
+    val remoteModelName: String,
+    val remoteHistoryCount: Int,
+    val localOnlyHistoryFilteredCount: Int,
+    val imageAttachmentCount: Int,
+    val protectedSourceCount: Int,
+    val apiKeyConfigured: Boolean,
+    val imageAttachments: List<ChatImageAttachment> = emptyList(),
+)
+
 data class PendingExternalOutcomeConfirmation(
     val runId: String,
     val requestId: String,
@@ -228,6 +241,7 @@ data class ChatUiState(
     val auditEvents: List<AuditEventSummary> = emptyList(),
     val agentTraceRuns: List<AgentTraceRunUiSummary> = emptyList(),
     val pendingConfirmation: PendingAgentConfirmation? = null,
+    val pendingRemoteSendDisclosure: PendingRemoteSendDisclosure? = null,
     val pendingExternalOutcome: PendingExternalOutcomeConfirmation? = null,
     val latestRecoveryAction: AgentRecoveryAction? = null,
     val inferenceMode: InferenceMode = InferenceMode.Local,

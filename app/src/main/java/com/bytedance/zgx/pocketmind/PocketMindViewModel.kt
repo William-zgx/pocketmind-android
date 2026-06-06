@@ -81,6 +81,8 @@ import com.bytedance.zgx.pocketmind.tool.isPublicEvidenceBatchEligible
 import com.bytedance.zgx.pocketmind.tool.isUnverifiedExternalLaunch
 import com.bytedance.zgx.pocketmind.tool.unverifiedExternalLaunchSummary
 import java.io.File
+import java.io.IOException
+import java.net.URI
 import java.util.ArrayDeque
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -109,6 +111,13 @@ private const val PUBLIC_EVIDENCE_BATCH_TOOL_NAME = "public_evidence_batch"
 private val VOICE_WAVEFORM_MULTIPLIERS =
     listOf(0.42f, 0.74f, 1f, 0.56f, 0.88f, 0.63f, 0.95f, 0.5f, 0.8f)
 
+private data class PendingRemoteContinuation(
+    val runId: String?,
+    val promptForModel: String,
+    val responsePrivacy: MessagePrivacy,
+    val remoteToolScope: RemoteToolScope,
+)
+
 class PocketMindViewModel(
     private val modelRepository: ModelRepositoryFacade,
     private val sessionRepository: SessionStore,
@@ -128,6 +137,7 @@ class PocketMindViewModel(
     private val assistantOrchestrator: AssistantRouter,
     private val isArm64DeviceProvider: () -> Boolean,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val requireRemoteSendDisclosure: Boolean = true,
 ) : ViewModel() {
     private val runtimeLock = Mutex()
     private var generationJob: Job? = null
@@ -141,6 +151,7 @@ class PocketMindViewModel(
     private var startupRestored = false
     private var nextVoiceInputDraftId = 0L
     private var nextSharedInputDraftId = 0L
+    private var pendingRemoteContinuation: PendingRemoteContinuation? = null
     private var deviceContextAuthorizationSnapshot = DeviceContextAuthorizationSnapshot()
     private val toolRegistry = ToolRegistry()
     private val outboundSafetyPolicy = SafetyPolicy()
@@ -743,6 +754,7 @@ class PocketMindViewModel(
 
     fun selectInferenceMode(mode: InferenceMode) {
         if (_uiState.value.isBusy || _uiState.value.inferenceMode == mode) return
+        pendingRemoteContinuation = null
         remoteModelRepository.saveMode(mode)
         if (mode == InferenceMode.Remote) {
             runtime.close()
@@ -753,6 +765,7 @@ class PocketMindViewModel(
         _uiState.update {
             it.copy(
                 inferenceMode = InferenceMode.Local,
+                pendingRemoteSendDisclosure = null,
                 isReady = runtime.isLoaded,
                 statusText = if (runtime.isLoaded) {
                     "就绪 · ${it.backend.label()}"
@@ -780,11 +793,15 @@ class PocketMindViewModel(
 
     fun updateRemoteModelConfig(config: RemoteModelConfig) {
         if (_uiState.value.isBusy) return
+        pendingRemoteContinuation = null
         remoteModelRepository.saveConfig(config)
             .fold(
                 onSuccess = { normalized ->
                     _uiState.update {
-                        it.copy(remoteModelConfig = normalized)
+                        it.copy(
+                            remoteModelConfig = normalized,
+                            pendingRemoteSendDisclosure = null,
+                        )
                     }
                     if (_uiState.value.inferenceMode == InferenceMode.Remote) {
                         updateRemoteReadiness("远程模型")
@@ -951,6 +968,7 @@ class PocketMindViewModel(
 
     fun createNewSession() {
         if (_uiState.value.isBusy) return
+        pendingRemoteContinuation = null
         val messages = sessionRepository.createNewSession()
         val activeSessionId = sessionRepository.activeSessionId
         val restoreGeneration = nextSessionRestoreGeneration()
@@ -960,6 +978,7 @@ class PocketMindViewModel(
                 activeSessionId = activeSessionId,
                 messages = messages,
                 pendingConfirmation = null,
+                pendingRemoteSendDisclosure = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
@@ -981,6 +1000,7 @@ class PocketMindViewModel(
 
     fun selectSession(sessionId: String) {
         if (_uiState.value.isBusy || _uiState.value.activeSessionId == sessionId) return
+        pendingRemoteContinuation = null
         val messages = sessionRepository.selectSession(sessionId) ?: return
         val activeSessionId = sessionRepository.activeSessionId
         val restoreGeneration = nextSessionRestoreGeneration()
@@ -989,6 +1009,7 @@ class PocketMindViewModel(
                 activeSessionId = activeSessionId,
                 messages = messages,
                 pendingConfirmation = null,
+                pendingRemoteSendDisclosure = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
@@ -1010,6 +1031,7 @@ class PocketMindViewModel(
 
     fun deleteActiveSession() {
         if (_uiState.value.isBusy) return
+        pendingRemoteContinuation = null
         val deletedSessionId = sessionRepository.activeSessionId
         val messages = sessionRepository.deleteActiveSession() ?: return
         val activeSessionId = sessionRepository.activeSessionId
@@ -1021,6 +1043,7 @@ class PocketMindViewModel(
                 activeSessionId = activeSessionId,
                 messages = messages,
                 pendingConfirmation = null,
+                pendingRemoteSendDisclosure = null,
                 pendingExternalOutcome = null,
                 latestRecoveryAction = null,
                 agentTraceRuns = loadAgentTraceRuns(),
@@ -1052,11 +1075,21 @@ class PocketMindViewModel(
         prompt: String,
         explicitMessagePrivacy: MessagePrivacy?,
         imageAttachments: List<ChatImageAttachment> = emptyList(),
+        remoteSendConfirmed: Boolean = false,
     ) {
         val trimmed = prompt.trim()
         if (trimmed.isNotEmpty() && _uiState.value.pendingConfirmation != null) {
             _uiState.update {
                 it.copy(statusText = "请先确认或取消待执行动作")
+            }
+            return
+        }
+        if (trimmed.isNotEmpty() &&
+            _uiState.value.pendingRemoteSendDisclosure != null &&
+            !remoteSendConfirmed
+        ) {
+            _uiState.update {
+                it.copy(statusText = "请先确认或取消远程发送")
             }
             return
         }
@@ -1149,10 +1182,34 @@ class PocketMindViewModel(
             }
             return
         }
+        if (useRemoteModel &&
+            effectiveMessagePrivacy == MessagePrivacy.RemoteEligible &&
+            remoteConfig.isConfigured &&
+            requireRemoteSendDisclosure &&
+            !remoteSendConfirmed
+        ) {
+            _uiState.update {
+                it.copy(
+                    pendingRemoteSendDisclosure = buildPendingRemoteSendDisclosure(
+                        prompt = trimmed,
+                        messagePrivacy = effectiveMessagePrivacy,
+                        remoteConfig = remoteConfig,
+                        remoteHistory = remoteHistory,
+                        imageAttachments = imageAttachments,
+                        stateBeforeSend = stateBeforeSend,
+                    ),
+                    pendingExternalOutcome = null,
+                    latestRecoveryAction = null,
+                    statusText = "远程发送待确认",
+                )
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 isBusy = true,
                 isGenerating = false,
+                pendingRemoteSendDisclosure = null,
                 latestRecoveryAction = null,
                 pendingExternalOutcome = null,
                 statusText = "处理中",
@@ -1608,7 +1665,7 @@ class PocketMindViewModel(
                 }
                 throw cancellation
             } catch (throwable: Throwable) {
-                val errorMessage = throwable.cleanMessage()
+                val errorMessage = throwable.generationFailureMessage(useRemoteModel)
                 activeModelRunId?.let { runId ->
                     assistantOrchestrator.failModelGeneration(runId, errorMessage)
                 }
@@ -1641,6 +1698,64 @@ class PocketMindViewModel(
             if (generationJob == job) {
                 generationJob = null
                 activeGenerationRunId = null
+            }
+        }
+    }
+
+    fun confirmRemoteSendDisclosure() {
+        val pending = _uiState.value.pendingRemoteSendDisclosure ?: return
+        val continuation = pendingRemoteContinuation
+        _uiState.update {
+            if (it.pendingRemoteSendDisclosure == pending) {
+                it.copy(
+                    pendingRemoteSendDisclosure = null,
+                    statusText = "处理中",
+                )
+            } else {
+                it
+            }
+        }
+        if (continuation != null) {
+            pendingRemoteContinuation = null
+            continueAfterToolObservation(
+                runId = continuation.runId,
+                promptForModel = continuation.promptForModel,
+                responsePrivacy = continuation.responsePrivacy,
+                remoteToolScope = continuation.remoteToolScope,
+                remoteSendConfirmed = true,
+            )
+            return
+        }
+        sendMessageInternal(
+            prompt = pending.prompt,
+            explicitMessagePrivacy = pending.messagePrivacy,
+            imageAttachments = pending.imageAttachments,
+            remoteSendConfirmed = true,
+        )
+    }
+
+    fun dismissRemoteSendDisclosure() {
+        val continuation = pendingRemoteContinuation
+        pendingRemoteContinuation = null
+        if (continuation != null) {
+            val reason = "用户取消远程工具结果续写，工具结果未发送到远程模型。"
+            continuation.runId?.let { runId ->
+                assistantOrchestrator.failModelGeneration(runId, reason)
+            }
+            _uiState.updateLastAssistantLocalOnly(reason)
+            persistActiveSessionFromUi()
+        }
+        _uiState.update {
+            if (it.pendingRemoteSendDisclosure != null) {
+                it.copy(
+                    pendingRemoteSendDisclosure = null,
+                    isBusy = false,
+                    isGenerating = false,
+                    agentTraceRuns = loadAgentTraceRuns(),
+                    statusText = "已取消远程发送",
+                )
+            } else {
+                it
             }
         }
     }
@@ -2563,11 +2678,41 @@ class PocketMindViewModel(
         promptForModel: String,
         responsePrivacy: MessagePrivacy,
         remoteToolScope: RemoteToolScope,
+        remoteSendConfirmed: Boolean = false,
     ) {
         val stateAtStart = _uiState.value
         val useRemoteModel = stateAtStart.inferenceMode == InferenceMode.Remote
         val remoteConfig = stateAtStart.remoteModelConfig
         val remoteHistory = remoteHistoryForRemoteSend(stateAtStart.messages.dropLast(1))
+        if (useRemoteModel &&
+            responsePrivacy == MessagePrivacy.RemoteEligible &&
+            remoteConfig.isConfigured &&
+            requireRemoteSendDisclosure &&
+            !remoteSendConfirmed
+        ) {
+            pendingRemoteContinuation = PendingRemoteContinuation(
+                runId = runId,
+                promptForModel = promptForModel,
+                responsePrivacy = responsePrivacy,
+                remoteToolScope = remoteToolScope,
+            )
+            _uiState.update {
+                it.copy(
+                    pendingRemoteSendDisclosure = buildPendingRemoteSendDisclosure(
+                        prompt = promptForModel,
+                        messagePrivacy = responsePrivacy,
+                        remoteConfig = remoteConfig,
+                        remoteHistory = remoteHistory,
+                        imageAttachments = emptyList(),
+                        stateBeforeSend = stateAtStart,
+                    ),
+                    isBusy = false,
+                    isGenerating = false,
+                    statusText = "远程续写待确认",
+                )
+            }
+            return
+        }
         activeGenerationRunId = runId
         val job = viewModelScope.launch(ioDispatcher) {
             try {
@@ -2797,7 +2942,7 @@ class PocketMindViewModel(
                 finishStoppedGeneration()
                 throw cancellation
             } catch (throwable: Throwable) {
-                val errorMessage = throwable.cleanMessage()
+                val errorMessage = throwable.generationFailureMessage(useRemoteModel)
                 runId?.let { id ->
                     assistantOrchestrator.failModelGeneration(id, errorMessage)
                 }
@@ -2871,6 +3016,31 @@ class PocketMindViewModel(
             .filterNot { message ->
                 outboundSafetyPolicy.containsSensitivePersonalOrSecretContent(message.text)
             }
+
+    private fun buildPendingRemoteSendDisclosure(
+        prompt: String,
+        messagePrivacy: MessagePrivacy,
+        remoteConfig: RemoteModelConfig,
+        remoteHistory: List<ChatMessage>,
+        imageAttachments: List<ChatImageAttachment>,
+        stateBeforeSend: ChatUiState,
+    ): PendingRemoteSendDisclosure =
+        PendingRemoteSendDisclosure(
+            prompt = prompt,
+            messagePrivacy = messagePrivacy,
+            remoteHost = remoteConfig.destinationHostLabel(),
+            remoteModelName = remoteConfig.normalized().modelName.ifBlank { "未命名远程模型" },
+            remoteHistoryCount = remoteHistory.size,
+            localOnlyHistoryFilteredCount = stateBeforeSend.messages.count { message ->
+                message.privacy == MessagePrivacy.LocalOnly
+            },
+            imageAttachmentCount = imageAttachments.size,
+            protectedSourceCount = stateBeforeSend.messages.count { message ->
+                message.privacy == MessagePrivacy.LocalOnly
+            },
+            apiKeyConfigured = remoteConfig.apiKey.isNotBlank(),
+            imageAttachments = imageAttachments,
+        )
 
     private fun AgentObservationResult?.privacyForObservation(
         fallbackToolName: String? = null,
@@ -3404,9 +3574,11 @@ class PocketMindViewModel(
 
     private fun updateRemoteReadiness(prefix: String) {
         val config = _uiState.value.remoteModelConfig
+        pendingRemoteContinuation = null
         _uiState.update {
             it.copy(
                 inferenceMode = InferenceMode.Remote,
+                pendingRemoteSendDisclosure = null,
                 isBusy = false,
                 isDownloading = false,
                 isReady = config.isConfigured,
@@ -3937,6 +4109,19 @@ class PocketMindViewModel(
     private fun Throwable.cleanMessage(): String =
         message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName
 
+    private fun Throwable.generationFailureMessage(useRemoteModel: Boolean): String {
+        val cleanMessage = cleanMessage()
+        if (!useRemoteModel) return cleanMessage
+        return when (this) {
+            is IOException -> if (cleanMessage == this::class.java.simpleName) {
+                "远程模型网络连接失败，请检查网络或远程模型配置后重试"
+            } else {
+                "远程模型网络连接失败：$cleanMessage"
+            }
+            else -> cleanMessage
+        }
+    }
+
     private fun MutableStateFlow<ChatUiState>.updateLastAssistant(text: String) {
         update { state ->
             val updatedMessages = state.messages.toMutableList()
@@ -4279,6 +4464,15 @@ private fun remoteRouteBoundaryFailure(userInput: String, route: AssistantRoute.
 
         else -> null
     }
+
+private fun RemoteModelConfig.destinationHostLabel(): String {
+    val normalized = normalized()
+    val uri = runCatching { URI(normalized.baseUrl) }.getOrNull()
+    val host = uri?.host?.takeIf { it.isNotBlank() }
+        ?: normalized.baseUrl.ifBlank { "未配置" }
+    val port = uri?.port?.takeIf { it >= 0 }?.let { ":$it" }.orEmpty()
+    return "$host$port"
+}
 
 private fun ModelSelectionState.modelHealthForCurrentSelection(backend: BackendChoice): ModelHealth {
     val activeModel = installedModels.firstOrNull { model -> model.id == activeInstalledModelId }

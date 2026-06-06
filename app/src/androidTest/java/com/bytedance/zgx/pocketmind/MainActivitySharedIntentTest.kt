@@ -1,6 +1,11 @@
 package com.bytedance.zgx.pocketmind
 
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
+import android.util.Base64
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
@@ -11,6 +16,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bytedance.zgx.pocketmind.multimodal.NoOpImageTextExtractor
+import com.bytedance.zgx.pocketmind.multimodal.ShareIntentReader
+import com.bytedance.zgx.pocketmind.multimodal.SharedInputReadMode
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -72,6 +83,66 @@ class MainActivitySharedIntentTest {
         }
     }
 
+    @Test
+    fun actionSendImageIsStagedThroughActivityShareEntryWhenRemoteVisionIsEnabled() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        resetMainActivityPersistentState(
+            context,
+            inferenceMode = InferenceMode.Remote,
+            remoteModelConfig = ReadyRemoteModelConfig,
+        )
+
+        val imageUri = createSharedPngUri(context, "remote-vision-image.png")
+        val launchIntent = Intent(Intent.ACTION_SEND).apply {
+            setClass(context, MainActivity::class.java)
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, imageUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)
+        }
+
+        ActivityScenario.launch<MainActivity>(launchIntent).use {
+            composeRule.waitForTag("app_title")
+            composeRule.waitForTag("pending_shared_input_strip")
+
+            composeRule.onNodeWithTag("pending_shared_input_strip")
+                .assertIsDisplayed()
+            composeRule.onAllNodesWithText("图片", substring = true)
+                .onFirst()
+                .assertIsDisplayed()
+            composeRule.assertTextAbsent("data:image")
+        }
+    }
+
+    @Test
+    fun actionSendImageUnsupportedByRemoteVisionProducesProtectedSignalWithoutReadingImage() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fileName = "private-unsupported-image.png"
+        val imageUri = createSharedPngUri(context, fileName)
+        val sharedIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, imageUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val sharedInput = ShareIntentReader(
+            context = context,
+            imageTextExtractor = NoOpImageTextExtractor,
+        ).read(
+            sharedIntent,
+            mode = SharedInputReadMode.RemoteVisionUnsupportedSignal,
+        )
+
+        requireNotNull(sharedInput)
+        assertEquals(0, sharedInput.protectedSourceCount)
+        assertEquals(1, sharedInput.protectedImageSourceCount)
+        assertTrue(sharedInput.attachments.isEmpty())
+        assertTrue(sharedInput.text.isBlank())
+        assertFalse(sharedInput.toPrompt().contains(fileName))
+        assertFalse(sharedInput.toPrompt().contains(imageUri.toString()))
+        assertFalse(sharedInput.toPrompt().contains("data:image"))
+    }
+
     private fun ComposeTestRule.waitForTag(tag: String, timeoutMillis: Long = 5_000) {
         waitUntil(timeoutMillis = timeoutMillis) {
             onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
@@ -92,5 +163,37 @@ class MainActivitySharedIntentTest {
         waitUntil(timeoutMillis = 5_000) {
             onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty()
         }
+    }
+
+    private fun ComposeTestRule.assertTagAbsent(tag: String) {
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    private fun createSharedPngUri(context: Context, fileName: String): Uri {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/PocketMindTest")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = checkNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)) {
+            "Failed to create shared image URI"
+        }
+        resolver.openOutputStream(uri)?.use { output ->
+            output.write(Base64.decode(TINY_PNG_BASE64, Base64.DEFAULT))
+        }
+        val publishValues = ContentValues().apply {
+            put(MediaStore.Images.Media.IS_PENDING, 0)
+        }
+        resolver.update(uri, publishValues, null, null)
+        return uri
+    }
+
+    private companion object {
+        const val TINY_PNG_BASE64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     }
 }
