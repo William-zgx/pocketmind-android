@@ -2,6 +2,7 @@ package com.bytedance.zgx.pocketmind.ui
 
 import com.bytedance.zgx.pocketmind.BackendChoice
 import com.bytedance.zgx.pocketmind.ChatUiState
+import com.bytedance.zgx.pocketmind.DEFAULT_CHAT_MODEL
 import com.bytedance.zgx.pocketmind.InferenceMode
 import com.bytedance.zgx.pocketmind.LocalModelTokenLimits
 import com.bytedance.zgx.pocketmind.ModelHealth
@@ -40,7 +41,10 @@ class PocketMindScreenDisplayTest {
         assertTrue(PRIVACY_POLICY_ENTRY_TEXT.contains("App 内隐私说明入口"))
         assertTrue(PRIVACY_POLICY_ENTRY_TEXT.contains("Play Data safety"))
         assertTrue(REMOTE_MODE_DISCLOSURE_TEXT.contains("可远程发送的对话上下文"))
+        assertTrue(REMOTE_MODE_DISCLOSURE_TEXT.contains("每次发送前都会确认"))
         assertTrue(MODEL_DOWNLOAD_RATIONALE_TEXT.contains("离线可用"))
+        assertTrue(MODEL_DOWNLOAD_RATIONALE_TEXT.contains("2.4 GB"))
+        assertTrue(MODEL_DOWNLOAD_RATIONALE_TEXT.contains("远程模型"))
         assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("系统语音转写"))
         assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("只进入输入框"))
         assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("不自动发送"))
@@ -52,6 +56,24 @@ class PocketMindScreenDisplayTest {
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("OCR 摘录"))
         assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("Accessibility 文本"))
         assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("前台一次性确认"))
+    }
+
+    @Test
+    fun modelPathGuidanceNamesLocalRemoteAndLightweightFallback() {
+        val text = modelPathGuidanceRows(DEFAULT_CHAT_MODEL).joinToString("\n") {
+            "${it.label}: ${it.body}"
+        }
+
+        assertTrue(text.contains("本地"))
+        assertTrue(text.contains("离线问答"))
+        assertTrue(text.contains("重新下载"))
+        assertTrue(text.contains("空间不足"))
+        assertTrue(text.contains("远程"))
+        assertTrue(text.contains("每次发送前都会展示远程内容预览"))
+        assertTrue(text.contains("主动附加"))
+        assertTrue(text.contains("轻量"))
+        assertTrue(text.contains("没有更小的官方推荐聊天模型"))
+        assertTrue(text.contains(".litertlm"))
     }
 
     @Test

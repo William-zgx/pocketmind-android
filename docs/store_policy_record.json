@@ -3,11 +3,11 @@
   "policy": "Public release builds require VERIFY_STORE_POLICY=1 and an approved store policy record.",
   "status": "pending_policy_review",
   "privacyNoticePath": "docs/privacy_notice.md",
-  "privacyNoticeSha256": "027ffabe4d4be62c3ce14434c8bdcee9d106620222af37d8d937fcbbddf65385",
+  "privacyNoticeSha256": "672d8aa10462659c079c3cb467bbe694b32938e562cc1f8a07f5899df0620430",
   "appListing": {
     "appName": "PocketMind",
     "shortDescription": "Local-first personal AI assistant.",
-    "fullDescription": "PocketMind is a local-first personal AI assistant for Android. It keeps chats, explicit memories, model files, and tool audit records in local app storage by default. Optional remote model calls and model downloads happen only through user-configured or documented endpoints.",
+    "fullDescription": "PocketMind is a privacy-first pocket AI assistant for Android. It keeps chats, explicit memories, model files, and tool audit records in local app storage by default. Local chat requires a downloaded or imported model; optional remote model calls and model downloads happen only through user-configured or documented endpoints.",
     "category": "Productivity",
     "contactEmail": "release-contact@example.invalid",
     "privacyPolicyUrl": "https://example.invalid/pocketmind/privacy"
@@ -31,7 +31,10 @@
   },
   "modelDownloads": {
     "describedAsLargeOptionalAssets": true,
-    "declaresNotBundledInApk": true
+    "declaresNotBundledInApk": true,
+    "primaryChatModelBytes": 2588147712,
+    "remoteAlternativeDisclosed": true,
+    "officialLightweightChatAlternative": false
   },
   "permissions": [
     {
@@ -101,6 +104,6 @@
     "reviewer": "",
     "reviewDate": "",
     "evidencePath": "docs/store_policy_review_evidence/pending.properties",
-    "evidenceSha256": "b811e582501e1d7f18c3644210898e07bf501ff5945fea0e857ec032ca9066ce"
+    "evidenceSha256": "f753ee5c15f539a741fea32b8ec1c46dda98aec69b07aff1835782b92c73adc4"
   }
 }

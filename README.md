@@ -418,7 +418,11 @@ models:
 - [设备动作模型 270M](https://huggingface.co/litert-community/functiongemma-mobile-actions_q8_ekv1024.litertlm)
 - [高质量对话模型 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
 
-The downloaded files are large:
+The downloaded files are large, and the recommended local chat path currently
+starts with the E2B model. Users who want to try the app before downloading a
+multi-GB local chat model can configure an OpenAI-compatible remote model, or
+import a trusted compatible `.litertlm` file. The smaller memory/action assets
+are not chat-model substitutes.
 
 | Capability | File | Size |
 | --- | --- | --- |

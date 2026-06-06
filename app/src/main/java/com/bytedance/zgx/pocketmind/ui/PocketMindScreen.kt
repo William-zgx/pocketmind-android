@@ -952,6 +952,9 @@ private fun QuickModelSetup(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        ModelPathGuidance(
+            selectedModel = state.selectedRecommendedModel,
+        )
         if (state.isDownloading || state.downloadProgressPercent != null || state.totalBytes > 0L) {
             ProgressBlock(state)
         }
@@ -1596,6 +1599,9 @@ private fun ModelInventoryPanel(
                 text = "推荐模型",
                 subtitle = MODEL_DOWNLOAD_RATIONALE_TEXT,
             )
+            ModelPathGuidance(
+                selectedModel = state.selectedRecommendedModel,
+            )
             state.basicSetupModels.forEach { model ->
                 RecommendedModelCard(
                     model = model,
@@ -1708,6 +1714,61 @@ private fun EmptyPanelText(text: String) {
         )
     }
 }
+
+@Composable
+private fun ModelPathGuidance(
+    selectedModel: RecommendedModel,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("model_path_guidance"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        modelPathGuidanceRows(selectedModel).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = row.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = row.body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+internal data class ModelPathGuidanceRow(
+    val label: String,
+    val body: String,
+)
+
+internal fun modelPathGuidanceRows(selectedModel: RecommendedModel): List<ModelPathGuidanceRow> =
+    listOf(
+        ModelPathGuidanceRow(
+            label = "本地",
+            body = "下载或导入 ${selectedModel.shortName}（约 ${ModelCatalog.formatBytes(selectedModel.byteSize)}）后可离线问答；下载中断、校验失败或加载失败都可以重新下载，空间不足时先释放存储。",
+        ),
+        ModelPathGuidanceRow(
+            label = "远程",
+            body = "不下载本地对话模型也能开始；配置 HTTPS 兼容接口后，每次发送前都会展示远程内容预览，图片只在你主动附加且模型支持时发送。",
+        ),
+        ModelPathGuidanceRow(
+            label = "轻量",
+            body = "当前没有更小的官方推荐聊天模型；记忆/动作小模型不是聊天替代。可先用远程模型，或导入你信任的 .litertlm。",
+        ),
+    )
 
 @Composable
 private fun AdvancedModelPanel(
@@ -2853,10 +2914,10 @@ internal const val PRIVACY_POLICY_ENTRY_TEXT =
     "这一页是 App 内隐私说明入口；公开发布前仍需把同一口径同步到外部隐私政策和 Play Data safety。"
 
 internal const val REMOTE_MODE_DISCLOSURE_TEXT =
-    "兼容 /v1/chat/completions；远程模式只发送可远程发送的对话上下文，主动选择的图片会随请求发送。"
+    "兼容 /v1/chat/completions；远程模式只发送可远程发送的对话上下文，每次发送前都会确认，主动选择的图片会随请求发送。"
 
 internal const val MODEL_DOWNLOAD_RATIONALE_TEXT =
-    "本地模型让基础问答离线可用；缺少或文件不完整时，可在这里单独补装对应能力。"
+    "本地模型让基础问答离线可用；基础对话模型约 2.4 GB，缺少、下载失败或文件不完整时可在这里补装，也可以先配置远程模型。"
 
 internal const val VOICE_INPUT_PRIVACY_DESCRIPTION =
     "语音输入；使用系统语音转写，结果只进入输入框，不自动发送，不读取本地音频文件"
@@ -3564,7 +3625,7 @@ private fun DeviceCheck(
                 )
             } else if (!hasEnoughSpace) {
                 Text(
-                    text = "建议至少预留 ${ModelCatalog.formatBytes(requiredBytes)}，再多留一些空间给加载缓存。",
+                    text = "建议至少预留 ${ModelCatalog.formatBytes(requiredBytes)}，再多留一些空间给加载缓存；也可以先配置远程模型，或导入你信任的更小 .litertlm。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )

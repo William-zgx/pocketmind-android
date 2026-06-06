@@ -23,6 +23,33 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Model path guidance clarity
+
+本轮覆盖项：
+
+- 模型管理和首次配置页新增本地、远程、轻量三条路径说明，明确本地推荐聊天模型是
+  multi-GB 下载，远程模型可以先开始体验，记忆/动作小模型不是聊天模型替代。
+- 远程模式说明同步强调每次发送前都会确认，避免把远程配置误解成静默上传。
+- README 和 App 内隐私说明同步本地推荐聊天模型体积、远程替代路径和自定义
+  `.litertlm` 导入边界。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+scripts/verify_local.sh
+git diff --check
+git diff --unified=0 | rg -n "^\\+.*(sk-[A-Za-z0-9_-]{20,}|B[e]arer [A-Za-z0-9._-]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:api[_-]?key|s[e]cret|p[a]ssword|d[e]epseek))" || true
+```
+
+结果：
+
+- 通过：`PocketMindScreenDisplayTest` 覆盖模型路径说明、本地/远程/轻量替代文案、
+  远程发送前确认说明和 2.4 GB 下载门槛。
+- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 通过：`git diff --check` 无 whitespace 问题；新增 diff 敏感串扫描无命中。
+
 ## 2026-06-07 Permission disclosure and adaptive UI smoke
 
 本轮覆盖项：

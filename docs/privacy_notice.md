@@ -135,6 +135,11 @@ after SHA-256 verification against the pinned model manifest. Custom imported
 models and custom URL downloads are user-supplied and are not covered by the
 recommended-model provenance guarantees.
 
+The recommended local chat path currently starts with the E2B model, which is a
+multi-GB download. Users can instead configure a remote model endpoint or import
+a trusted compatible `.litertlm` file. The smaller memory and action model
+assets are not replacements for a chat model.
+
 Model files are stored in local app storage and are not bundled into the APK.
 Network operators and model hosts may receive normal download metadata such as
 IP address, URL, user agent, timing, and download size.
