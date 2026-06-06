@@ -60,7 +60,10 @@ Google AI Edge LiteRT-LM.
   review, and physical-device perf baselines; run
   `scripts/collect_perf_baseline.sh` from measured RC values, then run
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...` for release
-  candidates. Public distribution should set `PUBLIC_RELEASE=1` plus
+  candidates. Perf baselines must come from non-emulator `arm64-v8a` hardware,
+  bind to the release artifact SHA-256 and current Gradle `versionName`, and
+  carry a fresh non-future UTC `recordedAt`. Public distribution should set
+  `PUBLIC_RELEASE=1` plus
   `EXPECTED_SIGNING_CERT_SHA256=<production upload cert>`; that profile enables
   release record, store policy review, rollout monitoring/rollback readiness,
   release validation matrix, privacy review, structured model license review,

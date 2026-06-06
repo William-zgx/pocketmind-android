@@ -31,6 +31,7 @@ RELEASE_MAPPING_FILE="${RELEASE_MAPPING_FILE:-app/build/outputs/mapping/release/
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
 EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
+GRADLE_FILE="${GRADLE_FILE:-app/build.gradle.kts}"
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -138,10 +139,14 @@ else
 fi
 
 if [[ -n "$PERF_BASELINE_FILE" ]]; then
+  expected_app_version="$(awk -F\" '/versionName[[:space:]]*=/ {print $2; exit}' "$GRADLE_FILE")"
   perf_args=(
     --file "$PERF_BASELINE_FILE" \
     --report "$ARTIFACT_DIR/perf-baseline-verification.properties"
   )
+  if [[ -n "$expected_app_version" ]]; then
+    perf_args+=(--app-version "$expected_app_version")
+  fi
   if [[ -f "$RELEASE_AAB" ]]; then
     perf_args+=(--artifact-sha256 "$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')")
   elif [[ -f "$RELEASE_APK" ]]; then

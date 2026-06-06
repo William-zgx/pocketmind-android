@@ -109,7 +109,10 @@ items below.
 - Record final physical-device SLOs with `scripts/collect_perf_baseline.sh`
   or an equivalent measured `perf-baseline.properties` based on
   `docs/perf_baseline_template.properties`, then pass it to
-  `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`.
+  `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`. The verifier
+  rejects emulator serials, stale or future `recordedAt`, non-`arm64-v8a`
+  baselines, wrong app versions, mismatched artifact SHA-256, OOM/ANR
+  observations, and zero critical timing or memory values.
 - For public distribution, run the release gate with
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
   production signing and bundle generation are complete. `PUBLIC_RELEASE=1`

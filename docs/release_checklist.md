@@ -161,7 +161,10 @@ release ticket or PR.
 - [ ] `PERF_BASELINE_FILE=<rc perf-baseline.properties>
   scripts/verify_release_gate.sh` passes before release sign-off. Set
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` when
-  checking the public-distribution gate.
+  checking the public-distribution gate. The perf baseline must be from a
+  non-emulator `arm64-v8a` device, match the current Gradle `versionName`, bind
+  to the release artifact SHA-256, record non-zero measured timings, and use a
+  non-future UTC `recordedAt` within the accepted freshness window.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

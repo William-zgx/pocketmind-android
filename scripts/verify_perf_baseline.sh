@@ -4,6 +4,8 @@ set -euo pipefail
 BASELINE_FILE=""
 REPORT_FILE=""
 EXPECTED_ARTIFACT_SHA256=""
+EXPECTED_APP_VERSION=""
+MAX_RECORD_AGE_DAYS="${MAX_RECORD_AGE_DAYS:-30}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,6 +19,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --artifact-sha256)
       EXPECTED_ARTIFACT_SHA256="${2:?missing artifact sha256}"
+      shift 2
+      ;;
+    --app-version)
+      EXPECTED_APP_VERSION="${2:?missing app version}"
       shift 2
       ;;
     *)
@@ -37,6 +43,8 @@ write_report() {
       printf 'baselineFile=%s\n' "${BASELINE_FILE:-}"
       printf 'missingFieldCount=%s\n' "$missing"
       printf 'expectedArtifactSha256=%s\n' "$EXPECTED_ARTIFACT_SHA256"
+      printf 'expectedAppVersion=%s\n' "$EXPECTED_APP_VERSION"
+      printf 'maxRecordAgeDays=%s\n' "$MAX_RECORD_AGE_DAYS"
     } > "$REPORT_FILE"
   fi
 }
@@ -88,10 +96,36 @@ if ! grep -qx 'oomOrAnrObserved=false' "$BASELINE_FILE"; then
   missing=$((missing + 1))
 fi
 
+device_serial="$(awk -F= '$1 == "deviceSerial" {print $2; exit}' "$BASELINE_FILE")"
+if [[ "$device_serial" == emulator-* ]]; then
+  echo "Perf baseline must come from a non-emulator physical device." >&2
+  missing=$((missing + 1))
+fi
+
+abi="$(awk -F= '$1 == "abi" {print $2; exit}' "$BASELINE_FILE")"
+if [[ "$abi" != "arm64-v8a" ]]; then
+  echo "Perf baseline abi must be arm64-v8a." >&2
+  missing=$((missing + 1))
+fi
+
 if [[ -n "$EXPECTED_ARTIFACT_SHA256" ]]; then
   recorded_sha="$(awk -F= '$1 == "releaseArtifactSha256" {print $2; exit}' "$BASELINE_FILE")"
   if [[ "$recorded_sha" != "$EXPECTED_ARTIFACT_SHA256" ]]; then
     echo "Perf baseline releaseArtifactSha256 does not match release artifact." >&2
+    missing=$((missing + 1))
+  fi
+fi
+
+recorded_sha="$(awk -F= '$1 == "releaseArtifactSha256" {print $2; exit}' "$BASELINE_FILE")"
+if [[ -n "$recorded_sha" && ! "$recorded_sha" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo "Perf baseline releaseArtifactSha256 must be a SHA-256 hex digest." >&2
+  missing=$((missing + 1))
+fi
+
+if [[ -n "$EXPECTED_APP_VERSION" ]]; then
+  recorded_app_version="$(awk -F= '$1 == "appVersion" {print $2; exit}' "$BASELINE_FILE")"
+  if [[ "$recorded_app_version" != "$EXPECTED_APP_VERSION" ]]; then
+    echo "Perf baseline appVersion does not match release version." >&2
     missing=$((missing + 1))
   fi
 fi
@@ -112,8 +146,17 @@ for field in "${numeric_fields[@]}"; do
   if [[ -n "$value" && ! "$value" =~ ^[0-9]+$ ]]; then
     echo "Perf baseline field $field must be an integer." >&2
     missing=$((missing + 1))
+  elif [[ -n "$value" && "$value" -le 0 ]]; then
+    echo "Perf baseline field $field must be > 0." >&2
+    missing=$((missing + 1))
   fi
 done
+
+android_api="$(awk -F= '$1 == "androidApi" {print $2; exit}' "$BASELINE_FILE")"
+if [[ "$android_api" =~ ^[0-9]+$ ]] && { [[ "$android_api" -lt 28 ]] || [[ "$android_api" -gt 36 ]]; }; then
+  echo "Perf baseline androidApi must be between 28 and 36." >&2
+  missing=$((missing + 1))
+fi
 
 tps="$(awk -F= '$1 == "tokensPerSecond" {print $2; exit}' "$BASELINE_FILE")"
 if [[ -n "$tps" && ! "$tps" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -124,6 +167,30 @@ elif [[ -n "$tps" ]]; then
     echo "Perf baseline field tokensPerSecond must be > 0." >&2
     missing=$((missing + 1))
   }
+fi
+
+recorded_at="$(awk -F= '$1 == "recordedAt" {print $2; exit}' "$BASELINE_FILE")"
+if [[ -n "$recorded_at" ]]; then
+  if ! python3 - "$recorded_at" "$MAX_RECORD_AGE_DAYS" <<'PY'
+import sys
+from datetime import datetime, timezone
+
+recorded_at = sys.argv[1]
+max_age_days = int(sys.argv[2])
+try:
+    parsed = datetime.strptime(recorded_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+except ValueError:
+    sys.exit(1)
+now = datetime.now(timezone.utc)
+if parsed > now:
+    sys.exit(2)
+if (now - parsed).days > max_age_days:
+    sys.exit(3)
+PY
+  then
+    echo "Perf baseline recordedAt must be UTC, non-future, and no older than ${MAX_RECORD_AGE_DAYS} day(s)." >&2
+    missing=$((missing + 1))
+  fi
 fi
 
 if [[ "$missing" -gt 0 ]]; then

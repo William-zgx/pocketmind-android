@@ -285,14 +285,16 @@ grep -q 'scripts/sign_release_artifacts.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include sign_release_artifacts.sh in shell syntax checks"
 
 VALID_PERF="$TMP_DIR/perf-baseline.properties"
-cat > "$VALID_PERF" <<'VALID_PERF_BASELINE'
+VALID_PERF_SHA="1111111111111111111111111111111111111111111111111111111111111111"
+PERF_RECORDED_AT="$(date -u +%Y-%m-%dT00:00:00Z)"
+cat > "$VALID_PERF" <<VALID_PERF_BASELINE
 status=passed
 deviceSerial=device-a
 deviceModel=Pixel Test
 androidApi=36
 abi=arm64-v8a
-appVersion=1.0
-releaseArtifactSha256=abc123
+appVersion=0.1.0
+releaseArtifactSha256=$VALID_PERF_SHA
 modelId=chat-e2b
 backend=GPU
 firstLaunchInteractiveMs=1200
@@ -305,16 +307,16 @@ visionInputMs=500
 memorySearch5kMs=25
 memoryPeakMb=512
 oomOrAnrObserved=false
-recordedAt=2026-06-06T00:00:00Z
+recordedAt=$PERF_RECORDED_AT
 VALID_PERF_BASELINE
 expect_success \
   "perf baseline verifier accepts complete record" \
-  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --report "$ARTIFACT_DIR/perf.properties"
+  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --app-version 0.1.0 --report "$ARTIFACT_DIR/perf.properties"
 assert_report_contains "$ARTIFACT_DIR/perf.properties" "status=passed"
 expect_success \
   "perf baseline verifier accepts matching artifact sha" \
-  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 abc123 --report "$ARTIFACT_DIR/perf-sha.properties"
-assert_report_contains "$ARTIFACT_DIR/perf-sha.properties" "expectedArtifactSha256=abc123"
+  scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 "$VALID_PERF_SHA" --report "$ARTIFACT_DIR/perf-sha.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-sha.properties" "expectedArtifactSha256=$VALID_PERF_SHA"
 
 INVALID_PERF="$TMP_DIR/perf-baseline-invalid.properties"
 printf 'status=failed\n' > "$INVALID_PERF"
@@ -326,6 +328,24 @@ expect_failure \
   "perf baseline verifier rejects mismatched artifact sha" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 different-sha --report "$ARTIFACT_DIR/perf-sha-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-sha-failed.properties" "status=failed"
+EMULATOR_PERF="$TMP_DIR/perf-baseline-emulator.properties"
+sed 's/deviceSerial=device-a/deviceSerial=emulator-5554/' "$VALID_PERF" > "$EMULATOR_PERF"
+expect_failure \
+  "perf baseline verifier rejects emulator serials" \
+  scripts/verify_perf_baseline.sh --file "$EMULATOR_PERF" --report "$ARTIFACT_DIR/perf-emulator.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-emulator.properties" "status=failed"
+ZERO_PERF="$TMP_DIR/perf-baseline-zero.properties"
+sed 's/firstTokenMs=900/firstTokenMs=0/' "$VALID_PERF" > "$ZERO_PERF"
+expect_failure \
+  "perf baseline verifier rejects zero critical timings" \
+  scripts/verify_perf_baseline.sh --file "$ZERO_PERF" --report "$ARTIFACT_DIR/perf-zero.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-zero.properties" "status=failed"
+FUTURE_PERF="$TMP_DIR/perf-baseline-future.properties"
+sed 's/recordedAt=.*/recordedAt=2999-01-01T00:00:00Z/' "$VALID_PERF" > "$FUTURE_PERF"
+expect_failure \
+  "perf baseline verifier rejects future recordedAt" \
+  scripts/verify_perf_baseline.sh --file "$FUTURE_PERF" --report "$ARTIFACT_DIR/perf-future.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-future.properties" "status=failed"
 
 RELEASE_MAPPING="$TMP_DIR/mapping.txt"
 printf 'com.bytedance.zgx.pocketmind.Sample -> a:\n' > "$RELEASE_MAPPING"
@@ -1089,7 +1109,7 @@ deviceSerial=device-a
 deviceModel=Pixel Test
 androidApi=36
 abi=arm64-v8a
-appVersion=1.0
+appVersion=0.1.0
 releaseArtifactSha256=$SAFE_APK_SHA
 modelId=chat-e2b
 backend=GPU
@@ -1103,7 +1123,7 @@ visionInputMs=500
 memorySearch5kMs=25
 memoryPeakMb=512
 oomOrAnrObserved=false
-recordedAt=2026-06-06T00:00:00Z
+recordedAt=$PERF_RECORDED_AT
 VALID_GATE_PERF_BASELINE
 expect_failure \
   "release gate requires approved privacy review when enabled" \

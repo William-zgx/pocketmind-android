@@ -6863,6 +6863,38 @@ scripts/verify_local.sh
 - 需要 production signing、真实 final AAB 和 release owner 批准后的
   `docs/release_record.json`。
 
+## 2026-06-06 Perf baseline physical-device gate hardening
+
+本轮覆盖项：
+
+- 使用只读多 Agent 审查 release gates，发现 `scripts/verify_perf_baseline.sh`
+  主要检查字段存在，无法充分证明“最终真机 RC SLO”。
+- `scripts/verify_perf_baseline.sh` 新增严格语义：拒绝 `emulator-*` serial，
+  要求 `abi=arm64-v8a`、Android API 28-36、release artifact SHA-256 为 64 位
+  hex，关键耗时/内存字段必须大于 0，`recordedAt` 必须是 UTC、非未来且在
+  `MAX_RECORD_AGE_DAYS` 窗口内。
+- `scripts/verify_release_gate.sh` 读取当前 Gradle `versionName` 并传给 perf
+  verifier，要求 RC baseline 的 `appVersion` 与本次 release 版本一致。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_perf_baseline.sh scripts/verify_release_gate.sh scripts/collect_perf_baseline.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖完整 perf baseline 成功和 artifact SHA 匹配成功。
+- 通过：脚本单测覆盖 emulator serial、0ms 关键耗时、future `recordedAt`、
+  mismatched artifact SHA 失败。
+- 通过：release gate fixture 覆盖当前 Gradle `versionName` 绑定。
+
+仍阻塞正式 RC：
+
+- 需要在目标真机上采集真实 RC perf baseline；当前不连接真机。
+
 ## 2026-06-06 Store policy gate
 
 本轮覆盖项：

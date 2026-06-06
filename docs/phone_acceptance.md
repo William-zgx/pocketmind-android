@@ -68,7 +68,7 @@ SHA-256 绑定。脚本只记录已经测得的值，不会生成推测值：
 OUT_FILE=build/verification/rc/perf-baseline.properties \
 RELEASE_ARTIFACT=app/build/outputs/apk/release/app-release-signed.apk \
 ANDROID_SERIAL=<physical-device-serial> \
-APP_VERSION=<versionName-versionCode> \
+APP_VERSION=<versionName> \
 MODEL_ID=chat-e2b \
 BACKEND=GPU \
 FIRST_LAUNCH_INTERACTIVE_MS=<measured> \

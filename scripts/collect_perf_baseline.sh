@@ -12,7 +12,7 @@ Usage:
   OUT_FILE=build/verification/rc/perf-baseline.properties \
   RELEASE_ARTIFACT=app-release-signed.apk \
   ANDROID_SERIAL=<device> \
-  APP_VERSION=1.0.0 MODEL_ID=chat-e2b BACKEND=GPU \
+  APP_VERSION=<versionName> MODEL_ID=chat-e2b BACKEND=GPU \
   FIRST_LAUNCH_INTERACTIVE_MS=... MODEL_LOAD_MS=... FIRST_TOKEN_MS=... \
   TOKENS_PER_SECOND=... STOP_GENERATION_RECOVERY_MS=... GPU_FALLBACK_STATUS=... \
   VISION_INPUT_MS=... MEMORY_SEARCH_5K_MS=... MEMORY_PEAK_MB=... \
