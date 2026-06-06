@@ -6519,7 +6519,7 @@ scripts/verify_release_gate.sh
 - `scan_android_artifacts.sh` 新增 `--expected-certificate-sha256`，signed APK/AAB
   可以绑定 production upload certificate SHA-256；证书指纹支持大小写和冒号格式规范化。
 - `sign_release_artifacts.sh` 支持 `EXPECTED_SIGNING_CERT_SHA256`，生产签名后立即
-  校验产物证书是否匹配预期。
+  校验产物证书是否匹配预期；production signing 未提供该值会 fail closed。
 - `verify_release_gate.sh` 新增 `PUBLIC_RELEASE=1` profile，自动启用
   `VERIFY_PRIVACY_REVIEW=1`、`VERIFY_MODEL_LICENSES=1`、`REQUIRE_AAB=1`、
   `REQUIRE_SIGNED_ARTIFACT=1`，并要求 `EXPECTED_SIGNING_CERT_SHA256`。
@@ -6538,6 +6538,8 @@ scripts/verify_release_gate.sh
 结果：
 
 - 通过：脚本单测覆盖 signed artifact 证书指纹匹配成功与不匹配失败。
+- 通过：脚本单测覆盖 production signing 未提供
+  `EXPECTED_SIGNING_CERT_SHA256` 时失败；显式 debug smoke 不受影响。
 - 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 缺少
   `EXPECTED_SIGNING_CERT_SHA256` 时失败，并确认 public profile 自动打开 privacy
   review、model license、AAB 和 signed-artifact gate。
@@ -6551,3 +6553,43 @@ scripts/verify_release_gate.sh
 
 - 需要 release owner 提供 production upload certificate SHA-256，并用
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=...` 运行最终 gate。
+
+## 2026-06-06 Production signing requires certificate pin
+
+本轮覆盖项：
+
+- `sign_release_artifacts.sh` 在 production signing 模式下强制要求
+  `EXPECTED_SIGNING_CERT_SHA256`；未提供时直接失败，不会进入签名步骤。
+- `ALLOW_DEBUG_KEYSTORE=1` 的本地 smoke signing 仍允许不传 production cert pin，
+  且报告继续标记 `signingMode=debug-smoke`。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+
+RELEASE_KEYSTORE="$HOME/.android/debug.keystore" \
+RELEASE_KEY_ALIAS=androiddebugkey \
+RELEASE_KEYSTORE_PASSWORD=android \
+RELEASE_KEY_PASSWORD=android \
+ALLOW_DEBUG_KEYSTORE=1 \
+SIGNED_APK=app/build/outputs/apk/release/app-release-local-signed-smoke.apk \
+SIGNED_AAB=app/build/outputs/bundle/release/app-release-local-signed-smoke.aab \
+REPORT_FILE=build/verification/signing-smoke/signing.properties \
+scripts/sign_release_artifacts.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 production signing 缺少
+  `EXPECTED_SIGNING_CERT_SHA256` 时失败。
+- 通过：`scripts/verify_local.sh`。
+- 通过：显式 debug signing smoke；`build/verification/signing-smoke/signing.properties`
+  包含 `status=passed`、`signingMode=debug-smoke` 和空
+  `expectedSigningCertSha256`。
+
+仍阻塞正式 RC：
+
+- 需要 release owner 提供 production keystore 和 production upload certificate
+  SHA-256。

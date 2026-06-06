@@ -528,6 +528,17 @@ expect_failure \
   scripts/sign_release_artifacts.sh
 grep -q 'Refusing Android debug keystore' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to refuse debug keystore before signing"
+PRODUCTION_KEYSTORE="$TMP_DIR/production-upload.keystore"
+printf 'not-a-real-keystore\n' > "$PRODUCTION_KEYSTORE"
+expect_failure \
+  "signing helper requires expected production certificate" \
+  env RELEASE_KEYSTORE="$PRODUCTION_KEYSTORE" \
+  RELEASE_KEY_ALIAS=upload \
+  RELEASE_KEYSTORE_PASSWORD=secret \
+  RELEASE_KEY_PASSWORD=secret \
+  scripts/sign_release_artifacts.sh
+grep -q 'Production release signing requires EXPECTED_SIGNING_CERT_SHA256' <<<"$LAST_OUTPUT" ||
+  fail "Expected signing helper to require expected production certificate before signing"
 
 COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
 expect_success \

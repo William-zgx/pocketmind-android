@@ -65,6 +65,11 @@ if [[ "$ALLOW_DEBUG_KEYSTORE" != "1" ]]; then
   fi
 fi
 
+if [[ "$ALLOW_DEBUG_KEYSTORE" != "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
+  echo "Production release signing requires EXPECTED_SIGNING_CERT_SHA256." >&2
+  exit 1
+fi
+
 require_tool "$ZIPALIGN" zipalign
 require_tool "$APKSIGNER" apksigner
 command -v jarsigner >/dev/null 2>&1 || {

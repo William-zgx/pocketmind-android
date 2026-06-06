@@ -577,9 +577,10 @@ keystore material is available in a private environment,
 `scripts/sign_release_artifacts.sh` can sign the release APK/AAB and generate
 certificate reports without storing secrets in the repository. The helper
 rejects Android debug keystores by default; set `ALLOW_DEBUG_KEYSTORE=1` only
-for explicit local signing smoke checks. Release artifact scanning also rejects
-Android Debug certificates unless `--allow-debug-certificate` is passed for a
-smoke-only scan.
+for explicit local signing smoke checks. Production signing requires
+`EXPECTED_SIGNING_CERT_SHA256`; release artifact scanning also rejects Android
+Debug certificates unless `--allow-debug-certificate` is passed for a smoke-only
+scan.
 
 ## Production Release Readiness
 

@@ -69,7 +69,8 @@ items below.
 - Use `scripts/sign_release_artifacts.sh` from the private signing environment
   to produce signed APK/AAB artifacts and certificate reports once production
   keystore material is available. The script rejects Android debug keystores by
-  default; `ALLOW_DEBUG_KEYSTORE=1` is only for local smoke validation.
+  default and requires `EXPECTED_SIGNING_CERT_SHA256` for production signing;
+  `ALLOW_DEBUG_KEYSTORE=1` is only for local smoke validation.
   Public release gates also reject Android Debug certificates in signed APK/AAB
   artifacts and can pin `EXPECTED_SIGNING_CERT_SHA256` to the production upload
   certificate.
