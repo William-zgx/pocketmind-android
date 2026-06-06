@@ -6453,6 +6453,74 @@ scripts/verify_local.sh
 验证命令：
 
 ```bash
+ANDROID_HOME=/Users/bytedance/Library/Android/sdk \
+ANDROID_SDK_ROOT=/Users/bytedance/Library/Android/sdk \
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：`build/verification/regression-emulator-20260606-131714/regression-emulator.properties`
+  `status=passed`。
+- 通过：模拟器 `emulator-5554`，API 36，`arm64-v8a`，AVD
+  `focus_agent_api36_arm64`。
+- 通过：debug APK 与 androidTest APK 均安装成功。
+- 通过：instrumentation `OK (26 tests)`，实际运行 26 个 AndroidTest，与源码计数一致。
+- 通过：嵌套 `emulator-verification.properties` 和
+  `device-verification.properties` 均记录 `status=passed`，且
+  `clean_device=1`。
+
+仍阻塞正式 RC：
+
+- 当前验证满足模拟器回归要求，但不替代 production signing、模型 license /
+  redistribution 人工批准、正式发布隐私审查、目标真机验收和真实 perf baseline。
+
+## 2026-06-06 Release validation physical-device evidence hardening
+
+本轮覆盖项：
+
+- 使用只读多 Agent 审查 release validation gate，发现
+  `physicalDevice.reportPath` 可能引用 emulator helper 生成的 nested
+  `target=device` report，从而把 `emulator-*` serial 冒充成真机证据。
+- 修复 `scripts/verify_release_validation_record.sh`，要求
+  `physicalDevice.serial` 非空且不能以 `emulator-` 开头，并拒绝 report 中
+  `serial=emulator-*` 的 device report。
+- `scripts/test_validation_scripts.sh` 增加回归：emulator nested device report
+  即使 `target=device`、`instrumentation=passed`、测试数量满足，也不能作为
+  physical-device evidence 通过。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation 脚本单测覆盖 emulator-as-physical 负向用例。
+- 通过：`scripts/verify_local.sh`。
+
+仍阻塞正式 RC：
+
+- 当前只修门禁逻辑，不连接真机；正式 RC 仍需要目标真机验收、真实 perf
+  baseline 和人工发布记录批准。
+
+## 2026-06-06 Previous emulator regression on current HEAD
+
+本轮覆盖项：
+
+- 按当前要求不连接真机，直接使用模拟器验证最新提交。
+- 使用 `focus_agent_api36_arm64` AVD，以 headless 参数启动，执行完整
+  `scripts/regression_emulator.sh`。
+
+验证命令：
+
+```bash
 AVD_NAME=focus_agent_api36_arm64 \
 EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
 EMULATOR_SELECT_TIMEOUT_SECONDS=120 \

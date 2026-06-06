@@ -629,6 +629,7 @@ VALIDATION_PENDING="$TMP_DIR/release-validation-pending.json"
 VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"
 VALIDATION_EMULATOR_REPORT="$TMP_DIR/regression-emulator.properties"
 VALIDATION_DEVICE_REPORT="$TMP_DIR/device-verification.properties"
+VALIDATION_EMULATOR_DEVICE_REPORT="$TMP_DIR/emulator-device-verification.properties"
 VALIDATION_DATE="$(date +%F)"
 mkdir -p "$TMP_DIR/validation-screenshots"
 for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
@@ -663,6 +664,16 @@ clean_device=1
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
 VALIDATION_DEVICE_REPORT_PROPERTIES
+cat > "$VALIDATION_EMULATOR_DEVICE_REPORT" <<VALIDATION_EMULATOR_DEVICE_REPORT_PROPERTIES
+status=passed
+target=device
+serial=emulator-5554
+api_level=36
+abi=arm64-v8a
+clean_device=1
+instrumentation=passed
+instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+VALIDATION_EMULATOR_DEVICE_REPORT_PROPERTIES
 cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
 {
   "version": 1,
@@ -751,6 +762,15 @@ expect_failure \
   "release validation verifier rejects missing physical report" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_MISSING_DEVICE" --report "$ARTIFACT_DIR/release-validation-missing-device.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-missing-device.properties" "status=failed"
+VALIDATION_EMULATOR_AS_PHYSICAL="$TMP_DIR/release-validation-emulator-as-physical.json"
+sed \
+  -e 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$VALIDATION_EMULATOR_DEVICE_REPORT"'"#' \
+  -e 's/"serial": "device-a"/"serial": "emulator-5554"/' \
+  "$VALIDATION_APPROVED" > "$VALIDATION_EMULATOR_AS_PHYSICAL"
+expect_failure \
+  "release validation verifier rejects emulator device report as physical evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_EMULATOR_AS_PHYSICAL" --report "$ARTIFACT_DIR/release-validation-emulator-as-physical.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-emulator-as-physical.properties" "status=failed"
 VALIDATION_API_GAP="$TMP_DIR/release-validation-api-gap.json"
 sed 's/"apiLevel": 34, "status": "passed"/"apiLevel": 34, "status": "pending"/' "$VALIDATION_APPROVED" > "$VALIDATION_API_GAP"
 expect_failure \

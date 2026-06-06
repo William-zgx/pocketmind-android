@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policy": "Public release builds require VERIFY_RELEASE_VALIDATION=1 and an approved validation record covering emulator, physical device, manual acceptance, matrix coverage, and sanitized screenshots.",
+  "policy": "Public release builds require VERIFY_RELEASE_VALIDATION=1 and an approved validation record covering emulator, non-emulator physical device, manual acceptance, matrix coverage, and sanitized screenshots.",
   "status": "pending_validation",
   "emulatorRegression": {
     "status": "pending",

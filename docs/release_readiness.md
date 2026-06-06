@@ -48,7 +48,7 @@ items below.
 - Current release-candidate emulator regression passed with
   `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
   `emulator-5554` (API 36, `arm64-v8a`):
-  `build/verification/regression-emulator-20260606-121722/regression-emulator.properties`
+  `build/verification/regression-emulator-20260606-131714/regression-emulator.properties`
   records `status=passed`, nested emulator/device reports passed, and
   `instrumentation_test_count=26` matching the 26 AndroidTest source count.
 
@@ -77,8 +77,9 @@ items below.
   physical-device instrumentation, API matrix coverage, manual acceptance,
   flow matrix, sanitized screenshots, and performance sanity evidence.
   `VERIFY_RELEASE_VALIDATION=1` verifies linked emulator/device reports,
-  AndroidTest count coverage, required API levels, manual/system-mediated flows,
-  screenshot files, and review date.
+  rejects `emulator-*` serials as physical-device evidence, checks AndroidTest
+  count coverage, required API levels, manual/system-mediated flows, screenshot
+  files, and review date.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in

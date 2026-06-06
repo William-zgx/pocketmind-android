@@ -145,6 +145,9 @@ if not isinstance(physical, dict):
     physical = {}
 if physical.get("status") != "passed":
     failures.append("physical-device-not-passed")
+physical_serial = physical.get("serial", "")
+if not non_empty_string(physical_serial) or physical_serial.startswith("emulator-"):
+    failures.append("physical-device-serial-invalid")
 device_report = physical.get("reportPath", "")
 if not device_report:
     failures.append("physical-device-report-path-missing")
@@ -152,11 +155,14 @@ elif not Path(device_report).is_file():
     failures.append("physical-device-report-missing")
 else:
     props = properties_for(device_report)
+    report_serial = props.get("serial", "")
     if props.get("status") != "passed":
         failures.append("physical-device-report-status-not-passed")
     if props.get("target") != "device":
         failures.append("physical-device-report-target-invalid")
-    if props.get("serial") != physical.get("serial"):
+    if report_serial.startswith("emulator-"):
+        failures.append("physical-device-report-serial-is-emulator")
+    if report_serial != physical_serial:
         failures.append("physical-device-report-serial-mismatch")
     if props.get("api_level") != str(physical.get("apiLevel")):
         failures.append("physical-device-report-api-mismatch")
