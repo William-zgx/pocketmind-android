@@ -167,6 +167,8 @@ release ticket or PR.
   release notes.
 - [ ] `scripts/privacy_scan.sh` passes and its `privacy-scan.properties`
   artifact is attached.
+- [ ] `privacy-scan.properties` records a machine-readable `reason` whenever
+  high-confidence secret patterns are found.
 
 ## Build Verification
 

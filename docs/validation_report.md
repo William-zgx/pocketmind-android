@@ -15,6 +15,37 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Privacy scan failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/privacy_scan.sh` 在 failed report 中新增机器可读 `reason` 字段，发现高置信
+  secret 模式时写入 `secret-pattern-detected`。
+- `scripts/verify_release_gate.sh` 可以把 privacy scan 子报告的 `reason` 提升到
+  `release-gate.properties.failedReason`，并支持追加临时 scan target 以验证失败路径，不替换默认扫描范围。
+- 追加 scan target 只接受路径；option-like 输入会 fail-closed，避免影响 child report
+  输出位置。
+- `scripts/test_validation_scripts.sh` 覆盖直接 privacy scan 失败，以及 release gate
+  privacy-scan failedTarget / failedReason 汇总，以及无效追加 scan target；测试 secret
+  放在临时目录，避免污染仓库工作区。
+- `docs/release_checklist.md` 同步 privacy scan failed report 必须提供 reason。
+
+验证命令：
+
+```bash
+bash -n scripts/privacy_scan.sh scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 privacy scan failure reason 和 release gate
+  privacy-scan failedReason 汇总。
+- 通过：`scripts/verify_local.sh`。
+- 未执行模拟器：本轮只加固 privacy/release gate 报告和测试 fixture，不改变 APK runtime
+  或 UI 行为。
+
 ## 2026-06-06 Android artifact scan failure reason hardening
 
 本轮覆盖项：

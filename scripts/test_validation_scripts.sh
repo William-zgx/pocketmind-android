@@ -1114,6 +1114,7 @@ expect_failure \
   "privacy scan rejects high-confidence token" \
   scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-failed.properties" "$UNSAFE_PRIVACY_DIR"
 assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "reason=secret-pattern-detected"
 
 PRIVACY_NOTICE="$TMP_DIR/privacy-notice.md"
 PRIVACY_REVIEW_PENDING="$TMP_DIR/privacy-review-pending.json"
@@ -1456,6 +1457,36 @@ recordedAt=$PERF_RECORDED_AT
 VALID_GATE_PERF_BASELINE
 VALID_GATE_AAB_PERF="$TMP_DIR/perf-baseline-safe-aab.properties"
 sed "s/releaseArtifactSha256=$SAFE_APK_SHA/releaseArtifactSha256=$SAFE_AAB_SHA/" "$VALID_GATE_PERF" > "$VALID_GATE_AAB_PERF"
+PRIVACY_GATE_TARGET="$TMP_DIR/privacy-gate-scan-target"
+mkdir -p "$PRIVACY_GATE_TARGET"
+PRIVACY_GATE_SECRET="$PRIVACY_GATE_TARGET/privacy-scan-gate-secret.tmp"
+printf 'token=sk-%s\n' "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" > "$PRIVACY_GATE_SECRET"
+expect_failure \
+  "release gate reports privacy scan child reason" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-scan-failed" \
+  EXTRA_PRIVACY_SCAN_TARGETS="$PRIVACY_GATE_TARGET" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-failed/privacy-scan.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-failed/privacy-scan.properties" "reason=secret-pattern-detected"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-failed/release-gate.properties" "failedTarget=privacy-scan"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-failed/release-gate.properties" "failedReason=secret-pattern-detected"
+expect_failure \
+  "release gate rejects option-like extra privacy scan target" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-scan-invalid-extra-target" \
+  EXTRA_PRIVACY_SCAN_TARGETS="--report:$TMP_DIR/redirected-privacy-scan.properties" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-invalid-extra-target/privacy-scan.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-invalid-extra-target/privacy-scan.properties" "reason=invalid-extra-privacy-scan-target"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-invalid-extra-target/release-gate.properties" "failedTarget=privacy-scan"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-scan-invalid-extra-target/release-gate.properties" "failedReason=invalid-extra-privacy-scan-target"
 expect_failure \
   "release gate reports missing perf baseline in gate summary" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-missing-perf" \

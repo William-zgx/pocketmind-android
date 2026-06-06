@@ -35,6 +35,7 @@ REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
 RELEASE_MAPPING_FILE="${RELEASE_MAPPING_FILE:-app/build/outputs/mapping/release/mapping.txt}"
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
+EXTRA_PRIVACY_SCAN_TARGETS="${EXTRA_PRIVACY_SCAN_TARGETS:-}"
 EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 GRADLE_FILE="${GRADLE_FILE:-app/build.gradle.kts}"
@@ -83,6 +84,7 @@ write_gate_report() {
     printf 'verifyReleaseMapping=%s\n' "$VERIFY_RELEASE_MAPPING"
     printf 'releaseMappingFile=%s\n' "$RELEASE_MAPPING_FILE"
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
+    printf 'extraPrivacyScanTargets=%s\n' "$EXTRA_PRIVACY_SCAN_TARGETS"
     printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
     printf 'releaseApk=%s\n' "$RELEASE_APK"
     printf 'releaseAab=%s\n' "$RELEASE_AAB"
@@ -117,7 +119,24 @@ if [[ "$PUBLIC_RELEASE" == "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
   fail_gate signing-cert "$ARTIFACT_DIR/signing-cert.properties" "PUBLIC_RELEASE-EXPECTED_SIGNING_CERT_SHA256-not-set"
 fi
 
-if ! scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" app/src/main docs scripts; then
+privacy_scan_targets=(app/src/main docs scripts)
+if [[ -n "$EXTRA_PRIVACY_SCAN_TARGETS" ]]; then
+  IFS=':' read -r -a extra_privacy_scan_targets <<< "$EXTRA_PRIVACY_SCAN_TARGETS"
+  for extra_privacy_scan_target in "${extra_privacy_scan_targets[@]}"; do
+    if [[ "$extra_privacy_scan_target" == -* ]]; then
+      {
+        printf 'status=failed\n'
+        printf 'target=privacy-scan\n'
+        printf 'reason=invalid-extra-privacy-scan-target\n'
+        printf 'extraPrivacyScanTarget=%s\n' "$extra_privacy_scan_target"
+      } > "$ARTIFACT_DIR/privacy-scan.properties"
+      echo "EXTRA_PRIVACY_SCAN_TARGETS entries must be paths, not options: $extra_privacy_scan_target" >&2
+      fail_gate privacy-scan "$ARTIFACT_DIR/privacy-scan.properties" "invalid-extra-privacy-scan-target"
+    fi
+    privacy_scan_targets+=("$extra_privacy_scan_target")
+  done
+fi
+if ! scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" "${privacy_scan_targets[@]}"; then
   fail_gate privacy-scan "$ARTIFACT_DIR/privacy-scan.properties"
 fi
 

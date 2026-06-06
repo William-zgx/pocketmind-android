@@ -25,11 +25,14 @@ fi
 write_report() {
   local status="$1"
   local finding_count="$2"
+  local reason="${3:-}"
   if [[ -n "$REPORT_FILE" ]]; then
     mkdir -p "$(dirname "$REPORT_FILE")"
     {
       printf 'status=%s\n' "$status"
       printf 'target=privacy-scan\n'
+      printf 'reason=%s\n' "$reason"
+      printf 'scanTargetCount=%s\n' "${#SCAN_TARGETS[@]}"
       printf 'findingCount=%s\n' "$finding_count"
     } > "$REPORT_FILE"
   fi
@@ -62,11 +65,11 @@ done
 
 FINDING_COUNT="$(grep -c . "$TMP_FINDINGS" || true)"
 if [[ "$FINDING_COUNT" -gt 0 ]]; then
-  write_report failed "$FINDING_COUNT"
+  write_report failed "$FINDING_COUNT" secret-pattern-detected
   cat "$TMP_FINDINGS" >&2
   echo "Privacy scan found high-confidence secret patterns." >&2
   exit 1
 fi
 
-write_report passed 0
+write_report passed 0 ""
 echo "Privacy scan passed."
