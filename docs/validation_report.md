@@ -23,6 +23,70 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Start path and sensitive capability disclosure contract
+
+本轮覆盖项：
+
+- 无本地/远程模型时，主界面状态文案从失败口吻收敛为
+  “选择远程模型或下载本地模型后即可开始”，输入占位改为“配置远程或下载本地后提问”。
+- `CapabilityMatrix` 新增 `sensitiveCapabilityDisclosures`，把远程模型发送、语音/麦克风、
+  分享和文件选择、设备动作/外部 App、联系人/日历、媒体与最近 OCR、Usage Stats、
+  Accessibility 当前屏幕文本、MediaProjection 当前屏幕截图 OCR 的数据范围、同意边界、
+  远程边界、撤销/清除路径和必测用例固化为机器可读合同。
+- App 内隐私说明页新增“敏感能力披露”区，直接展示上述能力，不再只用笼统的“敏感权限”概括。
+- `docs/capability_matrix.json` 与代码逐字段校验；测试禁止披露承诺“清理/删除审计记录”
+  这类当前没有用户入口的能力。
+- Smoke 隐私入口用例扩展到敏感披露区，确认模拟器中能看到设备动作、Usage Stats 和当前屏幕截图 OCR 披露。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest' \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest' \
+  --tests 'com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotShowSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupKeepsSetupDismissedWhenNoLocalOrRemoteModelIsAvailable'
+ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 \
+  ARTIFACT_DIR=build/verification/sensitive-disclosure-ui-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#quickRemoteConfigEntryOpensRemoteModelForm,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#privacyButtonOpensAppPrivacyNotice' \
+  scripts/verify_emulator.sh
+ANDROID_SERIAL=emulator-5554 \
+  ARTIFACT_DIR=build/verification/start-path-guidance-fresh-start-current \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 \
+  ARTIFACT_DIR=build/verification/runtime-permission-disclosure-current2 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest' \
+  scripts/verify_emulator.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：`CapabilityMatrixDocumentationTest` 和 `PocketMindScreenDisplayTest`，覆盖敏感披露
+  JSON/代码一致性、必测类存在性、数据/同意/远程/撤销字段完整性，以及隐私页展示文本。
+- 通过：`AgentCoreDocumentationTest`，确认 README 顶部产品合同、首屏信任流和 manual/automatic
+  验收分离仍符合文档契约。
+- 通过：`PocketMindViewModelTest` 两条无模型启动回归，确认无本地/远程模型时保持主界面待准备态，
+  状态文案收敛为“选择远程模型或下载本地模型后即可开始”。
+- 通过：API 36 arm64 模拟器 targeted smoke，
+  `build/verification/sensitive-disclosure-ui-current/device-verification.properties`
+  包含 `status=passed`、`instrumentation_test_count=3`，覆盖模型管理、远程配置入口和
+  隐私说明里的敏感披露区。
+- 通过：API 36 arm64 fresh-start，
+  `build/verification/start-path-guidance-fresh-start-current/fresh-start-main-shell.properties`
+  包含 `status=passed`、`first_run_setup_visible=false`、`main_shell_copy_visible=true`。
+- 通过：API 36 arm64 runtime permission UI smoke，
+  `build/verification/runtime-permission-disclosure-current2/device-verification.properties`
+  包含 `status=passed`、`instrumentation_test_count=2`；覆盖联系人权限说明和最近截图 OCR
+  图片权限说明/取消路径。
+- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 未作为通过证据：日历忙闲 Activity UI prompt 链路未稳定触发确认卡；日历权限仍由
+  `AgentRuntimePermissionPolicyTest` 的 JVM 合同覆盖，正式发布前仍需补稳定 UI 或手工验收证据。
+- 未作为手工验收通过证据：麦克风系统弹窗、Android 系统文件选择器、Usage Access、
+  Accessibility 服务和 MediaProjection 前台同意仍需要正式 manual acceptance。
+
 ## 2026-06-07 Product contract screen check and current regression
 
 本轮覆盖项：

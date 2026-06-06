@@ -141,6 +141,7 @@ import com.bytedance.zgx.pocketmind.background.PeriodicCheckPolicySummary
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskStatus
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskType
+import com.bytedance.zgx.pocketmind.capability.CapabilityMatrix
 import com.bytedance.zgx.pocketmind.data.ModelVerificationStatus
 import com.bytedance.zgx.pocketmind.memory.SemanticMemoryRuntimeStatus
 import com.bytedance.zgx.pocketmind.isUsable
@@ -2110,6 +2111,7 @@ private fun remoteConfigStatusText(config: RemoteModelConfig): String =
 
 @Composable
 private fun TrustBoundaryPanel(state: ChatUiState) {
+    val sensitiveDisclosureRows = sensitiveCapabilityDisclosureDisplayRows()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         PanelSurface {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2160,6 +2162,21 @@ private fun TrustBoundaryPanel(state: ChatUiState) {
                     title = "用户控制",
                     body = trustDeletionBoundaryText(state),
                 )
+            }
+        }
+        PanelSurface {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle(
+                    text = "敏感能力披露",
+                    subtitle = SENSITIVE_CAPABILITY_DISCLOSURE_TEXT,
+                )
+                sensitiveDisclosureRows.forEach { row ->
+                    TrustBoundaryRow(
+                        icon = Icons.Filled.Security,
+                        title = row.title,
+                        body = row.body,
+                    )
+                }
             }
         }
         PanelSurface {
@@ -2222,6 +2239,22 @@ private fun ProductReadinessBullet(text: String) {
 
 private fun trustDeletionBoundaryText(state: ChatUiState): String =
     "可清空长期记忆、删除当前会话、取消后台任务，并可一键清除远程服务地址、模型名和 API Key。当前已保存长期记忆 ${state.longTermMemories.size} 条。"
+
+internal data class SensitiveCapabilityDisclosureDisplayRow(
+    val title: String,
+    val body: String,
+)
+
+internal fun sensitiveCapabilityDisclosureDisplayRows(): List<SensitiveCapabilityDisclosureDisplayRow> =
+    CapabilityMatrix.sensitiveCapabilityDisclosures.map { disclosure ->
+        SensitiveCapabilityDisclosureDisplayRow(
+            title = disclosure.displayName,
+            body = "数据：${disclosure.dataAccessed}\n" +
+                "同意：${disclosure.consentBoundary}\n" +
+                "远程：${disclosure.remoteBoundary}\n" +
+                "撤销/清除：${disclosure.revokeOrClearControl}",
+        )
+    }
 
 @Composable
 private fun MemoryTogglePanel(
@@ -3007,6 +3040,9 @@ internal const val TRUST_REMOTE_BOUNDARY_TEXT =
 
 internal const val TRUST_PERMISSION_BOUNDARY_TEXT =
     "联系人、日历、媒体、通知、当前屏幕、Accessibility 文本和截图 OCR 都需要运行时权限、系统特殊授权或前台一次性确认；动作工具仍需用户确认后执行。"
+
+internal const val SENSITIVE_CAPABILITY_DISCLOSURE_TEXT =
+    "麦克风、媒体、联系人/日历、Usage Stats、Accessibility、截图、远程图片发送和设备动作都有数据范围、同意边界，以及取消、撤销或清除路径。"
 
 internal const val ACTION_SUMMARY_COLLAPSE_CHARS = 160
 internal const val ACTION_PARAMETER_COLLAPSE_CHARS = 120
@@ -4229,7 +4265,7 @@ private fun Composer(
     val canSend = inputEnabled && (input.isNotBlank() || hasPendingSharedInput)
     val placeholder = when {
         state.isBusy -> state.statusText
-        !state.isReady -> "先准备模型，再开始提问"
+        !state.isReady -> "配置远程或下载本地后提问"
         hasPendingSharedInput -> "补充说明"
         else -> "输入问题"
     }

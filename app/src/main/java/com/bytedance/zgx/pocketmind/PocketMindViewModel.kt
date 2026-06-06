@@ -108,6 +108,8 @@ private const val STALE_AGENT_RUN_STARTUP_REASON =
 private const val USER_STOPPED_AGENT_RUN_REASON =
     "User stopped this Agent run."
 private const val PUBLIC_EVIDENCE_BATCH_TOOL_NAME = "public_evidence_batch"
+internal const val NO_MODEL_READY_STATUS_TEXT =
+    "选择远程模型或下载本地模型后即可开始"
 private val VOICE_WAVEFORM_MULTIPLIERS =
     listOf(0.42f, 0.74f, 1f, 0.56f, 0.88f, 0.63f, 0.95f, 0.5f, 0.8f)
 
@@ -3521,7 +3523,7 @@ class PocketMindViewModel(
             isArm64Supported = isArm64Device(),
             availableModelStorageBytes = modelRepository.resolveModelStorageBytes(),
             statusText = if (!hasUsableEndpoint) {
-                "未找到可用模型，请下载、导入或配置远程模型"
+                NO_MODEL_READY_STATUS_TEXT
             } else {
                 "未加载模型"
             },

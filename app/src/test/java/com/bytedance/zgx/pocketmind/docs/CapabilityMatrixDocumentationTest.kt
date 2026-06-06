@@ -60,6 +60,63 @@ class CapabilityMatrixDocumentationTest {
     }
 
     @Test
+    fun sensitiveCapabilityDisclosuresMatchJsonAndCoverUserRiskBoundaries() {
+        val json = JSONObject(readRepoFile("docs/capability_matrix.json"))
+        val documented = json.getJSONArray("sensitiveCapabilityDisclosures")
+        val requiredDisclosureIds = listOf(
+            "remote_model_send",
+            "voice_transcript_input",
+            "share_and_file_picker_input",
+            "confirmed_device_actions",
+            "contacts_calendar_reads",
+            "media_and_recent_ocr",
+            "usage_stats_foreground_app",
+            "accessibility_current_screen_text",
+            "media_projection_screenshot_ocr",
+        )
+
+        assertEquals(CapabilityMatrix.sensitiveCapabilityDisclosures.size, documented.length())
+        assertEquals(
+            requiredDisclosureIds,
+            CapabilityMatrix.sensitiveCapabilityDisclosures.map { disclosure -> disclosure.capabilityId },
+        )
+        CapabilityMatrix.sensitiveCapabilityDisclosures.forEachIndexed { index, disclosure ->
+            val item = documented.getJSONObject(index)
+            assertEquals(disclosure.capabilityId, item.getString("capabilityId"))
+            assertEquals(disclosure.displayName, item.getString("displayName"))
+            assertEquals(disclosure.dataAccessed, item.getString("dataAccessed"))
+            assertEquals(disclosure.consentBoundary, item.getString("consentBoundary"))
+            assertEquals(disclosure.remoteBoundary, item.getString("remoteBoundary"))
+            assertEquals(disclosure.revokeOrClearControl, item.getString("revokeOrClearControl"))
+            assertEquals(disclosure.requiredTests, item.getStringList("requiredTests"))
+            assertTrue(disclosure.dataAccessed.isNotBlank())
+            assertTrue(disclosure.consentBoundary.contains("确认") || disclosure.consentBoundary.contains("系统"))
+            assertTrue(disclosure.remoteBoundary.contains("远程"))
+            assertFalse(disclosure.revokeOrClearControl.contains("清理本地审计"))
+            assertFalse(disclosure.revokeOrClearControl.contains("删除审计"))
+            assertTrue(
+                disclosure.revokeOrClearControl.contains("取消") ||
+                    disclosure.revokeOrClearControl.contains("撤销") ||
+                    disclosure.revokeOrClearControl.contains("清除") ||
+                    disclosure.revokeOrClearControl.contains("删除"),
+            )
+            assertFalse(disclosure.requiredTests.isEmpty())
+        }
+        val voice = CapabilityMatrix.sensitiveCapabilityDisclosures.single {
+            it.capabilityId == "voice_transcript_input"
+        }
+        assertTrue(voice.dataAccessed.contains("麦克风音频"))
+        assertTrue(voice.dataAccessed.contains("Android 系统语音识别"))
+        assertTrue(voice.dataAccessed.contains("不保存音频文件"))
+        val action = CapabilityMatrix.sensitiveCapabilityDisclosures.single {
+            it.capabilityId == "confirmed_device_actions"
+        }
+        assertTrue(action.consentBoundary.contains("必须先确认"))
+        assertTrue(action.remoteBoundary.contains("LocalOnly"))
+        assertTrue(action.dataAccessed.contains("外部打开结果"))
+    }
+
+    @Test
     fun derivedToolDescriptorsHaveOwnersTestsAndStableToolCoverage() {
         val json = JSONObject(readRepoFile("docs/capability_matrix.json"))
         val documented = json.getJSONArray("toolCapabilities")
@@ -92,6 +149,20 @@ class CapabilityMatrixDocumentationTest {
 
         assertTrue(
             "Capability required test classes must exist: $missingClasses",
+            missingClasses.isEmpty(),
+        )
+    }
+
+    @Test
+    fun sensitiveDisclosureRequiredTestsReferenceExistingTestClasses() {
+        val testClasses = buildTestClassIndex(repoRoot())
+        val missingClasses = CapabilityMatrix.sensitiveCapabilityDisclosures
+            .flatMap { disclosure -> disclosure.requiredTests }
+            .distinct()
+            .filterNot { className -> className in testClasses }
+
+        assertTrue(
+            "Sensitive disclosure required test classes must exist: $missingClasses",
             missingClasses.isEmpty(),
         )
     }

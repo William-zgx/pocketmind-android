@@ -46,6 +46,29 @@ class MainActivityRuntimePermissionUiTest {
         }
     }
 
+    @Test
+    fun recentScreenshotOcrConfirmationShowsImageReadRationaleAndCancelsCleanly() {
+        launchReadyRemoteActivity().use {
+            composeRule.waitForTag("app_title")
+
+            composeRule.sendPrompt("识别最近 1 张截图文字")
+
+            composeRule.waitForTag("runtime_permission_requirements")
+            composeRule.onNodeWithText("读取最近截图 OCR").assertIsDisplayed()
+            composeRule.onNodeWithTag("runtime_permission_requirements")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后可能请求系统权限")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("照片和图片权限：用于在你确认后读取最近 1 张截图像素，并在本地提取 OCR 文本。")
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("special_access_requirements")
+
+            composeRule.onNodeWithTag("action_dismiss_button").performClick()
+            composeRule.waitForTagGone("runtime_permission_requirements")
+            composeRule.assertTextAbsent("工具执行结果")
+        }
+    }
+
     private fun launchReadyRemoteActivity(): ActivityScenario<MainActivity> {
         resetMainActivityPersistentState(
             context = targetContext,
@@ -103,6 +126,12 @@ class MainActivityRuntimePermissionUiTest {
     private fun ComposeTestRule.assertTagAbsent(tag: String) {
         waitUntil(timeoutMillis = 5_000) {
             onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    private fun ComposeTestRule.assertTextAbsent(text: String) {
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()
         }
     }
 }

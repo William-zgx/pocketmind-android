@@ -12,6 +12,7 @@ import com.bytedance.zgx.pocketmind.PendingRemoteSendDisclosure
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
+import com.bytedance.zgx.pocketmind.capability.CapabilityMatrix
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,6 +70,58 @@ class PocketMindScreenDisplayTest {
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("OCR 摘录"))
         assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("Accessibility 文本"))
         assertTrue(TRUST_PERMISSION_BOUNDARY_TEXT.contains("前台一次性确认"))
+        assertTrue(SENSITIVE_CAPABILITY_DISCLOSURE_TEXT.contains("麦克风"))
+        assertTrue(SENSITIVE_CAPABILITY_DISCLOSURE_TEXT.contains("Usage Stats"))
+        assertTrue(SENSITIVE_CAPABILITY_DISCLOSURE_TEXT.contains("设备动作"))
+        assertTrue(SENSITIVE_CAPABILITY_DISCLOSURE_TEXT.contains("取消、撤销或清除路径"))
+    }
+
+    @Test
+    fun sensitiveDisclosureRowsCoverAllHighRiskCapabilities() {
+        val rows = sensitiveCapabilityDisclosureDisplayRows()
+        val allText = rows.joinToString("\n") { "${it.title}\n${it.body}" }
+
+        assertEquals(CapabilityMatrix.sensitiveCapabilityDisclosures.size, rows.size)
+        listOf(
+            "远程模型发送",
+            "语音输入和麦克风",
+            "分享和文件选择",
+            "设备动作和外部 App",
+            "联系人和日历忙闲",
+            "媒体、最近图片和截图 OCR",
+            "Usage Stats 前台应用估计",
+            "Accessibility 当前屏幕文本",
+            "当前屏幕截图 OCR",
+        ).forEach { expectedTitle ->
+            assertTrue("missing disclosure row: $expectedTitle", rows.any { it.title == expectedTitle })
+        }
+        listOf(
+            "数据：",
+            "同意：",
+            "远程：",
+            "撤销/清除：",
+            "确认前不请求远程接口",
+            "不读取本地音频文件",
+            "Android 系统语音识别",
+            "必须先确认",
+            "外部打开结果",
+            "不读取日历标题、地点或参与人",
+            "不读取屏幕内容",
+            "不是截图、像素读取或视觉理解",
+            "MediaProjection",
+            "LocalOnly",
+            "审计仅保留脱敏摘要",
+        ).forEach { requiredCopy ->
+            assertTrue("missing disclosure copy: $requiredCopy", allText.contains(requiredCopy))
+        }
+        rows.forEach { row ->
+            assertTrue("${row.title} missing data boundary", row.body.contains("数据："))
+            assertTrue("${row.title} missing consent boundary", row.body.contains("同意："))
+            assertTrue("${row.title} missing remote boundary", row.body.contains("远程："))
+            assertTrue("${row.title} missing revoke/clear boundary", row.body.contains("撤销/清除："))
+        }
+        assertTrue(!allText.contains("清理本地审计"))
+        assertTrue(!allText.contains("删除审计"))
     }
 
     @Test

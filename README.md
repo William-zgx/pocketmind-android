@@ -35,7 +35,8 @@ Google AI Edge LiteRT-LM.
   an app-level total window of `8k` input+output tokens for responsive
   on-device conversation restore, keeps a `6k` input budget, reserves `2k`
   output tokens, and displays the input/output/token boundary in the model UI.
-- First-run setup for the recommended on-device chat model.
+- First-screen model path guidance for optional remote setup, local download,
+  or trusted `.litertlm` import.
 - Optional higher-quality chat model presets.
 - Custom `.litertlm` download links and local file import.
 - Model manager for switching downloaded or imported models.
@@ -510,6 +511,10 @@ Or let Gradle install it:
 ```bash
 ./gradlew :app:installDebug
 ```
+
+After launch, choose one start path from the first screen: configure an
+OpenAI-compatible remote model for the fastest start, download the recommended
+local E2B model for offline basic chat, or import a trusted `.litertlm` file.
 
 ## Testing
 

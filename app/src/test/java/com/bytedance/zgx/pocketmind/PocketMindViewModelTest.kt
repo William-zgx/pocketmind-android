@@ -273,7 +273,7 @@ class PocketMindViewModelTest {
         assertFalse(viewModel.uiState.value.showFirstRunSetup)
         assertFalse(viewModel.uiState.value.isReady)
         assertEquals(
-            "未找到可用模型，请下载、导入或配置远程模型",
+            NO_MODEL_READY_STATUS_TEXT,
             viewModel.uiState.value.statusText,
         )
     }
@@ -295,7 +295,7 @@ class PocketMindViewModelTest {
         assertFalse(viewModel.uiState.value.showFirstRunSetup)
         assertFalse(viewModel.uiState.value.isReady)
         assertEquals(
-            "未找到可用模型，请下载、导入或配置远程模型",
+            NO_MODEL_READY_STATUS_TEXT,
             viewModel.uiState.value.statusText,
         )
     }

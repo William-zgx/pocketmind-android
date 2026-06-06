@@ -89,6 +89,10 @@ class MainActivitySmokeTest {
 
         composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
         composeRule.waitForText("用户控制")
+        composeRule.waitForText("敏感能力披露")
+        composeRule.waitForText("设备动作和外部 App")
+        composeRule.waitForText("Usage Stats 前台应用估计")
+        composeRule.waitForText("当前屏幕截图 OCR")
     }
 
     @Test
