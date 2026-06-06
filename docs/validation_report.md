@@ -23,6 +23,51 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-06 Physical device validation fail-closed hardening
+
+本轮覆盖项：
+
+- `scripts/install_and_test_device.sh` 新增 `INSTRUMENTATION_CLASS`，支持在真机上按
+  class 或 method 分组跑 instrumentation，避免发布 smoke 被长链路综合测试拖死。
+- `scripts/install_and_test_device.sh` 新增 `INSTRUMENTATION_TIMEOUT_SECONDS`，并在
+  timeout 后强制停止 target/test package，写入 `failedTarget=instrumentation`、
+  `reason=instrumentation-timeout`。
+- EXIT trap 改为 fail-closed：脚本中断、timeout、未完整结束或无最终成功 marker 时，
+  不允许写成 `status=passed`。
+- `scripts/test_validation_scripts.sh` 新增 class filter、timeout、force-stop 和
+  report path 固定化的回归覆盖。
+
+验证命令：
+
+```bash
+bash -n scripts/install_and_test_device.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+ANDROID_SERIAL=fb6272c CLEAN_DEVICE=1 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest INSTRUMENTATION_TIMEOUT_SECONDS=180 ARTIFACT_DIR=build/verification/physical-device-smoke scripts/install_and_test_device.sh
+ANDROID_SERIAL=fb6272c CLEAN_DEVICE=1 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager INSTRUMENTATION_TIMEOUT_SECONDS=120 ARTIFACT_DIR=build/verification/physical-device-smoke-chat scripts/install_and_test_device.sh
+ANDROID_SERIAL=fb6272c CLEAN_DEVICE=1 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest#sessionManagerShowsSessionControls INSTRUMENTATION_TIMEOUT_SECONDS=120 ARTIFACT_DIR=build/verification/physical-device-smoke-session scripts/install_and_test_device.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests。
+- 通过：真机 `fb6272c` 上
+  `MainActivitySmokeTest#chatShellShowsModelManager` 通过，artifact：
+  `build/verification/physical-device-smoke-chat/device-verification.properties`，
+  SHA-256 `7d773dead695352ee5440806b2fd459235ccde687e4f9120b3590e8761f0b6fc`。
+- 失败并正确 fail-closed：真机全 `MainActivitySmokeTest` 卡在
+  `backgroundTaskManagerShowsEmptyState`，180s 后生成
+  `build/verification/physical-device-smoke/device-verification.properties`，
+  `failedTarget=instrumentation`、`reason=instrumentation-timeout`，
+  SHA-256 `956785fed9818e3f8e84569dc0091b597a855aca7949384704b8042ff59c4ad9`。
+- 失败并正确 fail-closed：重跑 session manager 单测时设备拒绝 ADB 安装，
+  `build/verification/physical-device-smoke-session/device-verification.properties`
+  记录 `failedTarget=install`、`reason=install-user-restricted`，
+  SHA-256 `51cd84b15c4ddfa38f6741533a9159f5d37a4f81d058fa99308172a1cd81d01d`。
+- 远程模型真机验证未执行：当前主包已被 clean uninstall，设备只剩
+  `com.bytedance.zgx.pocketmind.test`；需要用户在手机上允许 USB 安装后，才能通过
+  debug receiver 临时注入远程配置。远程 API key 不写入 repo、报告或 commit。
+
 ## 2026-06-06 Release validation API nested evidence hardening
 
 本轮覆盖项：

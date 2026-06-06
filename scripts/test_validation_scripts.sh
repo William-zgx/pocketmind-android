@@ -91,6 +91,9 @@ case "${1:-}" in
         printf '/dev/block 5000000 1000 %s 1%% /data\n' "${FAKE_DATA_FREE_KB:-4000000}"
         ;;
       am\ instrument\ -w\ -r*)
+        if [[ -n "${FAKE_INSTRUMENTATION_SLEEP_SECONDS:-}" ]]; then
+          sleep "$FAKE_INSTRUMENTATION_SLEEP_SECONDS"
+        fi
         if [[ -n "${FAKE_INSTRUMENTATION_OUTPUT:-}" ]]; then
           printf '%s\n' "$FAKE_INSTRUMENTATION_OUTPUT"
         else
@@ -100,6 +103,9 @@ case "${1:-}" in
         ;;
       am\ start\ -W\ -n*)
         echo "Status: ok"
+        ;;
+      am\ force-stop\ *)
+        echo "OK"
         ;;
       dumpsys\ package\ com.bytedance.zgx.pocketmind)
         install_count="$(grep -c ' install ' "${FAKE_ADB_LOG:?}" 2>/dev/null || true)"
@@ -343,6 +349,8 @@ assert_report_contains_text() {
 }
 
 reset_logs() {
+  export VERIFICATION_REPORT_FILE="$ARTIFACT_DIR/device-verification.properties"
+  export INSTRUMENTATION_OUTPUT_FILE="$ARTIFACT_DIR/instrumentation.txt"
   : > "$FAKE_ADB_LOG"
   : > "$FAKE_EMULATOR_LOG"
   : > "$FAKE_GRADLE_LOG"
@@ -2962,6 +2970,40 @@ grep -q "OK (20 tests)" "$ARTIFACT_DIR/instrumentation.txt" ||
   fail "Expected install helper to persist instrumentation output"
 grep -q -- "-s device-a shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" ||
   fail "Expected adb device commands to target the only authorized device"
+
+reset_logs
+expect_success \
+  "install helper scopes instrumentation class" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' \
+  INSTRUMENTATION_CLASS="com.bytedance.zgx.pocketmind.MainActivitySmokeTest" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
+assert_gradle_called
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_class=com.bytedance.zgx.pocketmind.MainActivitySmokeTest"
+grep -q -- "-s device-a shell am instrument -w -r -e class com.bytedance.zgx.pocketmind.MainActivitySmokeTest com.bytedance.zgx.pocketmind.test/androidx.test.runner.AndroidJUnitRunner" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to pass the requested instrumentation class"
+
+reset_logs
+expect_failure \
+  "install helper times out stuck instrumentation" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' \
+  FAKE_INSTRUMENTATION_SLEEP_SECONDS=2 \
+  INSTRUMENTATION_TIMEOUT_SECONDS=1 \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
+assert_gradle_called
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=instrumentation"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=instrumentation-timeout"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_timeout_seconds=1"
+grep -q "timed out after 1s" <<<"$LAST_OUTPUT" ||
+  fail "Expected install helper to report instrumentation timeout"
+grep -q -- "-s device-a shell am force-stop com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to stop target package after instrumentation timeout"
 
 reset_logs
 expect_failure \

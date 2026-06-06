@@ -13,6 +13,8 @@ CLEAN_DEVICE="${CLEAN_DEVICE:-0}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/device-$(date +%Y%m%d-%H%M%S)}"
 VERIFICATION_REPORT_FILE="${VERIFICATION_REPORT_FILE:-${ARTIFACT_DIR}/device-verification.properties}"
 INSTRUMENTATION_OUTPUT_FILE="${INSTRUMENTATION_OUTPUT_FILE:-${ARTIFACT_DIR}/instrumentation.txt}"
+INSTRUMENTATION_CLASS="${INSTRUMENTATION_CLASS:-}"
+INSTRUMENTATION_TIMEOUT_SECONDS="${INSTRUMENTATION_TIMEOUT_SECONDS:-900}"
 
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SELECTED_SERIAL=""
@@ -23,6 +25,7 @@ INSTRUMENTATION_STATUS="not-run"
 INSTRUMENTATION_TEST_COUNT=""
 FAILED_TARGET=""
 FAILURE_REASON=""
+SCRIPT_COMPLETED=0
 
 PACKAGE_NAME="com.bytedance.zgx.pocketmind"
 TEST_PACKAGE_NAME="${PACKAGE_NAME}.test"
@@ -53,6 +56,8 @@ write_verification_report() {
     echo "data_free_kb=${DATA_FREE_KB:-}"
     echo "instrumentation=$INSTRUMENTATION_STATUS"
     echo "instrumentation_test_count=${INSTRUMENTATION_TEST_COUNT:-}"
+    echo "instrumentation_class=${INSTRUMENTATION_CLASS:-}"
+    echo "instrumentation_timeout_seconds=$INSTRUMENTATION_TIMEOUT_SECONDS"
     echo "instrumentation_output_file=$INSTRUMENTATION_OUTPUT_FILE"
     echo "debug_apk=$DEBUG_APK"
     echo "android_test_apk=$ANDROID_TEST_APK"
@@ -60,7 +65,37 @@ write_verification_report() {
   echo "Device verification report: $VERIFICATION_REPORT_FILE"
 }
 
-trap 'status=$?; write_verification_report "$status"; exit "$status"' EXIT
+stop_test_processes() {
+  if [[ -z "${SELECTED_SERIAL:-}" || ! -x "$ADB_BIN" ]]; then
+    return
+  fi
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell am force-stop "$PACKAGE_NAME" >/dev/null 2>&1 || true
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell am force-stop "$TEST_PACKAGE_NAME" >/dev/null 2>&1 || true
+}
+
+on_exit() {
+  local status="$?"
+  trap - EXIT
+  if [[ "$SCRIPT_COMPLETED" != "1" ]]; then
+    if [[ "$status" -eq 0 ]]; then
+      status=1
+    fi
+    if [[ "$INSTRUMENTATION_STATUS" == "running" ]]; then
+      INSTRUMENTATION_STATUS="failed"
+      stop_test_processes
+    fi
+    if [[ -z "$FAILED_TARGET" ]]; then
+      FAILED_TARGET="script"
+    fi
+    if [[ -z "$FAILURE_REASON" ]]; then
+      FAILURE_REASON="script-incomplete"
+    fi
+  fi
+  write_verification_report "$status"
+  exit "$status"
+}
+
+trap on_exit EXIT
 
 fail_with_reason() {
   FAILED_TARGET="$1"
@@ -116,8 +151,58 @@ fi
 run_device_tests() {
   "${ADB[@]}" install -r "$DEBUG_APK" &&
     "${ADB[@]}" install -r -t "$ANDROID_TEST_APK" &&
-    INSTRUMENTATION_STATUS="running" &&
-    "${ADB[@]}" shell am instrument -w -r "$TEST_RUNNER"
+    if [[ -n "$INSTRUMENTATION_CLASS" ]]; then
+      "${ADB[@]}" shell am instrument -w -r -e class "$INSTRUMENTATION_CLASS" "$TEST_RUNNER"
+    else
+      "${ADB[@]}" shell am instrument -w -r "$TEST_RUNNER"
+    fi
+}
+
+run_with_timeout_capture() {
+  local timeout_seconds="$1"
+  shift
+  local output_file timeout_marker command_pid watchdog_pid status
+
+  output_file="$(mktemp)"
+  timeout_marker="$(mktemp)"
+  rm -f "$timeout_marker"
+
+  "$@" >"$output_file" 2>&1 &
+  command_pid=$!
+  if [[ "$timeout_seconds" =~ ^[0-9]+$ && "$timeout_seconds" -gt 0 ]]; then
+    (
+      sleep "$timeout_seconds"
+      if kill -0 "$command_pid" >/dev/null 2>&1; then
+        touch "$timeout_marker"
+        kill -INT "$command_pid" >/dev/null 2>&1 || true
+        sleep 2
+        kill -TERM "$command_pid" >/dev/null 2>&1 || true
+        sleep 2
+        kill -KILL "$command_pid" >/dev/null 2>&1 || true
+      fi
+    ) >/dev/null 2>&1 &
+    watchdog_pid=$!
+  else
+    watchdog_pid=""
+  fi
+
+  set +e
+  wait "$command_pid"
+  status=$?
+  set -e
+
+  if [[ -n "$watchdog_pid" ]]; then
+    kill "$watchdog_pid" >/dev/null 2>&1 || true
+    wait "$watchdog_pid" >/dev/null 2>&1 || true
+  fi
+
+  cat "$output_file"
+  if [[ -f "$timeout_marker" ]]; then
+    rm -f "$output_file" "$timeout_marker"
+    return 124
+  fi
+  rm -f "$output_file" "$timeout_marker"
+  return "$status"
 }
 
 instrumentation_output_failed() {
@@ -150,14 +235,22 @@ instrumentation_test_count_for() {
   fi
 }
 
+INSTRUMENTATION_STATUS="running"
 set +e
-TEST_OUTPUT="$(run_device_tests 2>&1)"
+TEST_OUTPUT="$(run_with_timeout_capture "$INSTRUMENTATION_TIMEOUT_SECONDS" run_device_tests)"
 TEST_STATUS=$?
 set -e
 mkdir -p "$(dirname "$INSTRUMENTATION_OUTPUT_FILE")"
 printf '%s\n' "$TEST_OUTPUT" > "$INSTRUMENTATION_OUTPUT_FILE"
 printf '%s\n' "$TEST_OUTPUT"
 INSTRUMENTATION_TEST_COUNT="$(instrumentation_test_count_for "$TEST_OUTPUT")"
+if [[ "$TEST_STATUS" -eq 124 ]]; then
+  echo "Device instrumentation timed out after ${INSTRUMENTATION_TIMEOUT_SECONDS}s." >&2
+  TEST_STATUS=1
+  FAILED_TARGET="instrumentation"
+  FAILURE_REASON="instrumentation-timeout"
+  stop_test_processes
+fi
 if [[ "$TEST_STATUS" -eq 0 ]] && instrumentation_output_failed "$TEST_OUTPUT"; then
   TEST_STATUS=1
   FAILED_TARGET="instrumentation"
@@ -194,4 +287,5 @@ INSTRUMENTATION_STATUS="passed"
 
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
 
+SCRIPT_COMPLETED=1
 echo "Device install and smoke test passed. App remains installed."
