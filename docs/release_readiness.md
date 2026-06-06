@@ -54,6 +54,10 @@ items below.
   `build/verification/regression-emulator-20260606-182722/regression-emulator.properties`
   records `status=passed`, nested emulator/device reports passed, and
   `actual_android_test_count=28` matching the 28 AndroidTest source count.
+- Emulator API matrix readiness is now machine-readable. The current local
+  environment reports API 36 ready and API 28/32/33/34 missing system images
+  and AVDs in
+  `build/verification/emulator-api-matrix-readiness.properties`.
 
 ## Remaining
 
@@ -85,6 +89,9 @@ items below.
   rejects `emulator-*` serials as physical-device evidence, checks AndroidTest
   count coverage, required API levels, manual/system-mediated flows, screenshot
   files, and review date.
+- Prepare API 28/32/33/34 arm64 emulator system images and AVDs before claiming
+  API matrix coverage. `scripts/check_emulator_api_matrix.sh` records missing
+  packages and AVDs but does not install SDK packages or create AVDs by itself.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in

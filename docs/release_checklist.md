@@ -209,6 +209,10 @@ release ticket or PR.
 
 - [ ] `scripts/regression_emulator.sh` passes on a prepared arm64 AVD, or the
   release record explains why emulator validation was not applicable.
+- [ ] `scripts/check_emulator_api_matrix.sh` is run before API matrix
+  regression. Attach `emulator-api-matrix-readiness.properties`; if it fails,
+  the report must list missing system-image APIs and missing AVD APIs instead
+  of silently skipping matrix coverage.
 - [ ] `scripts/install_and_test_device.sh` passes on at least one physical
   arm64 device before a broad release candidate.
 - [ ] Validation record includes device serial or AVD name, API level, ABI,

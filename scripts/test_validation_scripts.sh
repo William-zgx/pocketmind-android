@@ -186,6 +186,21 @@ FAKE_EMULATOR
   chmod +x "$sdk/emulator/emulator"
 }
 
+create_fake_sdkmanager() {
+  local path="$1"
+  cat > "$path" <<'FAKE_SDKMANAGER'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--list_installed"* ]]; then
+  printf '%s\n' "${FAKE_SDKMANAGER_INSTALLED:-}"
+  exit 0
+fi
+echo "unexpected sdkmanager command: $*" >&2
+exit 2
+FAKE_SDKMANAGER
+  chmod +x "$path"
+}
+
 create_fake_gradle() {
   local path="$1"
   cat > "$path" <<'FAKE_GRADLE'
@@ -276,6 +291,8 @@ grep -q -- '--aab "$RELEASE_AAB"' scripts/verify_local.sh ||
   fail "verify_local.sh must scan the release AAB artifact"
 grep -q 'scripts/regression_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator.sh in shell syntax checks"
+grep -q 'scripts/check_emulator_api_matrix.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include check_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
@@ -1101,6 +1118,49 @@ expect_failure \
   "release validation verifier rejects unsanitized screenshots" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_UNSANITIZED_SCREENSHOT" --report "$ARTIFACT_DIR/release-validation-unsanitized.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-unsanitized.properties" "status=failed"
+
+FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
+FAKE_AVD_ROOT="$TMP_DIR/fake-avd-root"
+create_fake_sdkmanager "$FAKE_SDKMANAGER"
+mkdir -p "$FAKE_AVD_ROOT/api28.avd" "$FAKE_AVD_ROOT/api36.avd"
+cat > "$FAKE_AVD_ROOT/api28.avd/config.ini" <<'API28_AVD_CONFIG'
+abi.type=arm64-v8a
+image.sysdir.1=system-images/android-28/google_apis/arm64-v8a/
+tag.id=google_apis
+target=android-28
+API28_AVD_CONFIG
+cat > "$FAKE_AVD_ROOT/api36.avd/config.ini" <<'API36_AVD_CONFIG'
+abi.type=arm64-v8a
+image.sysdir.1=system-images/android-36/google_apis/arm64-v8a/
+tag.id=google_apis
+target=android-36
+API36_AVD_CONFIG
+FAKE_SDKMANAGER_INSTALLED=$'system-images;android-28;google_apis;arm64-v8a | 1 | Fake\nsystem-images;android-36;google_apis;arm64-v8a | 1 | Fake'
+expect_success \
+  "emulator api matrix readiness accepts installed images and avds" \
+  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
+  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
+  REPORT_FILE="$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" \
+  scripts/check_emulator_api_matrix.sh
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "target=emulator-api-matrix-readiness"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "installedSystemImageApis=28,36"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "availableAvdApis=28,36"
+rm -rf "$FAKE_AVD_ROOT/api28.avd"
+FAKE_SDKMANAGER_INSTALLED=$'system-images;android-36;google_apis;arm64-v8a | 1 | Fake'
+expect_failure \
+  "emulator api matrix readiness reports missing image and avd" \
+  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
+  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
+  REPORT_FILE="$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" \
+  scripts/check_emulator_api_matrix.sh
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "failedTarget=api-matrix-readiness"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "reason=missing-system-image-api-28,missing-avd-api-28"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "missingSystemImageApis=28"
+assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "missingAvdApis=28"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"

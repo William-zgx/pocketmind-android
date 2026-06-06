@@ -4,8 +4,8 @@
   "status": "pending_validation",
   "emulatorRegression": {
     "status": "passed",
-    "reportPath": "build/verification/regression-emulator-20260606-175158/regression-emulator.properties",
-    "reportSha256": "abeaf2f2fc8c108da77d9fbb541bc44be29a1aa739ed985a8eab310e613d1509",
+    "reportPath": "build/verification/regression-emulator-20260606-182722/regression-emulator.properties",
+    "reportSha256": "9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51",
     "avd": "focus_agent_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
@@ -53,8 +53,8 @@
       "apiLevel": 36,
       "status": "passed",
       "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64.",
-      "evidencePath": "build/verification/regression-emulator-20260606-175158/regression-emulator.properties",
-      "evidenceSha256": "abeaf2f2fc8c108da77d9fbb541bc44be29a1aa739ed985a8eab310e613d1509"
+      "evidencePath": "build/verification/regression-emulator-20260606-182722/regression-emulator.properties",
+      "evidenceSha256": "9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51"
     }
   ],
   "manualAcceptance": {

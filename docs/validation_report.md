@@ -17,6 +17,67 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Emulator API matrix readiness reporting
+
+本轮覆盖项：
+
+- 新增 `scripts/check_emulator_api_matrix.sh`，只检查本机 SDK system image 和 AVD
+  是否覆盖 API 28/32/33/34/36 的 `google_apis` / `arm64-v8a` 组合。
+- 脚本不安装 SDK 包、不创建 AVD、不启动 emulator；失败时写
+  `emulator-api-matrix-readiness.properties`，包含 `failedTarget`、`reason`、
+  installed/available/missing API 列表。
+- `scripts/test_validation_scripts.sh` 用 fake sdkmanager 和 fake AVD 覆盖 matrix
+  readiness passed，以及缺少 system image / AVD 的 failed report。
+- `scripts/verify_local.sh` 将新脚本纳入 shell syntax check。
+
+验证命令：
+
+```bash
+bash -n scripts/check_emulator_api_matrix.sh scripts/verify_local.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+REPORT_FILE=build/verification/emulator-api-matrix-readiness.properties scripts/check_emulator_api_matrix.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 API matrix readiness success 和 failure
+  report。
+- 预期失败：当前本机 readiness report 记录 `status=failed`、
+  `installedSystemImageApis=36`、`availableAvdApis=36`、
+  `missingSystemImageApis=28,32,33,34`、`missingAvdApis=28,32,33,34`。
+- 未安装 SDK 包：按 Android emulator testing 约束，本轮只记录缺口，不擅自下载
+  API 28/32/33/34 system image 或创建 AVD。
+
+## 2026-06-06 Release validation record emulator evidence refresh
+
+本轮覆盖项：
+
+- `docs/release_validation_record.json` 的 `emulatorRegression` 和 API 36 matrix evidence
+  更新到最新通过的模拟器回归：
+  `build/verification/regression-emulator-20260606-182722/regression-emulator.properties`。
+- 该 report 记录 `status=passed`、`actual_android_test_count=28`、API 36、
+  `arm64-v8a`、AVD `focus_agent_api36_arm64`，SHA-256 为
+  `9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51`。
+- 没有把 emulator evidence 冒充为物理真机、API 28/32/33/34、手工验收、
+  screenshot 或 performance sanity 通过；这些字段仍保持 pending。
+
+验证命令：
+
+```bash
+shasum -a 256 build/verification/regression-emulator-20260606-182722/regression-emulator.properties
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：最新 API 36 emulator evidence 文件存在，SHA-256 与
+  `docs/release_validation_record.json` 一致。
+- 预期失败：`scripts/verify_release_validation_record.sh --report
+  build/verification/release-validation-current.properties` 仍返回 `status=failed`；
+  原因是 release validation record 尚未完成非模拟器物理设备、API 28/32/33/34、
+  manual acceptance、flow matrix、sanitized screenshots、performance sanity 和 reviewer
+  approval。
+
 ## 2026-06-06 Model license metadata source candidate hardening
 
 本轮覆盖项：
