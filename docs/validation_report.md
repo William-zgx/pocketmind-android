@@ -23,32 +23,48 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
-## 2026-06-07 Model path guidance clarity
+## 2026-06-07 Model path guidance and sensitive input disclosure
 
 本轮覆盖项：
 
-- 模型管理和首次配置页新增本地、远程、轻量三条路径说明，明确本地推荐聊天模型是
-  multi-GB 下载，远程模型可以先开始体验，记忆/动作小模型不是聊天模型替代。
-- 远程模式说明同步强调每次发送前都会确认，避免把远程配置误解成静默上传。
-- README 和 App 内隐私说明同步本地推荐聊天模型体积、远程替代路径和自定义
-  `.litertlm` 导入边界。
+- 待准备页和模型管理页新增本地/远程/轻量路径说明：本地 E2B 是约 2.4 GB 大下载，
+  可离线问答；远程模型可作为不下载本地对话模型的可选路径；当前没有更小的官方推荐聊天模型，
+  记忆/动作小模型不是聊天替代。
+- 空间不足提示补充远程模型和可信 `.litertlm` 导入作为恢复路径。
+- 远程发送预览明确图片字节会发往当前远程地址；确认前仍不发送。
+- 输入区展示可见的语音隐私说明：系统语音转写只进入输入框，不自动发送，不读取本地音频文件。
+- 复核 README、`docs/privacy_notice.md`、store policy / privacy review pending evidence 已同步模型下载口径，
+  且当前 privacy notice SHA 与记录一致。
 
 验证命令：
 
 ```bash
-./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
-scripts/verify_local.sh
-git diff --check
-git diff --unified=0 | rg -n "^\\+.*(sk-[A-Za-z0-9_-]{20,}|B[e]arer [A-Za-z0-9._-]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,}|(?i:api[_-]?key|s[e]cret|p[a]ssword|d[e]epseek))" || true
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+shasum -a 256 docs/privacy_notice.md docs/store_policy_review_evidence/pending.properties \
+  docs/privacy_review_evidence/release-pending.properties \
+  docs/privacy_review_evidence/security-pending.properties \
+  docs/privacy_review_evidence/legal-pending.properties
+ARTIFACT_DIR=build/verification/model-path-guidance-adaptive-ui-final \
+  ANDROID_SERIAL=emulator-5554 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityAdaptiveUiTest' \
+  scripts/verify_emulator.sh
 ```
 
 结果：
 
-- 通过：`PocketMindScreenDisplayTest` 覆盖模型路径说明、本地/远程/轻量替代文案、
-  远程发送前确认说明和 2.4 GB 下载门槛。
-- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
-  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
-- 通过：`git diff --check` 无 whitespace 问题；新增 diff 敏感串扫描无命中。
+- 通过：`PocketMindScreenDisplayTest`，覆盖产品定位、模型路径说明、远程发送图片字节披露、
+  远程发送确认、语音隐私说明和 run data receipt 展示合同。
+- 通过：privacy notice 当前 SHA 为
+  `672d8aa10462659c079c3cb467bbe694b32938e562cc1f8a07f5899df0620430`；store policy /
+  privacy review pending evidence SHA 已同步到对应 JSON 记录。
+- 通过：API 36 arm64 自适应 UI emulator smoke，
+  `build/verification/model-path-guidance-adaptive-ui-final/emulator-verification.properties`
+  包含 `status=passed`，嵌套
+  `build/verification/model-path-guidance-adaptive-ui-final/device-verification.properties`
+  包含 `instrumentation_test_count=2`。
+- 未执行：完整 API 矩阵、真机矩阵和人工 Play policy review；这些仍按 release gate 保持
+  pending，不作为本轮完成项。
 
 ## 2026-06-07 Permission disclosure and adaptive UI smoke
 

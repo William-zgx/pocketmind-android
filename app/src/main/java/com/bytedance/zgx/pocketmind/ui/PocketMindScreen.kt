@@ -1081,7 +1081,7 @@ internal fun remoteSendDisclosureDisplayRows(disclosure: PendingRemoteSendDisclo
     listOf(
         "远程地址：${disclosure.remoteHost}",
         "模型：${disclosure.remoteModelName}",
-        "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张",
+        "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址",
         "不会发送：LocalOnly 历史 ${disclosure.localOnlyHistoryFilteredCount} 条、本地记忆、设备上下文、非图片附件",
         "凭据状态：${if (disclosure.apiKeyConfigured) "已配置 API Key" else "未配置 API Key"}",
     )
@@ -4194,6 +4194,7 @@ private fun Composer(
         if (state.inferenceMode == InferenceMode.Remote) {
             RemoteAttachmentProtectionNotice()
         }
+        VoiceInputPrivacyNotice()
         state.pendingSharedInputDraft?.let { draft ->
             PendingSharedInputStrip(
                 summary = draft.summary,
@@ -4463,6 +4464,20 @@ private fun RemoteAttachmentProtectionNotice() {
             color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
     }
+}
+
+@Composable
+private fun VoiceInputPrivacyNotice() {
+    Text(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("voice_privacy_notice"),
+        text = VOICE_INPUT_PRIVACY_DESCRIPTION,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

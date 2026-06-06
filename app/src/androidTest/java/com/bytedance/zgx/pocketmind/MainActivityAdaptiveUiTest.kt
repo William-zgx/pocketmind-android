@@ -75,6 +75,7 @@ class MainActivityAdaptiveUiTest {
                 "选择附件；远程模式会发送图片，其他附件不读取正文或 OCR",
             )
             composeRule.assertLabeledAction("composer_voice_button", VOICE_INPUT_PRIVACY_DESCRIPTION)
+            composeRule.onNodeWithTag("voice_privacy_notice").assertIsDisplayed()
             composeRule.assertLabeledAction("composer_model_button", "模型管理")
 
             composeRule.waitForReadyComposer()

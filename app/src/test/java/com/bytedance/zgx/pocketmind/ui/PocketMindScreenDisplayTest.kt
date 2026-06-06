@@ -213,6 +213,7 @@ class PocketMindScreenDisplayTest {
         assertTrue(text.contains("model-a"))
         assertTrue(text.contains("可远程发送历史 2 条"))
         assertTrue(text.contains("图片 1 张"))
+        assertTrue(text.contains("图片字节会发往该远程地址"))
         assertTrue(text.contains("LocalOnly 历史 3 条"))
         assertTrue(text.contains("本地记忆"))
         assertTrue(text.contains("设备上下文"))
