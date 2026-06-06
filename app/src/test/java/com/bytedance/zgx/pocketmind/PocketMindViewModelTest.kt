@@ -1351,6 +1351,29 @@ class PocketMindViewModelTest {
         assertTrue(remoteRuntime.calls.isEmpty())
         assertEquals(AgentRunState.Failed, viewModel.uiState.value.agentTraceRuns.single().state)
         assertTrue(sessionStore.messages.last().text.contains("local model crashed"))
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains("local model crashed"))
+    }
+
+    @Test
+    fun localGenerationFailureUpdatesModelHealth() = runTest(dispatcher) {
+        val localRuntime = FakeLiteRtRuntime(failure = IllegalStateException("local model crashed"))
+        val viewModel = createViewModel(
+            runtime = localRuntime,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState()
+        advanceUntilIdle()
+
+        assertEquals(ModelHealthState.Loaded, viewModel.uiState.value.modelHealth.state)
+
+        viewModel.sendMessage("普通问题")
+        advanceUntilIdle()
+
+        assertEquals("生成失败，建议重新加载", viewModel.uiState.value.statusText)
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertEquals(BackendChoice.CPU, viewModel.uiState.value.modelHealth.backend)
+        assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains("local model crashed"))
     }
 
     @Test
@@ -3252,6 +3275,8 @@ class PocketMindViewModelTest {
         assertEquals(MessagePrivacy.RemoteEligible, sessionStore.messages.last().privacy)
         assertTrue(sessionStore.messages.last().text.contains(parseError))
         assertFalse(sessionStore.messages.last().text.contains("动作草稿"))
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertTrue(viewModel.uiState.value.modelHealth.failureReason.orEmpty().contains(parseError))
     }
 
     @Test

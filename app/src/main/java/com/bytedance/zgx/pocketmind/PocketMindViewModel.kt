@@ -1570,6 +1570,10 @@ class PocketMindViewModel(
                         isReady = useRemoteModel && remoteConfig.isConfigured,
                         pendingConfirmation = null,
                         agentTraceRuns = loadAgentTraceRuns(),
+                        modelHealth = it.failedGenerationModelHealth(
+                            useRemoteModel = useRemoteModel,
+                            reason = errorMessage,
+                        ),
                         statusText = if (useRemoteModel) {
                             "远程生成失败"
                         } else {
@@ -2749,6 +2753,10 @@ class PocketMindViewModel(
                         isReady = useRemoteModel && remoteConfig.isConfigured,
                         pendingConfirmation = null,
                         agentTraceRuns = loadAgentTraceRuns(),
+                        modelHealth = it.failedGenerationModelHealth(
+                            useRemoteModel = useRemoteModel,
+                            reason = errorMessage,
+                        ),
                         statusText = if (useRemoteModel) {
                             "远程生成失败"
                         } else {
@@ -3921,6 +3929,17 @@ class PocketMindViewModel(
             )
         }
     }
+
+    private fun ChatUiState.failedGenerationModelHealth(
+        useRemoteModel: Boolean,
+        reason: String,
+    ): ModelHealth =
+        modelHealth.copy(
+            profileId = if (useRemoteModel) remoteModelConfig.modelProfile().id else activeModelProfileId(),
+            state = ModelHealthState.LoadFailed,
+            backend = if (useRemoteModel) null else backend,
+            failureReason = reason,
+        )
 
     private fun ChatUiState.toDeviceContextSnapshot(): DeviceContextSnapshot =
         DeviceContextSnapshot(

@@ -15,6 +15,28 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 ModelHealth generation failure hardening
+
+本轮覆盖项：
+
+- 本地/远程生成失败 catch 分支会将 `modelHealth.state` 更新为 `LoadFailed`，并写入
+  `failureReason`，避免 UI 同时显示“生成失败”和“健康：已加载”。
+- 覆盖普通本地生成崩溃、本地工具续写崩溃、远程工具 parse failure 三条路径。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.localGenerationFailureUpdatesModelHealth' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.clipboardSummaryShareLocalContinuationFailureFailsAgentRunWithoutSecondConfirmation' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.malformedRemoteToolCallFailsClosedBeforeConfirmationOrExecution'
+```
+
+结果：
+
+- 通过：targeted ViewModel ModelHealth JVM tests。
+- 未执行模拟器：本轮只修改 ViewModel 状态模型和 JVM 回归测试，不改变 Android UI 或系统交互。
+
 ## 2026-06-06 Remote tool exposure allowlist hardening
 
 本轮覆盖项：
