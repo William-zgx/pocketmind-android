@@ -10,6 +10,7 @@ export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_SDK}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 ADB_BIN="${ANDROID_SDK}/platform-tools/adb"
 CLEAN_DEVICE="${CLEAN_DEVICE:-0}"
+RESET_APP_DATA_AFTER_TESTS="${RESET_APP_DATA_AFTER_TESTS:-$CLEAN_DEVICE}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/device-$(date +%Y%m%d-%H%M%S)}"
 VERIFICATION_REPORT_FILE="${VERIFICATION_REPORT_FILE:-${ARTIFACT_DIR}/device-verification.properties}"
 INSTRUMENTATION_OUTPUT_FILE="${INSTRUMENTATION_OUTPUT_FILE:-${ARTIFACT_DIR}/instrumentation.txt}"
@@ -53,6 +54,7 @@ write_verification_report() {
     echo "api_level=${API_LEVEL:-}"
     echo "abi=${ABI_LIST:-}"
     echo "clean_device=$CLEAN_DEVICE"
+    echo "reset_app_data_after_tests=$RESET_APP_DATA_AFTER_TESTS"
     echo "data_free_kb=${DATA_FREE_KB:-}"
     echo "instrumentation=$INSTRUMENTATION_STATUS"
     echo "instrumentation_test_count=${INSTRUMENTATION_TEST_COUNT:-}"
@@ -73,6 +75,22 @@ stop_test_processes() {
   "$ADB_BIN" -s "$SELECTED_SERIAL" shell am force-stop "$TEST_PACKAGE_NAME" >/dev/null 2>&1 || true
 }
 
+clear_app_data_after_tests() {
+  if [[ "$RESET_APP_DATA_AFTER_TESTS" != "1" || -z "${SELECTED_SERIAL:-}" || ! -x "$ADB_BIN" ]]; then
+    return
+  fi
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell pm clear "$PACKAGE_NAME" >/dev/null 2>&1 || true
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell pm clear "$TEST_PACKAGE_NAME" >/dev/null 2>&1 || true
+}
+
+cleanup_test_device_state() {
+  stop_test_processes
+  clear_app_data_after_tests
+  if [[ "$CLEAN_DEVICE" == "1" && -n "${SELECTED_SERIAL:-}" && -x "$ADB_BIN" ]]; then
+    "$ADB_BIN" -s "$SELECTED_SERIAL" uninstall "$TEST_PACKAGE_NAME" >/dev/null 2>&1 || true
+  fi
+}
+
 on_exit() {
   local status="$?"
   trap - EXIT
@@ -82,8 +100,8 @@ on_exit() {
     fi
     if [[ "$INSTRUMENTATION_STATUS" == "running" ]]; then
       INSTRUMENTATION_STATUS="failed"
-      stop_test_processes
     fi
+    cleanup_test_device_state
     if [[ -z "$FAILED_TARGET" ]]; then
       FAILED_TARGET="script"
     fi
@@ -249,7 +267,7 @@ if [[ "$TEST_STATUS" -eq 124 ]]; then
   TEST_STATUS=1
   FAILED_TARGET="instrumentation"
   FAILURE_REASON="instrumentation-timeout"
-  stop_test_processes
+  cleanup_test_device_state
 fi
 if [[ "$TEST_STATUS" -eq 0 ]] && instrumentation_output_failed "$TEST_OUTPUT"; then
   TEST_STATUS=1
@@ -285,6 +303,7 @@ EOF
 fi
 INSTRUMENTATION_STATUS="passed"
 
+clear_app_data_after_tests
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
 
 SCRIPT_COMPLETED=1

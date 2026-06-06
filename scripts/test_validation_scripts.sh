@@ -133,7 +133,7 @@ FAKE_PACKAGE_DUMPSYS
           echo "Broadcast completed: result=-1, data=\"remote config saved\""
         fi
         ;;
-      pm\ clear\ com.bytedance.zgx.pocketmind)
+      pm\ clear\ com.bytedance.zgx.pocketmind|pm\ clear\ com.bytedance.zgx.pocketmind.test)
         echo "Success"
         ;;
       input\ tap*|input\ text*|input\ keyevent*)
@@ -2966,6 +2966,7 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "api_level=36"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "abi=arm64-v8a,armeabi-v7a"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=0"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
@@ -2989,6 +2990,27 @@ grep -q -- "-s device-a shell am instrument -w -r -e class com.bytedance.zgx.poc
   fail "Expected install helper to pass the requested instrumentation class"
 
 reset_logs
+expect_success \
+  "install helper clears clean-device app data before success launch" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' \
+  CLEAN_DEVICE=1 \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
+assert_gradle_called
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "clean_device=1"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+  fail "Expected clean-device install helper to clear target app data before success launch"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+  fail "Expected clean-device install helper to clear test app data before success launch"
+pm_clear_line="$(grep -n -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
+launch_line="$(grep -n -- "-s device-a shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
+if [[ -z "$pm_clear_line" || -z "$launch_line" || "$pm_clear_line" -ge "$launch_line" ]]; then
+  fail "Expected target app data to be cleared before launching app after successful clean-device validation"
+fi
+
+reset_logs
 expect_failure \
   "install helper times out stuck instrumentation" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
@@ -3007,6 +3029,27 @@ grep -q "timed out after 1s" <<<"$LAST_OUTPUT" ||
   fail "Expected install helper to report instrumentation timeout"
 grep -q -- "-s device-a shell am force-stop com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to stop target package after instrumentation timeout"
+
+reset_logs
+expect_failure \
+  "install helper clears clean-device state after timeout" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' \
+  FAKE_INSTRUMENTATION_SLEEP_SECONDS=2 \
+  CLEAN_DEVICE=1 \
+  INSTRUMENTATION_TIMEOUT_SECONDS=1 \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
+assert_gradle_called
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "clean_device=1"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=instrumentation-timeout"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+  fail "Expected clean-device install helper to clear target app data after timeout"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+  fail "Expected clean-device install helper to clear test app data after timeout"
+grep -q -- "-s device-a uninstall com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+  fail "Expected clean-device install helper to uninstall test package after timeout"
 
 reset_logs
 expect_failure \
