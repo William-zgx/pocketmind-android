@@ -3319,6 +3319,14 @@ class PocketMindViewModel(
         val modelState = modelRepository.currentState()
         val backend = generationParametersRepository.loadBackend()
         val memoryEnabled = firstRunSetupRepository.isMemoryEnabled()
+        val inferenceMode = remoteModelRepository.loadMode()
+        val remoteConfig = remoteModelRepository.loadConfig()
+        val firstRunDismissed = firstRunSetupRepository.isSetupDismissed()
+        val shouldShowSetup = shouldShowStartupModelSetup(
+            firstRunDismissed = firstRunDismissed,
+            modelState = modelState,
+            remoteConfig = remoteConfig,
+        )
         memoryRepository.enabled = memoryEnabled
         syncTaskStateMemories(memoryEnabled = memoryEnabled)
         syncSemanticMemoryRuntime()
@@ -3327,11 +3335,11 @@ class PocketMindViewModel(
             activeInstalledModelId = modelState.activeInstalledModelId,
             installedModels = modelState.installedModels,
             selectedModelId = modelState.selectedModelId,
-            inferenceMode = remoteModelRepository.loadMode(),
-            remoteModelConfig = remoteModelRepository.loadConfig(),
+            inferenceMode = inferenceMode,
+            remoteModelConfig = remoteConfig,
             backend = backend,
             modelHealth = modelState.modelHealthForCurrentSelection(backend),
-            showFirstRunSetup = !firstRunSetupRepository.isSetupDismissed(),
+            showFirstRunSetup = shouldShowSetup,
             memoryEnabled = memoryEnabled,
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
             semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
@@ -3347,8 +3355,20 @@ class PocketMindViewModel(
             messages = sessionRepository.activeMessages(),
             isArm64Supported = isArm64Device(),
             availableModelStorageBytes = modelRepository.resolveModelStorageBytes(),
+            statusText = if (shouldShowSetup && firstRunDismissed) {
+                "未找到可用模型，请下载、导入或配置远程模型"
+            } else {
+                "未加载模型"
+            },
         )
     }
+
+    private fun shouldShowStartupModelSetup(
+        firstRunDismissed: Boolean,
+        modelState: ModelSelectionState,
+        remoteConfig: RemoteModelConfig,
+    ): Boolean =
+        !firstRunDismissed || (modelState.activeModelPath == null && !remoteConfig.isConfigured)
 
     private fun updateModelState(modelState: ModelSelectionState) {
         syncSemanticMemoryRuntime()

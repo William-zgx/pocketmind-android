@@ -549,9 +549,11 @@ scripts/install_and_test_device.sh
 ```
 
 `scripts/install_and_test_device.sh` leaves the debug app installed after a
-successful run and preserves app data by default. Use
-`CLEAN_DEVICE=1 scripts/install_and_test_device.sh` only when you intentionally
-want a clean first-launch validation.
+successful run and clears app data before the final manual launch by default, so
+instrumentation state cannot leak into acceptance. Set
+`RESET_APP_DATA_AFTER_TESTS=0` only when you intentionally want to inspect the
+post-test app state. Use `CLEAN_DEVICE=1 scripts/install_and_test_device.sh`
+when you also want to uninstall any old debug package before validation.
 If there is no authorized device, or if multiple authorized devices are
 connected without `ANDROID_SERIAL`, the script exits before Gradle build, APK
 install, or instrumentation. Record the instrumentation runner's reported test

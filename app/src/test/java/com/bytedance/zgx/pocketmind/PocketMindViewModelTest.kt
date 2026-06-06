@@ -148,6 +148,47 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun startupShowsSetupAgainWhenDismissedButNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = null),
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Local,
+                config = RemoteModelConfig(),
+            ),
+            firstRunStore = FakeFirstRunSetupStore(setupDismissed = true),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showFirstRunSetup)
+        assertFalse(viewModel.uiState.value.isReady)
+        assertEquals(
+            "未找到可用模型，请下载、导入或配置远程模型",
+            viewModel.uiState.value.statusText,
+        )
+    }
+
+    @Test
+    fun startupDoesNotReopenSetupWhenRemoteModelIsConfigured() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = null),
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            firstRunStore = FakeFirstRunSetupStore(setupDismissed = true),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showFirstRunSetup)
+        assertTrue(viewModel.uiState.value.isReady)
+        assertEquals("远程模型已就绪", viewModel.uiState.value.statusText)
+    }
+
+    @Test
     fun remoteModeProtectsSensitiveDirectPromptBeforeCallingRemoteRuntime() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore()
@@ -6879,10 +6920,13 @@ class PocketMindViewModelTest {
 
     private class FakeFirstRunSetupStore(
         private var memoryEnabled: Boolean = true,
+        private var setupDismissed: Boolean = true,
     ) : FirstRunSetupStore {
-        override fun isSetupDismissed(): Boolean = true
+        override fun isSetupDismissed(): Boolean = setupDismissed
 
-        override fun markSetupDismissed() = Unit
+        override fun markSetupDismissed() {
+            setupDismissed = true
+        }
 
         override fun isMemoryEnabled(): Boolean = memoryEnabled
 

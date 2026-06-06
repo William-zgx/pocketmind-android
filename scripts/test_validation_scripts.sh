@@ -3122,7 +3122,7 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "api_level=36"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "abi=arm64-v8a,armeabi-v7a"
-assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=0"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
@@ -3130,6 +3130,10 @@ grep -q "OK (20 tests)" "$ARTIFACT_DIR/instrumentation.txt" ||
   fail "Expected install helper to persist instrumentation output"
 grep -q -- "-s device-a shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" ||
   fail "Expected adb device commands to target the only authorized device"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to clear target app data before default success launch"
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to clear test app data before default success launch"
 
 reset_logs
 expect_success \

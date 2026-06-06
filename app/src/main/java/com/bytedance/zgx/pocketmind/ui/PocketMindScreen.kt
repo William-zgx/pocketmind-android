@@ -261,6 +261,9 @@ fun PocketMindScreen(
                             onDownloadModel = onDownloadModel,
                             onCancelDownload = onCancelDownload,
                             onRecommendedModelSelected = onRecommendedModelSelected,
+                            onSetupModelToggled = onSetupModelToggled,
+                            onDownloadSetupModels = onDownloadSetupModels,
+                            onSkipFirstRunSetup = onSkipFirstRunSetup,
                             onSendPrompt = onSendMessage,
                         )
                     } else {
@@ -394,20 +397,6 @@ fun PocketMindScreen(
                         onCancelBackgroundTask = onCancelBackgroundTask,
                         onSetPeriodicCheckPolicy = onSetPeriodicCheckPolicy,
                         onDisablePeriodicCheckPolicy = onDisablePeriodicCheckPolicy,
-                    )
-                }
-            }
-
-            if (state.showFirstRunSetup) {
-                ModalBottomSheet(
-                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                    onDismissRequest = onSkipFirstRunSetup,
-                ) {
-                    FirstRunSetupSheet(
-                        state = state,
-                        onSetupModelToggled = onSetupModelToggled,
-                        onDownloadSetupModels = onDownloadSetupModels,
-                        onSkip = onSkipFirstRunSetup,
                     )
                 }
             }
@@ -701,6 +690,9 @@ private fun ChatEmptyState(
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onRecommendedModelSelected: (String) -> Unit,
+    onSetupModelToggled: (String, Boolean) -> Unit,
+    onDownloadSetupModels: () -> Unit,
+    onSkipFirstRunSetup: () -> Unit,
     onSendPrompt: (String) -> Unit,
 ) {
     val semanticColors = LocalPocketMindColors.current
@@ -771,11 +763,109 @@ private fun ChatEmptyState(
             }
         }
 
+        if (state.showFirstRunSetup && !state.isReady) {
+            FirstRunSetupPanel(
+                state = state,
+                onSetupModelToggled = onSetupModelToggled,
+                onDownloadSetupModels = onDownloadSetupModels,
+                onSkip = onSkipFirstRunSetup,
+            )
+        }
+
         if (!state.isReady) {
             DeviceCheck(
                 state = state,
                 requiredBytes = state.pendingSelectedChatDownloadBytes(),
             )
+        }
+    }
+}
+
+@Composable
+private fun FirstRunSetupPanel(
+    state: ChatUiState,
+    onSetupModelToggled: (String, Boolean) -> Unit,
+    onDownloadSetupModels: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionTitle(
+                text = "准备基础能力包",
+                subtitle = "主界面可直接使用；模型可现在下载，也可以稍后在模型管理中配置。",
+            )
+            state.basicSetupModels.forEach { model ->
+                val selected = model.id in state.setupSelectedModelIds
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        modifier = Modifier.testTag("first_run_model_${model.id}"),
+                        checked = selected,
+                        enabled = !state.isBusy && !state.isModelInstalled(model.id),
+                        onCheckedChange = { onSetupModelToggled(model.id, it) },
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = model.shortName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "${capabilityLabel(model.capability)} · ${ModelCatalog.formatBytes(model.byteSize)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (state.isModelInstalled(model.id)) {
+                        Text(
+                            text = "已安装",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onSkip,
+                    enabled = !state.isBusy,
+                ) {
+                    Text("先跳过")
+                }
+                Button(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("first_run_download_button"),
+                    onClick = onDownloadSetupModels,
+                    enabled = !state.isBusy && state.setupSelectedModelIds.isNotEmpty(),
+                ) {
+                    Text("下载选中的模型")
+                }
+            }
         }
     }
 }
@@ -885,96 +975,6 @@ private fun QuickModelSetup(
             ) {
                 Text("取消下载")
             }
-        }
-    }
-}
-
-@Composable
-private fun FirstRunSetupSheet(
-    state: ChatUiState,
-    onSetupModelToggled: (String, Boolean) -> Unit,
-    onDownloadSetupModels: () -> Unit,
-    onSkip: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        SectionTitle(
-            text = "准备基础能力包",
-            subtitle = "默认只安装对话模型；记忆和动作当前是本地轻量助手，可稍后补装实验模型资产。",
-        )
-        state.basicSetupModels.forEach { model ->
-            val selected = model.id in state.setupSelectedModelIds
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (selected) 0.72f else 0.34f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        modifier = Modifier.testTag("first_run_model_${model.id}"),
-                        checked = selected,
-                        enabled = !state.isBusy && !state.isModelInstalled(model.id),
-                        onCheckedChange = { onSetupModelToggled(model.id, it) },
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = model.shortName,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = "${capabilityLabel(model.capability)} · ${ModelCatalog.formatBytes(model.byteSize)} · ${model.deviceHint}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (state.isModelInstalled(model.id)) {
-                        Text(
-                            text = "已安装",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            }
-        }
-        DeviceCheck(
-            state = state,
-            requiredBytes = state.pendingSetupDownloadBytes(),
-        )
-        Button(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("first_run_download_button"),
-            onClick = onDownloadSetupModels,
-            enabled = !state.isBusy && state.setupSelectedModelIds.isNotEmpty(),
-        ) {
-            Text("下载选中的模型")
-        }
-        TextButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onSkip,
-            enabled = !state.isBusy,
-        ) {
-            Text("先跳过")
         }
     }
 }
@@ -3275,11 +3275,6 @@ private fun ChatUiState.pendingSelectedChatDownloadBytes(): Long =
     } else {
         selectedRecommendedModel.byteSize
     }
-
-private fun ChatUiState.pendingSetupDownloadBytes(): Long =
-    basicSetupModels
-        .filter { it.id in setupSelectedModelIds && !isModelInstalled(it.id) }
-        .sumOf { it.byteSize }
 
 private fun ChatUiState.pendingBasicDownloadBytes(): Long =
     basicSetupModels

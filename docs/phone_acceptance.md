@@ -49,13 +49,13 @@ scripts/install_and_test_device.sh
 - instrumentation runner 报告的测试总数全部通过。
 - App 可以被启动。
 
-默认情况下，脚本不会在测试后删除 App，也不会清空 App 数据；通过后会保留 debug App 并启动它。需要做干净首启验收时，显式运行：
+默认情况下，脚本不会在测试后删除 App，但会在最终手动启动前清空 App 数据，避免 instrumentation 写入的测试状态残留到验收起点。需要连旧安装包也一起清理时，显式运行：
 
 ```bash
 CLEAN_DEVICE=1 scripts/install_and_test_device.sh
 ```
 
-`CLEAN_DEVICE=1` 会在测试前卸载旧调试包，已经下载好的模型会被清掉；只在确认可以重新下载或重新导入时使用。
+`CLEAN_DEVICE=1` 会在测试前卸载旧调试包，已经下载好的模型会被清掉；只在确认可以重新下载或重新导入时使用。确实需要保留测试后的 App 数据时，显式设置 `RESET_APP_DATA_AFTER_TESTS=0`。
 
 需要保留真机安装时，不要直接运行 `./gradlew :app:connectedDebugAndroidTest`；Android Gradle Plugin 可能会在 instrumentation 结束后清理安装包。
 

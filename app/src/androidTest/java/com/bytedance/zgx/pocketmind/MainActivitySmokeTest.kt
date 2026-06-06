@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 
@@ -91,7 +92,7 @@ class MainActivitySmokeTest {
         if (skipNodes.isNotEmpty()) {
             composeRule.onNodeWithText("准备基础能力包").assertIsDisplayed()
             composeRule.onNodeWithText("下载选中的模型").assertIsDisplayed()
-            composeRule.onNodeWithText("先跳过").performClick()
+            composeRule.onNodeWithText("先跳过").performScrollTo().performClick()
         }
     }
 }
