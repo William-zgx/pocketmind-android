@@ -23,6 +23,32 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Core emulator regression refresh
+
+本轮覆盖项：
+
+- 重新验证全新安装后默认进入主界面，不再停留在“准备基础能力包”的接入页。
+- 重新跑 API 36 arm64 emulator 完整 connected Android regression，覆盖远程配置、
+  会话、记忆、受确认保护的设备动作、分享入口、权限提示、模型管理和 Room migration。
+
+验证命令：
+
+```bash
+AVD_NAME=pocketmind_api36_arm64 ARTIFACT_DIR=build/verification/core-fresh-start-current scripts/verify_fresh_start_main_shell_emulator.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/core-emulator-second-current scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：fresh-start 证据为
+  `build/verification/core-fresh-start-current/fresh-start-main-shell.properties`，
+  `first_run_setup_visible=false`、`main_shell_copy_visible=true`。
+- 通过：完整 emulator regression 证据为
+  `build/verification/core-emulator-second-current/regression-emulator.properties`，
+  `status=passed`、`actual_android_test_count=28`、`api_level=36`、`abi=arm64-v8a`。
+- 备注：首轮完整回归出现一次 instrumentation process crash；随后单独复现综合主链路通过，
+  清空 adb/emulator 状态后完整回归通过。当前有效通过证据以上述 second-current artifact 为准。
+
 ## 2026-06-07 Fresh start default-page clarity and APK artifact cleanup
 
 本轮覆盖项：
