@@ -11,11 +11,15 @@ export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_SDK}"
 ADB_BIN="${ANDROID_SDK}/platform-tools/adb"
 EMULATOR_BIN="${ANDROID_EMULATOR:-${ANDROID_SDK}/emulator/emulator}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
+APKSIGNER_BIN="${APKSIGNER_BIN:-}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/upgrade-install-emulator-$(date +%Y%m%d-%H%M%S)}"
 REPORT_FILE="${REPORT_FILE:-${ARTIFACT_DIR}/upgrade-install-emulator.properties}"
 INSTRUMENTATION_OUTPUT_FILE="${INSTRUMENTATION_OUTPUT_FILE:-${ARTIFACT_DIR}/instrumentation.txt}"
 BASE_PACKAGE_FILE="${BASE_PACKAGE_FILE:-${ARTIFACT_DIR}/package-before-upgrade.txt}"
 CURRENT_PACKAGE_FILE="${CURRENT_PACKAGE_FILE:-${ARTIFACT_DIR}/package-after-upgrade.txt}"
+BASE_INSTALL_OUTPUT_FILE="${BASE_INSTALL_OUTPUT_FILE:-${ARTIFACT_DIR}/install-base.txt}"
+CURRENT_INSTALL_OUTPUT_FILE="${CURRENT_INSTALL_OUTPUT_FILE:-${ARTIFACT_DIR}/install-current.txt}"
+TEST_INSTALL_OUTPUT_FILE="${TEST_INSTALL_OUTPUT_FILE:-${ARTIFACT_DIR}/install-android-test.txt}"
 EMULATOR_LOG="${ARTIFACT_DIR}-emulator.log"
 BOOT_TIMEOUT_SECONDS="${BOOT_TIMEOUT_SECONDS:-180}"
 EMULATOR_SELECT_TIMEOUT_SECONDS="${EMULATOR_SELECT_TIMEOUT_SECONDS:-10}"
@@ -25,8 +29,13 @@ PACKAGE_NAME="com.bytedance.zgx.pocketmind"
 TEST_PACKAGE_NAME="${PACKAGE_NAME}.test"
 MAIN_ACTIVITY="${PACKAGE_NAME}/.MainActivity"
 TEST_RUNNER="${TEST_PACKAGE_NAME}/androidx.test.runner.AndroidJUnitRunner"
-CURRENT_DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
-CURRENT_ANDROID_TEST_APK="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+CURRENT_DEBUG_APK="${UPGRADE_CURRENT_APK:-app/build/outputs/apk/debug/app-debug.apk}"
+CURRENT_ANDROID_TEST_APK="${UPGRADE_CURRENT_ANDROID_TEST_APK:-app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk}"
+BASE_APK_MODE="git-worktree"
+CURRENT_APK_MODE="built"
+CURRENT_ANDROID_TEST_APK_MODE="built"
+[[ -n "${UPGRADE_CURRENT_APK:-}" ]] && CURRENT_APK_MODE="explicit"
+[[ -n "${UPGRADE_CURRENT_ANDROID_TEST_APK:-}" ]] && CURRENT_ANDROID_TEST_APK_MODE="explicit"
 
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SELECTED_SERIAL=""
@@ -37,16 +46,23 @@ BASE_REF="${UPGRADE_BASE_REF:-}"
 BASE_COMMIT=""
 BASE_WORKTREE=""
 BASE_DEBUG_APK=""
+BASE_SOURCE_APK="${UPGRADE_BASE_APK:-}"
+[[ -n "$BASE_SOURCE_APK" ]] && BASE_APK_MODE="explicit"
 BASE_DEBUG_APK_SHA=""
 CURRENT_DEBUG_APK_SHA=""
 CURRENT_ANDROID_TEST_APK_SHA=""
+BASE_SIGNER_SHA256=""
+CURRENT_SIGNER_SHA256=""
+SIGNER_SHA256_MATCHES="false"
 BASE_FIRST_INSTALL_TIME=""
 BASE_LAST_UPDATE_TIME=""
 BASE_VERSION_CODE=""
+BASE_VERSION_CODE_RAW=""
 BASE_VERSION_NAME=""
 CURRENT_FIRST_INSTALL_TIME=""
 CURRENT_LAST_UPDATE_TIME=""
 CURRENT_VERSION_CODE=""
+CURRENT_VERSION_CODE_RAW=""
 CURRENT_VERSION_NAME=""
 VERSION_CODE_INCREASED="false"
 INSTRUMENTATION_STATUS="not-run"
@@ -56,6 +72,25 @@ FAILURE_REASON=""
 
 sha256_file() {
   shasum -a 256 "$1" | awk '{print $1}'
+}
+
+find_apksigner() {
+  if [[ -n "$APKSIGNER_BIN" ]]; then
+    return
+  fi
+  if command -v apksigner >/dev/null 2>&1; then
+    APKSIGNER_BIN="$(command -v apksigner)"
+    return
+  fi
+  if [[ -d "$ANDROID_SDK/build-tools" ]]; then
+    APKSIGNER_BIN="$(find "$ANDROID_SDK/build-tools" -name apksigner -type f 2>/dev/null | sort | tail -n 1 || true)"
+  fi
+}
+
+signer_sha256_for() {
+  local apk="$1"
+  "$APKSIGNER_BIN" verify --print-certs "$apk" |
+    awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2; exit}'
 }
 
 package_value() {
@@ -69,6 +104,13 @@ package_value() {
       exit
     }
   ' "$file"
+}
+
+version_code_number() {
+  local raw="$1"
+  if [[ "$raw" =~ ^([0-9]+) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  fi
 }
 
 device_state_for() {
@@ -185,11 +227,24 @@ write_report() {
     echo "baseCommit=${BASE_COMMIT:-}"
     echo "currentCommit=$(git rev-parse HEAD)"
     echo "baseDebugApk=${BASE_DEBUG_APK:-}"
+    echo "baseApkMode=$BASE_APK_MODE"
+    echo "baseSourceApk=${BASE_SOURCE_APK:-}"
     echo "baseDebugApkSha256=${BASE_DEBUG_APK_SHA:-}"
+    echo "baseSignerSha256=${BASE_SIGNER_SHA256:-}"
     echo "currentDebugApk=$CURRENT_DEBUG_APK"
+    echo "currentApkMode=$CURRENT_APK_MODE"
+    echo "currentSourceApk=${UPGRADE_CURRENT_APK:-}"
     echo "currentDebugApkSha256=${CURRENT_DEBUG_APK_SHA:-}"
+    echo "currentSignerSha256=${CURRENT_SIGNER_SHA256:-}"
+    echo "signerSha256Matches=$SIGNER_SHA256_MATCHES"
     echo "currentAndroidTestApk=$CURRENT_ANDROID_TEST_APK"
+    echo "currentAndroidTestApkMode=$CURRENT_ANDROID_TEST_APK_MODE"
+    echo "currentAndroidTestSourceApk=${UPGRADE_CURRENT_ANDROID_TEST_APK:-}"
     echo "currentAndroidTestApkSha256=${CURRENT_ANDROID_TEST_APK_SHA:-}"
+    echo "apksigner=$APKSIGNER_BIN"
+    echo "baseInstallOutputFile=$BASE_INSTALL_OUTPUT_FILE"
+    echo "currentInstallOutputFile=$CURRENT_INSTALL_OUTPUT_FILE"
+    echo "testInstallOutputFile=$TEST_INSTALL_OUTPUT_FILE"
     echo "packageBeforeUpgradeFile=$BASE_PACKAGE_FILE"
     echo "packageAfterUpgradeFile=$CURRENT_PACKAGE_FILE"
     echo "releaseFlowPassed=false"
@@ -197,10 +252,12 @@ write_report() {
     echo "baseFirstInstallTime=${BASE_FIRST_INSTALL_TIME:-}"
     echo "baseLastUpdateTime=${BASE_LAST_UPDATE_TIME:-}"
     echo "baseVersionCode=${BASE_VERSION_CODE:-}"
+    echo "baseVersionCodeRaw=${BASE_VERSION_CODE_RAW:-}"
     echo "baseVersionName=${BASE_VERSION_NAME:-}"
     echo "currentFirstInstallTime=${CURRENT_FIRST_INSTALL_TIME:-}"
     echo "currentLastUpdateTime=${CURRENT_LAST_UPDATE_TIME:-}"
     echo "currentVersionCode=${CURRENT_VERSION_CODE:-}"
+    echo "currentVersionCodeRaw=${CURRENT_VERSION_CODE_RAW:-}"
     echo "currentVersionName=${CURRENT_VERSION_NAME:-}"
     echo "versionCodeIncreased=$VERSION_CODE_INCREASED"
     echo "testClasses=$UPGRADE_TEST_CLASSES"
@@ -236,30 +293,62 @@ if ! scripts/doctor.sh --device; then
   fail doctor doctor-device-failed "Android emulator environment check failed."
 fi
 [[ -x "$EMULATOR_BIN" ]] || fail emulator-binary emulator-binary-missing "Android emulator binary not found at $EMULATOR_BIN."
+find_apksigner
+[[ -n "$APKSIGNER_BIN" && -x "$APKSIGNER_BIN" ]] ||
+  fail apksigner apksigner-missing "Android apksigner not found; cannot record upgrade APK signing evidence."
 if [[ -n "${ANDROID_SERIAL:-}" && "$ANDROID_SERIAL" != emulator-* ]]; then
   fail android-serial android-serial-not-emulator "ANDROID_SERIAL=$ANDROID_SERIAL is not an emulator serial."
 fi
 
 mkdir -p "$ARTIFACT_DIR"
-[[ -n "$BASE_REF" ]] || BASE_REF="$(default_base_ref)"
-[[ -n "$BASE_REF" ]] || fail base-ref base-ref-missing "Could not infer an upgrade base ref from app source history."
-BASE_COMMIT="$(git rev-parse "$BASE_REF")"
-BASE_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/pocketmind-upgrade-base.XXXXXX")"
-rm -rf "$BASE_WORKTREE"
-git worktree add --detach "$BASE_WORKTREE" "$BASE_COMMIT" >/dev/null
-
-echo "Building upgrade base APK from $BASE_COMMIT"
-"$BASE_WORKTREE/gradlew" -p "$BASE_WORKTREE" :app:assembleDebug
 BASE_DEBUG_APK="$ARTIFACT_DIR/base-app-debug.apk"
-cp "$BASE_WORKTREE/app/build/outputs/apk/debug/app-debug.apk" "$BASE_DEBUG_APK"
+if [[ -n "$BASE_SOURCE_APK" ]]; then
+  [[ -f "$BASE_SOURCE_APK" ]] || fail base-apk base-apk-missing "UPGRADE_BASE_APK does not exist: $BASE_SOURCE_APK"
+  BASE_REF="${BASE_REF:-external-apk}"
+  BASE_COMMIT="${BASE_REF:-external-apk}"
+  cp "$BASE_SOURCE_APK" "$BASE_DEBUG_APK"
+else
+  [[ -n "$BASE_REF" ]] || BASE_REF="$(default_base_ref)"
+  [[ -n "$BASE_REF" ]] || fail base-ref base-ref-missing "Could not infer an upgrade base ref from app source history."
+  BASE_COMMIT="$(git rev-parse "$BASE_REF")"
+  BASE_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/pocketmind-upgrade-base.XXXXXX")"
+  rm -rf "$BASE_WORKTREE"
+  git worktree add --detach "$BASE_WORKTREE" "$BASE_COMMIT" >/dev/null
+
+  echo "Building upgrade base APK from $BASE_COMMIT"
+  "$BASE_WORKTREE/gradlew" -p "$BASE_WORKTREE" :app:assembleDebug
+  cp "$BASE_WORKTREE/app/build/outputs/apk/debug/app-debug.apk" "$BASE_DEBUG_APK"
+fi
 BASE_DEBUG_APK_SHA="$(sha256_file "$BASE_DEBUG_APK")"
+if ! BASE_SIGNER_SHA256="$(signer_sha256_for "$BASE_DEBUG_APK")"; then
+  fail signing base-signer-read-failed "Could not verify base APK signing certificate."
+fi
+[[ -n "$BASE_SIGNER_SHA256" ]] ||
+  fail signing base-signer-sha-missing "Could not read base APK signer SHA-256 digest."
 
 echo "Building current debug and AndroidTest APKs"
-"$GRADLE_CMD" :app:assembleDebug :app:assembleDebugAndroidTest
+gradle_tasks=()
+if [[ -z "${UPGRADE_CURRENT_APK:-}" ]]; then
+  gradle_tasks+=(":app:assembleDebug")
+fi
+if [[ -z "${UPGRADE_CURRENT_ANDROID_TEST_APK:-}" ]]; then
+  gradle_tasks+=(":app:assembleDebugAndroidTest")
+fi
+if [[ "${#gradle_tasks[@]}" -gt 0 ]]; then
+  "$GRADLE_CMD" "${gradle_tasks[@]}"
+fi
 [[ -f "$CURRENT_DEBUG_APK" ]] || fail current-build current-debug-apk-missing "Current debug APK missing: $CURRENT_DEBUG_APK"
 [[ -f "$CURRENT_ANDROID_TEST_APK" ]] || fail current-build current-android-test-apk-missing "Current AndroidTest APK missing: $CURRENT_ANDROID_TEST_APK"
 CURRENT_DEBUG_APK_SHA="$(sha256_file "$CURRENT_DEBUG_APK")"
 CURRENT_ANDROID_TEST_APK_SHA="$(sha256_file "$CURRENT_ANDROID_TEST_APK")"
+if ! CURRENT_SIGNER_SHA256="$(signer_sha256_for "$CURRENT_DEBUG_APK")"; then
+  fail signing current-signer-read-failed "Could not verify current APK signing certificate."
+fi
+[[ -n "$CURRENT_SIGNER_SHA256" ]] ||
+  fail signing current-signer-sha-missing "Could not read current APK signer SHA-256 digest."
+if [[ "$BASE_SIGNER_SHA256" == "$CURRENT_SIGNER_SHA256" ]]; then
+  SIGNER_SHA256_MATCHES="true"
+fi
 
 if [[ -n "${AVD_NAME:-}" ]]; then
   "$EMULATOR_BIN" -list-avds 2>/dev/null | grep -Fx -- "$AVD_NAME" >/dev/null ||
@@ -296,26 +385,38 @@ echo "AVD: ${AVD_LABEL:-${AVD_NAME:-unknown}}"
 "${ADB[@]}" uninstall "$TEST_PACKAGE_NAME" >/dev/null 2>&1 || true
 "${ADB[@]}" uninstall "$PACKAGE_NAME" >/dev/null 2>&1 || true
 
-"${ADB[@]}" install -r "$BASE_DEBUG_APK"
+if ! "${ADB[@]}" install -r "$BASE_DEBUG_APK" > "$BASE_INSTALL_OUTPUT_FILE" 2>&1; then
+  cat "$BASE_INSTALL_OUTPUT_FILE" >&2
+  fail install base-install-failed "Base APK install failed; see $BASE_INSTALL_OUTPUT_FILE."
+fi
+cat "$BASE_INSTALL_OUTPUT_FILE"
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
 "${ADB[@]}" shell dumpsys package "$PACKAGE_NAME" > "$BASE_PACKAGE_FILE"
 BASE_FIRST_INSTALL_TIME="$(package_value "$BASE_PACKAGE_FILE" firstInstallTime)"
 BASE_LAST_UPDATE_TIME="$(package_value "$BASE_PACKAGE_FILE" lastUpdateTime)"
-BASE_VERSION_CODE="$(package_value "$BASE_PACKAGE_FILE" versionCode)"
+BASE_VERSION_CODE_RAW="$(package_value "$BASE_PACKAGE_FILE" versionCode)"
+BASE_VERSION_CODE="$(version_code_number "$BASE_VERSION_CODE_RAW")"
 BASE_VERSION_NAME="$(package_value "$BASE_PACKAGE_FILE" versionName)"
 
 sleep 2
-"${ADB[@]}" install -r "$CURRENT_DEBUG_APK"
-"${ADB[@]}" install -r -t "$CURRENT_ANDROID_TEST_APK"
+if ! "${ADB[@]}" install -r "$CURRENT_DEBUG_APK" > "$CURRENT_INSTALL_OUTPUT_FILE" 2>&1; then
+  cat "$CURRENT_INSTALL_OUTPUT_FILE" >&2
+  fail install current-install-failed "Current APK install -r failed; see $CURRENT_INSTALL_OUTPUT_FILE."
+fi
+cat "$CURRENT_INSTALL_OUTPUT_FILE"
+if ! "${ADB[@]}" install -r -t "$CURRENT_ANDROID_TEST_APK" > "$TEST_INSTALL_OUTPUT_FILE" 2>&1; then
+  cat "$TEST_INSTALL_OUTPUT_FILE" >&2
+  fail install android-test-install-failed "AndroidTest APK install failed; see $TEST_INSTALL_OUTPUT_FILE."
+fi
+cat "$TEST_INSTALL_OUTPUT_FILE"
 "${ADB[@]}" shell dumpsys package "$PACKAGE_NAME" > "$CURRENT_PACKAGE_FILE"
 CURRENT_FIRST_INSTALL_TIME="$(package_value "$CURRENT_PACKAGE_FILE" firstInstallTime)"
 CURRENT_LAST_UPDATE_TIME="$(package_value "$CURRENT_PACKAGE_FILE" lastUpdateTime)"
-CURRENT_VERSION_CODE="$(package_value "$CURRENT_PACKAGE_FILE" versionCode)"
+CURRENT_VERSION_CODE_RAW="$(package_value "$CURRENT_PACKAGE_FILE" versionCode)"
+CURRENT_VERSION_CODE="$(version_code_number "$CURRENT_VERSION_CODE_RAW")"
 CURRENT_VERSION_NAME="$(package_value "$CURRENT_PACKAGE_FILE" versionName)"
 if [[ "$BASE_VERSION_CODE" =~ ^[0-9]+ && "$CURRENT_VERSION_CODE" =~ ^[0-9]+ ]]; then
-  base_code="${BASE_VERSION_CODE%% *}"
-  current_code="${CURRENT_VERSION_CODE%% *}"
-  if [[ "$current_code" -gt "$base_code" ]]; then
+  if [[ "$CURRENT_VERSION_CODE" -gt "$BASE_VERSION_CODE" ]]; then
     VERSION_CODE_INCREASED="true"
   fi
 fi

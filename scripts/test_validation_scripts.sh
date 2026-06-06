@@ -101,6 +101,22 @@ case "${1:-}" in
       am\ start\ -W\ -n*)
         echo "Status: ok"
         ;;
+      dumpsys\ package\ com.bytedance.zgx.pocketmind)
+        install_count="$(grep -c ' install ' "${FAKE_ADB_LOG:?}" 2>/dev/null || true)"
+        if [[ "$install_count" -ge 2 ]]; then
+          last_update_time="${FAKE_CURRENT_LAST_UPDATE_TIME:-2026-06-06 20:00:05}"
+        else
+          last_update_time="${FAKE_BASE_LAST_UPDATE_TIME:-2026-06-06 20:00:00}"
+        fi
+        cat <<FAKE_PACKAGE_DUMPSYS
+Packages:
+  Package [com.bytedance.zgx.pocketmind] (abc123):
+    firstInstallTime=${FAKE_FIRST_INSTALL_TIME:-2026-06-06 20:00:00}
+    lastUpdateTime=$last_update_time
+    versionCode=${FAKE_PACKAGE_VERSION_CODE:-1} minSdk=28 targetSdk=36
+    versionName=${FAKE_PACKAGE_VERSION_NAME:-0.1.0}
+FAKE_PACKAGE_DUMPSYS
+        ;;
       run-as\ com.bytedance.zgx.pocketmind\ am\ broadcast*\ -n\ com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver*)
         if [[ "$*" == *"--ez clearRemoteConfig true"* ]]; then
           echo "Broadcast completed: result=-1, data=\"remote config cleared\""
@@ -224,6 +240,20 @@ FAKE_EMULATOR
   chmod +x "$sdk/emulator/emulator"
 }
 
+create_fake_apksigner() {
+  local sdk="$1"
+  cat > "$sdk/build-tools/36.0.0/apksigner" <<'FAKE_APKSIGNER'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"--print-certs"* ]]; then
+  printf 'Signer #1 certificate SHA-256 digest: %s\n' "${FAKE_APK_SIGNER_SHA256:-1111111111111111111111111111111111111111111111111111111111111111}"
+  exit 0
+fi
+echo "Verified"
+FAKE_APKSIGNER
+  chmod +x "$sdk/build-tools/36.0.0/apksigner"
+}
+
 create_fake_sdkmanager() {
   local path="$1"
   cat > "$path" <<'FAKE_SDKMANAGER'
@@ -340,6 +370,7 @@ create_fake_adb "$NO_EMULATOR_SDK"
 create_base_sdk "$FAKE_SDK"
 create_fake_adb "$FAKE_SDK"
 create_fake_emulator "$FAKE_SDK"
+create_fake_apksigner "$FAKE_SDK"
 create_fake_gradle "$FAKE_GRADLE"
 reset_logs
 
@@ -380,6 +411,34 @@ grep -q 'releaseFlowPassed=false' scripts/verify_upgrade_install_emulator.sh ||
   fail "upgrade install emulator report must not claim release flow approval"
 grep -q 'versionCodeIncreased=' scripts/verify_upgrade_install_emulator.sh ||
   fail "upgrade install emulator report must expose versionCodeIncreased"
+grep -q 'UPGRADE_BASE_APK' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator verifier must accept an explicit base APK"
+grep -q 'UPGRADE_CURRENT_APK' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator verifier must accept an explicit current APK"
+grep -q 'baseSignerSha256=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose base signer SHA-256"
+grep -q 'currentSignerSha256=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose current signer SHA-256"
+grep -q 'signerSha256Matches=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose signer SHA-256 match status"
+grep -q 'baseInstallOutputFile=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must preserve base install output"
+grep -q 'currentInstallOutputFile=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must preserve current install output"
+grep -q 'testInstallOutputFile=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must preserve AndroidTest install output"
+grep -q 'baseApkMode=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose base APK mode"
+grep -q 'currentApkMode=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose current APK mode"
+grep -q 'currentSourceApk=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose current APK source"
+grep -q 'currentAndroidTestSourceApk=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose current AndroidTest APK source"
+grep -q 'baseVersionCodeRaw=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must preserve raw base versionCode"
+grep -q 'currentVersionCodeRaw=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must preserve raw current versionCode"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include privacy_scan.sh in shell syntax checks"
 grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
@@ -408,6 +467,50 @@ grep -q 'scripts/collect_model_license_metadata.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_model_license_metadata.sh in shell syntax checks"
 grep -q 'scripts/sign_release_artifacts.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include sign_release_artifacts.sh in shell syntax checks"
+
+UPGRADE_FAKE_BASE_APK="$TMP_DIR/upgrade-base.apk"
+UPGRADE_FAKE_CURRENT_APK="$TMP_DIR/upgrade-current.apk"
+UPGRADE_FAKE_ANDROID_TEST_APK="$TMP_DIR/upgrade-current-android-test.apk"
+printf 'base apk\n' > "$UPGRADE_FAKE_BASE_APK"
+printf 'current apk\n' > "$UPGRADE_FAKE_CURRENT_APK"
+printf 'current android test apk\n' > "$UPGRADE_FAKE_ANDROID_TEST_APK"
+reset_logs
+UPGRADE_FAKE_ARTIFACT_DIR="$ARTIFACT_DIR/upgrade-install-fake"
+UPGRADE_FAKE_REPORT="$UPGRADE_FAKE_ARTIFACT_DIR/upgrade-install-emulator.properties"
+expect_success \
+  "upgrade install emulator verifier records explicit APK signing evidence" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
+  UPGRADE_BASE_APK="$UPGRADE_FAKE_BASE_APK" \
+  UPGRADE_CURRENT_APK="$UPGRADE_FAKE_CURRENT_APK" \
+  UPGRADE_CURRENT_ANDROID_TEST_APK="$UPGRADE_FAKE_ANDROID_TEST_APK" \
+  GRADLE_CMD="$FAKE_GRADLE" \
+  ARTIFACT_DIR="$UPGRADE_FAKE_ARTIFACT_DIR" \
+  REPORT_FILE="$UPGRADE_FAKE_REPORT" \
+  scripts/verify_upgrade_install_emulator.sh
+assert_report_contains "$UPGRADE_FAKE_REPORT" "status=passed"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "releaseFlowPassed=false"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "baseApkMode=explicit"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentApkMode=explicit"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentAndroidTestApkMode=explicit"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "baseSourceApk=$UPGRADE_FAKE_BASE_APK"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentSourceApk=$UPGRADE_FAKE_CURRENT_APK"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentAndroidTestSourceApk=$UPGRADE_FAKE_ANDROID_TEST_APK"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "baseVersionCode=1"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "baseVersionCodeRaw=1 minSdk=28 targetSdk=36"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentVersionCode=1"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentVersionCodeRaw=1 minSdk=28 targetSdk=36"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "signerSha256Matches=true"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "versionCodeIncreased=false"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "baseInstallOutputFile=$UPGRADE_FAKE_ARTIFACT_DIR/install-base.txt"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "currentInstallOutputFile=$UPGRADE_FAKE_ARTIFACT_DIR/install-current.txt"
+assert_report_contains "$UPGRADE_FAKE_REPORT" "testInstallOutputFile=$UPGRADE_FAKE_ARTIFACT_DIR/install-android-test.txt"
+[[ -f "$UPGRADE_FAKE_ARTIFACT_DIR/install-base.txt" ]] ||
+  fail "upgrade install fake run must preserve base install output"
+[[ -f "$UPGRADE_FAKE_ARTIFACT_DIR/install-current.txt" ]] ||
+  fail "upgrade install fake run must preserve current install output"
+[[ -f "$UPGRADE_FAKE_ARTIFACT_DIR/install-android-test.txt" ]] ||
+  fail "upgrade install fake run must preserve AndroidTest install output"
 
 VALID_PERF="$TMP_DIR/perf-baseline.properties"
 VALID_PERF_SHA="1111111111111111111111111111111111111111111111111111111111111111"

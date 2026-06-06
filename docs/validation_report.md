@@ -21,12 +21,13 @@
 
 本轮覆盖项：
 
-- 新增 `scripts/verify_upgrade_install_emulator.sh`，从最近一次 app 源码变更的前一个
-  commit 构建 base debug APK，再在 API 36 emulator 上执行 base install -> current
+- 新增 `scripts/verify_upgrade_install_emulator.sh`，默认从最近一次 app 源码变更的前一个
+  commit 构建 base debug APK，也支持用 `UPGRADE_BASE_APK` / `UPGRADE_CURRENT_APK`
+  显式传入待验证 APK，再在 API 36 emulator 上执行 base install -> current
   `adb install -r` -> current smoke AndroidTest。
-- report 记录 base/current APK SHA、base/current package `firstInstallTime` /
-  `lastUpdateTime`、versionCode、当前 commit、base commit、AVD、API、ABI 和
-  instrumentation 结果。
+- report 记录 base/current APK SHA、base/current signer SHA-256、signer 是否一致、
+  install 原始输出文件、base/current package `firstInstallTime` / `lastUpdateTime`、
+  versionCode、当前 commit、base commit、AVD、API、ABI 和 instrumentation 结果。
 - 该 report 明确写入 `releaseFlowPassed=false`：当前只证明 debug APK 的升级安装
   smoke path，不证明正式 release upgrade flow。`docs/release_validation_record.json`
   的 `flowMatrix.upgradeInstall` 保持 pending。
@@ -43,15 +44,19 @@ scripts/verify_release_validation_record.sh --report build/verification/release-
 
 结果：
 
-- 通过：真实 API 36 emulator upgrade install；
+- 通过：真实 API 36 emulator upgrade install smoke；
   `build/verification/upgrade-install-emulator-current/upgrade-install-emulator.properties`
-  记录 `status=passed`、`installMode=adb-install-r`、`baseCommit=da5f414...`、
-  `currentCommit=b611f10...`、`instrumentation=passed`、`instrumentation_test_count=4`。
-- 通过：package evidence 显示 `firstInstallTime` 保持 `2026-06-06 20:09:55`，
-  `lastUpdateTime` 从 `2026-06-06 20:09:55` 更新到 `2026-06-06 20:10:04`。
+  记录 `status=passed`、`installMode=adb-install-r`、`releaseFlowPassed=false`、
+  `instrumentation=passed`、`instrumentation_test_count=4`。
+- 通过：upgrade smoke report 保留 `baseInstallOutputFile`、`currentInstallOutputFile`、
+  `testInstallOutputFile`、`baseSignerSha256`、`currentSignerSha256` 和
+  `signerSha256Matches`，便于后续替换为正式 signed release APK 时复核签名与安装输出。
+- 通过：package evidence 显示 `firstInstallTime` 保持 `2026-06-06 20:32:56`，
+  `lastUpdateTime` 从 `2026-06-06 20:32:56` 更新到 `2026-06-06 20:33:04`。
 - 未通过正式 flow：base/current debug APK 的 `versionCode` 都是 1，
-  `versionCodeIncreased=false`，且尚未验证 seeded session/memory/reminder 保留或
-  `MY_PACKAGE_REPLACED` 后 reminder 重排。
+  report 同时保留纯数字 `baseVersionCode=1` / `currentVersionCode=1` 与 raw
+  dumpsys 行，`versionCodeIncreased=false`，且尚未验证 seeded
+  session/memory/reminder 保留或 `MY_PACKAGE_REPLACED` 后 reminder 重排。
 - 通过：validation script self-tests。
 - 预期失败：release validation record 仍未 approved；`flow-upgradeInstall-not-passed`
   仍保留，避免把 debug smoke evidence 冒充为正式 release upgrade evidence。
