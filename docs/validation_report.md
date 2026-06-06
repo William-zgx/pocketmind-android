@@ -23,6 +23,37 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Store policy evidence packet refresh
+
+本轮覆盖项：
+
+- 同步 `docs/store_policy_record.json.privacyNoticeSha256` 到当前
+  `docs/privacy_notice.md`。
+- 新增 store policy pending review evidence packet，作为 Play listing / Data safety /
+  permissions / special-access reviewer 输入；明确标记 `status=pending`、
+  `approvalStatus=not-approved`。
+- 不修改 `status`、contact email、privacy policy URL、reviewer 或 review date；Store
+  policy gate 仍保持 fail-closed。
+
+验证命令：
+
+```bash
+shasum -a 256 docs/privacy_notice.md docs/store_policy_review_evidence/pending.properties
+scripts/verify_store_policy_record.sh --report build/verification/store-policy-current.properties
+```
+
+结果：
+
+- 通过：当前 privacy notice SHA 为
+  `027ffabe4d4be62c3ce14434c8bdcee9d106620222af37d8d937fcbbddf65385`，已写入
+  `docs/store_policy_record.json`。
+- 通过：store policy pending evidence packet SHA-256 为
+  `b811e582501e1d7f18c3644210898e07bf501ff5945fea0e857ec032ca9066ce`，已绑定到
+  `docs/store_policy_record.json.review`。
+- 预期失败：`scripts/verify_store_policy_record.sh` 仍记录 `status=failed`；当前失败原因
+  只剩 pending approval、占位 contact email、占位 privacy policy URL、reviewer 和
+  review date。
+
 ## 2026-06-07 Privacy review evidence packet refresh
 
 本轮覆盖项：
