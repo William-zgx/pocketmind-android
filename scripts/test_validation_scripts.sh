@@ -142,6 +142,9 @@ FAKE_PACKAGE_DUMPSYS
       uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
         echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote.xml"
         ;;
+      uiautomator\ dump\ /sdcard/pocketmind-fresh-start.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-fresh-start.xml"
+        ;;
       uiautomator\ dump\ /sdcard/pocketmind-release-*.xml)
         echo "UI hierchary dumped to: ${*:3}"
         ;;
@@ -193,6 +196,9 @@ FAKE_PACKAGE_DUMPSYS
     case "$source" in
       /sdcard/pocketmind-live-remote.xml)
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
+        ;;
+      /sdcard/pocketmind-fresh-start.xml)
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-PocketMind 已进入，模型待配置}" > "$destination"
         ;;
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
@@ -437,6 +443,8 @@ grep -q 'scripts/regression_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/install_review_device.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include install_review_device.sh in shell syntax checks"
+grep -q 'scripts/verify_fresh_start_main_shell_emulator.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_fresh_start_main_shell_emulator.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
 grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
@@ -3471,6 +3479,41 @@ DEFAULT_INSTRUMENTATION_OUTPUT="$(awk -F= '$1 == "instrumentation_output_file" {
   fail "Expected default nested instrumentation output to be non-empty"
 ARTIFACT_DIR="$SAVED_ARTIFACT_DIR"
 export ARTIFACT_DIR
+
+reset_logs
+expect_success \
+  "fresh start main shell helper accepts clean install main shell" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
+  fail "Expected fresh start helper to assemble debug APK"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "target=fresh-start-main-shell"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "serial=emulator-5554"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_visible=false"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "main_shell_copy_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "screenshot=$ARTIFACT_DIR/fresh-start.png"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "window_dump=$ARTIFACT_DIR/fresh-start.xml"
+grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+  fail "Expected fresh start helper to clean install the app"
+grep -q -- "-s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
+  fail "Expected fresh start helper to install debug APK"
+grep -q -- "-s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity" "$FAKE_ADB_LOG" ||
+  fail "Expected fresh start helper to launch MainActivity"
+
+reset_logs
+expect_failure \
+  "fresh start main shell helper rejects first-run setup page" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
+  FAKE_FRESH_START_UI_TEXT="准备基础能力包" \
+  GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "failedTarget=ui"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "reason=first-run-setup-visible"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_visible=true"
 
 reset_logs
 LIVE_REMOTE_TEST_TOKEN="$TMP_DIR/live-remote-token-from-env"

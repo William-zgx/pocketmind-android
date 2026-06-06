@@ -40,7 +40,7 @@ report；screenshots 必须链接通过的 `release-screenshots` report，并且
 ```bash
 scripts/test_validation_scripts.sh
 ./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotShowSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupKeepsSetupDismissedWhenNoLocalOrRemoteModelIsAvailable' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotReopenSetupWhenRemoteModelIsConfigured'
-ARTIFACT_DIR=build/verification/fresh-start-main-shell-current AVD_NAME=pocketmind_api36_arm64 bash -c 'assemble debug, clean install, launch MainActivity, capture screencap/uiautomator dump, assert no "准备基础能力包", assert "PocketMind 已进入，模型待配置"'
+ARTIFACT_DIR=build/verification/fresh-start-main-shell-current AVD_NAME=pocketmind_api36_arm64 scripts/verify_fresh_start_main_shell_emulator.sh
 scripts/verify_local.sh
 ```
 
@@ -56,7 +56,10 @@ scripts/verify_local.sh
   记录 `status=passed`、`target=fresh-start-main-shell`、
   `first_run_setup_visible=false`、`main_shell_copy_visible=true`；截图为
   `build/verification/fresh-start-main-shell-current/fresh-start.png`，UI dump 为
-  `build/verification/fresh-start-main-shell-current/fresh-start.xml`。
+  `build/verification/fresh-start-main-shell-current/fresh-start.xml`。SHA-256：
+  report `84c908da204a5707804951dc5c2d9b39c00140eb97a0749ce4683e6e224cc7e1`，
+  screenshot `8ac50c443b862d9fb07e52cbfe0b2fe7d700277ec6d75833942fdb3cd9e4085a`，
+  UI dump `f3532b97d99cc51cf08967c8db1063ef431b8e5ac38c1a9183df925fb59336e1`。
 - 通过：`scripts/verify_local.sh`，包含 validation script self-tests、JVM tests、lint、
   debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
 
