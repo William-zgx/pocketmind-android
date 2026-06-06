@@ -75,6 +75,31 @@ class MemoryRepositoryTest {
     }
 
     @Test
+    fun rebuildDoesNotIndexAssistantConversationMessagesEvenWhenRemoteEligible() {
+        val repository = MemoryRepository()
+
+        repository.rebuild(
+            listOf(
+                ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = "远程助手输出包含 transient-answer-73",
+                    privacy = MessagePrivacy.RemoteEligible,
+                    id = 73L,
+                ),
+                ChatMessage(
+                    role = MessageRole.User,
+                    text = "公开用户问题 edge-memory-recall",
+                    privacy = MessagePrivacy.RemoteEligible,
+                    id = 74L,
+                ),
+            ),
+        )
+
+        assertTrue(repository.search("transient-answer-73").isEmpty())
+        assertEquals(listOf("74"), repository.search("edge-memory-recall").map { it.id })
+    }
+
+    @Test
     fun hashRuntimeRecallsResponseLengthPreferenceThroughLocalAliases() {
         val repository = MemoryRepository()
         repository.indexPreference("pref", "I prefer concise answers")

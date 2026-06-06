@@ -69,7 +69,7 @@ object CapabilityMatrix {
                 requiresLocalModel = false,
                 remoteEligible = false,
                 confirmationPolicy = ConfirmationPolicy.NotRequired,
-                failureBehavior = "删除失败时保留现有记忆，不把记忆写入远端请求。",
+                failureBehavior = "删除失败时保留现有记忆；会话回忆只从用户消息重建，不索引助手输出，也不把记忆写入远端请求。",
                 requiredTests = listOf("MemoryRepositoryTest", "MemoryQualityContractTest"),
                 ownerAgent = CapabilityOwnerAgent.Memory,
             ),

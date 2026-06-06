@@ -15,6 +15,105 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Legacy title LocalOnly migration boundary
+
+本轮覆盖项：
+
+- `LegacyPrefsMigrator` 在为旧 SharedPreferences 会话推导标题时，把 legacy message
+  显式转成 `LocalOnly`，避免无标题旧会话把分享文本、OCR 摘录或其他本地内容写进
+  session title。
+- 新增 instrumentation 回归：
+  `PocketMindDatabaseMigrationTest.legacyPrefsMigratorDerivesUntitledLegacyMessagesAsLocalOnlyTitle`，
+  断言旧私密用户消息导入后标题为 `本地内容`，且不包含原始 secret token。
+
+验证命令：
+
+```bash
+AVD_NAME=focus_agent_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=90 BOOT_TIMEOUT_SECONDS=300 \
+  EMULATOR_ARGS="-no-window -no-audio -no-boot-anim -no-snapshot-save" \
+  ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  scripts/regression_emulator.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：emulator regression，`focus_agent_api36_arm64` / API 36 / arm64-v8a / clean device。
+- 通过：27 个 AndroidTest，artifact:
+  `build/verification/regression-emulator-20260606-154829/regression-emulator.properties`。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+
+## 2026-06-06 Public evidence remote-continuation boundary
+
+本轮覆盖项：
+
+- `AgentLoopRuntime` 只允许显式 `privacy=RemoteEligible` 且
+  `requiresLocalModel=false` 的公开证据结果进入远端续跑；缺失 metadata 不再 fail-open。
+- `web_search` 成功结果和 output schema 声明 `RemoteEligible` / `requiresLocalModel=false`。
+- Tool Registry 和 Agent Loop 增加合同测试，锁定公开证据结果的远端资格声明。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.tool.ToolRegistryTest.publicEvidenceOutputSchemasRequireRemotePrivacyDeclaration' \
+  --tests 'com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeTest.publicEvidenceContinuationRejectsResultMissingRemotePrivacyDeclaration' \
+  --tests 'com.bytedance.zgx.pocketmind.orchestration.AgentLoopRuntimeTest.sequentialPublicEvidenceContinuationIncludesPriorEvidence'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：targeted public evidence JVM contract tests。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+- 通过：emulator regression 中的 remote `web_search` instrumentation path。
+
+## 2026-06-06 Conversation recall assistant-output boundary
+
+本轮覆盖项：
+
+- `MemoryRepository.rebuild()` 只从用户消息重建 `Conversation` 回忆，不再索引助手
+  消息；即使助手消息被标记为 `RemoteEligible`，也不会进入自动记忆召回池。
+- Capability Matrix 和 privacy notice 同步说明会话回忆只从用户消息重建，助手输出不作为
+  conversation recall。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.memory.MemoryRepositoryTest'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：MemoryRepository JVM tests。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+- 未执行模拟器：本轮只修改本地记忆索引边界和 JVM 回归测试，不改变 Android UI 或系统交互。
+
+## 2026-06-06 Dirty public release record hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_record.sh` 在 `PUBLIC_RELEASE_CONTEXT=1` 时默认拒绝脏 Git
+  工作区，避免正式 release record 绑定到含未提交或未跟踪改动的源码状态。
+- 新增 `ALLOW_DIRTY_RELEASE=1` 显式 override，仅用于非生产 dry-run/self-test，并写入
+  verifier report。
+- `scripts/test_validation_scripts.sh` 增加脏公开发布记录失败用例。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests。
+- 通过：local verification，包含 release record dirty-worktree gate 自测。
+- 未执行模拟器：本轮只加固 release record 脚本和文档，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Remote privacy boundary hardening
 
 本轮覆盖项：

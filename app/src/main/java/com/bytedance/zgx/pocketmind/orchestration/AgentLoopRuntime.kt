@@ -2151,8 +2151,8 @@ class AgentLoopRuntime(
     }
 
     private fun ToolResult.isPublicEvidenceForRemoteModel(): Boolean =
-        data["privacy"] != MessagePrivacy.LocalOnly.name &&
-            data["requiresLocalModel"]?.toBooleanStrictOrNull() != true
+        data["privacy"] == MessagePrivacy.RemoteEligible.name &&
+            data["requiresLocalModel"]?.toBooleanStrictOrNull() == false
 
     private fun ToolRequest.publicEvidencePromptBlock(result: ToolResult): PublicEvidencePromptBlock =
         PublicEvidencePromptBlock(

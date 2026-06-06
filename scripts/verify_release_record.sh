@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 RELEASE_RECORD_FILE="${RELEASE_RECORD_FILE:-docs/release_record.json}"
 GRADLE_FILE="${GRADLE_FILE:-app/build.gradle.kts}"
 PUBLIC_RELEASE_CONTEXT="${PUBLIC_RELEASE_CONTEXT:-0}"
+ALLOW_DIRTY_RELEASE="${ALLOW_DIRTY_RELEASE:-0}"
 EXPECTED_RELEASE_ARTIFACT_PATH="${EXPECTED_RELEASE_ARTIFACT_PATH:-}"
 EXPECTED_RELEASE_ARTIFACT_TYPE="${EXPECTED_RELEASE_ARTIFACT_TYPE:-}"
 EXPECTED_RELEASE_ARTIFACT_SHA256="${EXPECTED_RELEASE_ARTIFACT_SHA256:-}"
@@ -41,6 +42,7 @@ write_report() {
       printf 'recordFile=%s\n' "$RELEASE_RECORD_FILE"
       printf 'gradleFile=%s\n' "$GRADLE_FILE"
       printf 'publicReleaseContext=%s\n' "$PUBLIC_RELEASE_CONTEXT"
+      printf 'allowDirtyRelease=%s\n' "$ALLOW_DIRTY_RELEASE"
       printf 'expectedReleaseArtifactPath=%s\n' "$EXPECTED_RELEASE_ARTIFACT_PATH"
       printf 'expectedReleaseArtifactType=%s\n' "$EXPECTED_RELEASE_ARTIFACT_TYPE"
       printf 'expectedReleaseArtifactSha256=%s\n' "$EXPECTED_RELEASE_ARTIFACT_SHA256"
@@ -70,6 +72,7 @@ python3 - \
   "$RELEASE_RECORD_FILE" \
   "$GRADLE_FILE" \
   "$PUBLIC_RELEASE_CONTEXT" \
+  "$ALLOW_DIRTY_RELEASE" \
   "$EXPECTED_RELEASE_ARTIFACT_PATH" \
   "$EXPECTED_RELEASE_ARTIFACT_TYPE" \
   "$EXPECTED_RELEASE_ARTIFACT_SHA256" \
@@ -85,10 +88,11 @@ from pathlib import Path
 record_path = Path(sys.argv[1])
 gradle_path = Path(sys.argv[2])
 public_release_context = sys.argv[3] == "1"
-expected_artifact_path = sys.argv[4]
-expected_artifact_type = sys.argv[5]
-expected_artifact_sha256 = sys.argv[6].lower()
-expected_signing_cert_sha256 = sys.argv[7].lower()
+allow_dirty_release = sys.argv[4] == "1"
+expected_artifact_path = sys.argv[5]
+expected_artifact_type = sys.argv[6]
+expected_artifact_sha256 = sys.argv[7].lower()
+expected_signing_cert_sha256 = sys.argv[8].lower()
 
 try:
     record = json.loads(record_path.read_text())
@@ -118,6 +122,12 @@ def git_success(*args):
         return True
     except Exception:
         return False
+
+def git_worktree_dirty():
+    unstaged = not git_success("diff", "--quiet")
+    staged = not git_success("diff", "--cached", "--quiet")
+    untracked = bool(git_value("ls-files", "--others", "--exclude-standard"))
+    return unstaged or staged or untracked
 
 def properties_for(path):
     values = {}
@@ -180,6 +190,8 @@ if public_release_context and release.get("targetChannel") not in {
     "full_production",
 }:
     failures.append("public-release-target-channel-invalid")
+if public_release_context and not allow_dirty_release and git_worktree_dirty():
+    failures.append("git-worktree-dirty")
 
 today = date.today()
 date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")

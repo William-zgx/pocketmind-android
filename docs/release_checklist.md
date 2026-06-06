@@ -29,7 +29,9 @@ release ticket or PR.
   unsupported capabilities, Agent behavior summary, and resolved or accepted
   blockers. For `PUBLIC_RELEASE=1`, the record must use a public distribution
   channel and match the final AAB path, artifact SHA-256, and production
-  signing certificate SHA-256 passed to the release gate.
+  signing certificate SHA-256 passed to the release gate; it also requires a
+  clean Git worktree unless `ALLOW_DIRTY_RELEASE=1` is explicitly set for
+  non-production dry-run validation.
 
 ## Versioning And Release Track
 

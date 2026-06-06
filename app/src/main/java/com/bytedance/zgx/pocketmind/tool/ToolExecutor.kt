@@ -190,6 +190,8 @@ class WebSearchToolExecutor(
                     summary = "已完成 Web 搜索：${result.summaryText}",
                     data = mapOf(
                         "toolName" to request.toolName,
+                        "privacy" to MessagePrivacy.RemoteEligible.name,
+                        "requiresLocalModel" to false.toString(),
                         "query" to result.query,
                         "source" to result.source,
                         "searchMode" to result.searchMode.schemaValue,

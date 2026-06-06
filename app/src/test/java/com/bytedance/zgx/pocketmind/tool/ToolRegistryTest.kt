@@ -683,6 +683,27 @@ class ToolRegistryTest {
     }
 
     @Test
+    fun publicEvidenceOutputSchemasRequireRemotePrivacyDeclaration() {
+        val publicEvidenceTools = registry.specs()
+            .filter { spec -> spec.resultContinuationPolicy == ToolResultContinuationPolicy.PublicEvidence }
+
+        assertEquals(listOf(MobileActionFunctions.WEB_SEARCH), publicEvidenceTools.map { spec -> spec.name })
+        publicEvidenceTools.forEach { spec ->
+            val schema = JSONObject(spec.outputSchemaJson)
+            val required = schema.optJSONArray("required")
+            val properties = schema.getJSONObject("properties")
+
+            assertTrue("${spec.name} output must require privacy", required.containsString("privacy"))
+            assertTrue("${spec.name} output must require requiresLocalModel", required.containsString("requiresLocalModel"))
+            assertEquals("boolean", properties.getJSONObject("requiresLocalModel").getString("type"))
+            assertTrue(
+                "${spec.name} privacy must be RemoteEligible",
+                properties.getJSONObject("privacy").getJSONArray("enum").containsString(MessagePrivacy.RemoteEligible.name),
+            )
+        }
+    }
+
+    @Test
     fun currentScreenTextSchemaLocksAccessibilitySourceAndMetadataPolicy() {
         val spec = registry.specFor(MobileActionFunctions.READ_CURRENT_SCREEN_TEXT)
         assertNotNull(spec)
@@ -977,6 +998,8 @@ class ToolRegistryTest {
                 summary = "web search",
                 data = mapOf(
                     "toolName" to MobileActionFunctions.WEB_SEARCH,
+                    "privacy" to MessagePrivacy.RemoteEligible.name,
+                    "requiresLocalModel" to "false",
                     "query" to "北京天气",
                     "source" to "duckduckgo",
                     "summaryText" to "北京天气摘要",

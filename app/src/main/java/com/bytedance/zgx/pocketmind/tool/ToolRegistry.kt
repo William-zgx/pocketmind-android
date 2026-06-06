@@ -698,9 +698,11 @@ private val webSearchInputSchemaJson = """
 private val webSearchOutputSchemaJson = """
     {
       "type": "object",
-      "required": ["toolName", "query", "source", "summaryText", "resultsJson"],
+      "required": ["toolName", "privacy", "requiresLocalModel", "query", "source", "summaryText", "resultsJson"],
       "properties": {
         "toolName": {"type": "string", "minLength": 1},
+        "privacy": {"type": "string", "enum": ["RemoteEligible"]},
+        "requiresLocalModel": {"type": "boolean"},
         "query": {"type": "string", "minLength": 1},
         "source": {
           "type": "string",

@@ -64,7 +64,10 @@ concurrently only when every requested tool is `PublicEvidence`,
 device-context, Android permission, MediaProjection, external-navigation,
 sharing, scheduling, notification, or other side-effect permission. Mixed
 batches are rejected as a whole before any tool runs, so a safe public lookup
-is not executed beside a private local read or action tool.
+is not executed beside a private local read or action tool. A public evidence
+result can return to the remote model only when it explicitly declares
+`privacy=RemoteEligible` and `requiresLocalModel=false`; missing or local-only
+metadata fails closed before remote continuation.
 
 ## Device Context Tools
 
@@ -115,9 +118,10 @@ user-provided attachment, PocketMind may infer common supported types from the
 display-name extension before deciding whether a bounded local excerpt is
 possible. Shared-input excerpts are staged as local composer drafts and are not
 sent to local generation until the user taps send. LocalOnly conversation text
-is not indexed for automatic memory recall, and LocalOnly user text is not used
-verbatim for session-list titles. This inference does not make shared-input
-excerpts remote-eligible.
+is not indexed for automatic memory recall. Automatic conversation recall is
+rebuilt only from user messages; assistant responses are not indexed as
+conversation recall. LocalOnly user text is not used verbatim for session-list
+titles. This inference does not make shared-input excerpts remote-eligible.
 
 ## Model Downloads
 

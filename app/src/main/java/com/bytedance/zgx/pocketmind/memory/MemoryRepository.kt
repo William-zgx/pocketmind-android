@@ -171,24 +171,18 @@ class MemoryRepository(
             )
         }
         messages.forEach { message ->
+            if (message.role != MessageRole.User) return@forEach
             if (
-                message.role == MessageRole.User &&
-                (
-                    explicitUserPreferenceFrom(message.text) != null ||
-                        explicitUserFactFrom(message.text) != null ||
-                        explicitUserPreferenceForgetFrom(message.text) != null
-                    )
+                explicitUserPreferenceFrom(message.text) != null ||
+                    explicitUserFactFrom(message.text) != null ||
+                    explicitUserPreferenceForgetFrom(message.text) != null
             ) {
                 return@forEach
             }
             if (message.privacy == MessagePrivacy.LocalOnly) return@forEach
-            val rolePrefix = when (message.role) {
-                MessageRole.User -> "用户"
-                MessageRole.Assistant -> "助手"
-            }
             index(
                 id = message.id.toString(),
-                text = "$rolePrefix：${message.text}",
+                text = "用户：${message.text}",
             )
         }
     }

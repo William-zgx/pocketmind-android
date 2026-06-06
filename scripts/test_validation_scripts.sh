@@ -5,7 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+CLEANUP_PATHS=()
+cleanup_validation_test() {
+  rm -rf "$TMP_DIR"
+  local path
+  for path in "${CLEANUP_PATHS[@]}"; do
+    rm -f "$path"
+  done
+}
+trap cleanup_validation_test EXIT
 
 fail() {
   echo "validation-script-test: $*" >&2
@@ -452,6 +460,7 @@ assert_report_contains "$ARTIFACT_DIR/release-record-approved.properties" "statu
 expect_failure \
   "release record verifier rejects internal channel in public context" \
   env PUBLIC_RELEASE_CONTEXT=1 \
+  ALLOW_DIRTY_RELEASE=1 \
   EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_ARTIFACT" \
   EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
   EXPECTED_RELEASE_ARTIFACT_SHA256="$RELEASE_RECORD_ARTIFACT_SHA" \
@@ -463,17 +472,34 @@ sed 's/"targetChannel": "internal_testing"/"targetChannel": "open_testing"/' "$R
 expect_success \
   "release record verifier accepts matching public aab record" \
   env PUBLIC_RELEASE_CONTEXT=1 \
+  ALLOW_DIRTY_RELEASE=1 \
   EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_ARTIFACT" \
   EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
   EXPECTED_RELEASE_ARTIFACT_SHA256="$RELEASE_RECORD_ARTIFACT_SHA" \
   EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_PUBLIC" --report "$ARTIFACT_DIR/release-record-public.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-public.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/release-record-public.properties" "allowDirtyRelease=1"
+DIRTY_RELEASE_MARKER="$ROOT_DIR/release-record-dirty-test.tmp"
+CLEANUP_PATHS+=("$DIRTY_RELEASE_MARKER")
+printf 'dirty release record test\n' > "$DIRTY_RELEASE_MARKER"
+expect_failure \
+  "release record verifier rejects dirty public source tree" \
+  env PUBLIC_RELEASE_CONTEXT=1 \
+  EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_ARTIFACT" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$RELEASE_RECORD_ARTIFACT_SHA" \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_PUBLIC" --report "$ARTIFACT_DIR/release-record-public-dirty.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-public-dirty.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-record-public-dirty.properties" "reason=git-worktree-dirty"
+rm -f "$DIRTY_RELEASE_MARKER"
 RELEASE_RECORD_OTHER_ARTIFACT="$TMP_DIR/release-record-other.aab"
 printf 'other release artifact\n' > "$RELEASE_RECORD_OTHER_ARTIFACT"
 expect_failure \
   "release record verifier rejects mismatched public artifact path" \
   env PUBLIC_RELEASE_CONTEXT=1 \
+  ALLOW_DIRTY_RELEASE=1 \
   EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_OTHER_ARTIFACT" \
   EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
   EXPECTED_RELEASE_ARTIFACT_SHA256="$(shasum -a 256 "$RELEASE_RECORD_OTHER_ARTIFACT" | awk '{print $1}')" \

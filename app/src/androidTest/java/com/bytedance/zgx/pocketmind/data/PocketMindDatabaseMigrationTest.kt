@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bytedance.zgx.pocketmind.MessagePrivacy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -100,6 +101,55 @@ class PocketMindDatabaseMigrationTest {
 
             val restored = database.sessionDao().messagesForSession("legacy-session").single()
             assertEquals("分享文本：secret", restored.text)
+            assertEquals(MessagePrivacy.LocalOnly.name, restored.privacy)
+        } finally {
+            database.close()
+            prefs.edit().clear().apply()
+            settingsStore.setMigrationVersion(0)
+        }
+    }
+
+    @Test
+    fun legacyPrefsMigratorDerivesUntitledLegacyMessagesAsLocalOnlyTitle() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = context.getSharedPreferences("pocketmind", android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .clear()
+            .putString(
+                "sessions_json",
+                """
+                [
+                  {
+                    "id": "legacy-private-title-session",
+                    "createdAtMillis": 1,
+                    "updatedAtMillis": 2,
+                    "messages": [
+                      {"role": "User", "text": "分享文本：secret-title-token"}
+                    ]
+                  }
+                ]
+                """.trimIndent(),
+            )
+            .putString("active_session_id", "legacy-private-title-session")
+            .apply()
+        val database = Room.inMemoryDatabaseBuilder(context, PocketMindDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val settingsStore = PreferenceSettingsStore(context)
+        settingsStore.setMigrationVersion(0)
+
+        try {
+            LegacyPrefsMigrator(
+                context = context,
+                database = database,
+                settingsStore = settingsStore,
+                secretStore = NoOpSecretStore,
+            ).migrateIfNeeded()
+
+            val session = database.sessionDao().session("legacy-private-title-session")
+            val restored = database.sessionDao().messagesForSession("legacy-private-title-session").single()
+            assertEquals("本地内容", session?.title)
+            assertFalse(session?.title.orEmpty().contains("secret-title-token"))
             assertEquals(MessagePrivacy.LocalOnly.name, restored.privacy)
         } finally {
             database.close()

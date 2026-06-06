@@ -393,6 +393,8 @@ class AssistantOrchestratorTest {
     private fun webSearchResultData(): Map<String, String> =
         mapOf(
             "toolName" to MobileActionFunctions.WEB_SEARCH,
+            "privacy" to MessagePrivacy.RemoteEligible.name,
+            "requiresLocalModel" to "false",
             "query" to "Kotlin",
             "source" to "duckduckgo",
             "summaryText" to "Kotlin search summary",

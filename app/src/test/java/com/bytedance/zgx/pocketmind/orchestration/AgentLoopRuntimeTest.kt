@@ -872,6 +872,52 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun publicEvidenceContinuationRejectsResultMissingRemotePrivacyDeclaration() {
+        val runtime = AgentLoopRuntime(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = InMemoryAgentTraceStore(clockMillis = { 1_000L }),
+        )
+        val result = runtime.runOnce(
+            input = "北京和上海今天温差多少？",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+        )
+        runtime.recordRemoteToolsExposed(
+            runId = result.run.id,
+            scope = RemoteToolScope.PublicEvidenceOnly,
+            toolNames = setOf(MobileActionFunctions.WEB_SEARCH),
+        )
+        val planned = runtime.observeModelToolRequest(
+            runId = result.run.id,
+            request = ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京天气"),
+                reason = "remote tool call",
+            ),
+        )
+        requireNotNull(planned)
+        require(planned.decision is AgentObservationDecision.PlanNextTool)
+
+        val observed = runtime.observeToolResult(
+            runId = result.run.id,
+            result = ToolResult(
+                requestId = "call-beijing",
+                status = ToolStatus.Succeeded,
+                summary = "已读取北京当前天气。",
+                data = webSearchResultData().minus("privacy").minus("requiresLocalModel"),
+            ),
+        )
+
+        requireNotNull(observed)
+        assertEquals(AgentRunState.Failed, observed.run.state)
+        require(observed.decision is AgentObservationDecision.Fail)
+        assertNull(observed.continuationPromptForModel)
+        assertEquals(ToolErrorCode.InvalidResult, observed.result.error?.code)
+    }
+
+    @Test
     fun publicEvidenceToolBatchCancelledResultCancelsRun() {
         val runtime = AgentLoopRuntime(
             memoryIndex = MemoryRepository(),
@@ -7558,6 +7604,8 @@ class AgentLoopRuntimeTest {
     ): Map<String, String> =
         mapOf(
             "toolName" to MobileActionFunctions.WEB_SEARCH,
+            "privacy" to MessagePrivacy.RemoteEligible.name,
+            "requiresLocalModel" to "false",
             "query" to query,
             "source" to "duckduckgo",
             "summaryText" to summaryText,
