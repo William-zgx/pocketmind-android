@@ -17,6 +17,45 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Upgrade install emulator evidence
+
+本轮覆盖项：
+
+- 新增 `scripts/verify_upgrade_install_emulator.sh`，从最近一次 app 源码变更的前一个
+  commit 构建 base debug APK，再在 API 36 emulator 上执行 base install -> current
+  `adb install -r` -> current smoke AndroidTest。
+- report 记录 base/current APK SHA、base/current package `firstInstallTime` /
+  `lastUpdateTime`、versionCode、当前 commit、base commit、AVD、API、ABI 和
+  instrumentation 结果。
+- 该 report 明确写入 `releaseFlowPassed=false`：当前只证明 debug APK 的升级安装
+  smoke path，不证明正式 release upgrade flow。`docs/release_validation_record.json`
+  的 `flowMatrix.upgradeInstall` 保持 pending。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_upgrade_install_emulator.sh scripts/verify_local.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=focus_agent_api36_arm64 ARTIFACT_DIR=build/verification/upgrade-install-emulator-current REPORT_FILE=build/verification/upgrade-install-emulator-current/upgrade-install-emulator.properties EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/verify_upgrade_install_emulator.sh
+ARTIFACT_DIR=build/verification/release-flow-matrix-current REPORT_FILE=build/verification/release-flow-matrix-current/release-flow-matrix-candidate-evidence.properties scripts/collect_release_flow_matrix_evidence.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：真实 API 36 emulator upgrade install；
+  `build/verification/upgrade-install-emulator-current/upgrade-install-emulator.properties`
+  记录 `status=passed`、`installMode=adb-install-r`、`baseCommit=da5f414...`、
+  `currentCommit=b611f10...`、`instrumentation=passed`、`instrumentation_test_count=4`。
+- 通过：package evidence 显示 `firstInstallTime` 保持 `2026-06-06 20:09:55`，
+  `lastUpdateTime` 从 `2026-06-06 20:09:55` 更新到 `2026-06-06 20:10:04`。
+- 未通过正式 flow：base/current debug APK 的 `versionCode` 都是 1，
+  `versionCodeIncreased=false`，且尚未验证 seeded session/memory/reminder 保留或
+  `MY_PACKAGE_REPLACED` 后 reminder 重排。
+- 通过：validation script self-tests。
+- 预期失败：release validation record 仍未 approved；`flow-upgradeInstall-not-passed`
+  仍保留，避免把 debug smoke evidence 冒充为正式 release upgrade evidence。
+
 ## 2026-06-06 Release flow matrix candidate evidence
 
 本轮覆盖项：

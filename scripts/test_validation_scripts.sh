@@ -374,6 +374,12 @@ grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include capture_release_screenshots.sh in shell syntax checks"
 grep -q 'scripts/collect_release_flow_matrix_evidence.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_release_flow_matrix_evidence.sh in shell syntax checks"
+grep -q 'scripts/verify_upgrade_install_emulator.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_upgrade_install_emulator.sh in shell syntax checks"
+grep -q 'releaseFlowPassed=false' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must not claim release flow approval"
+grep -q 'versionCodeIncreased=' scripts/verify_upgrade_install_emulator.sh ||
+  fail "upgrade install emulator report must expose versionCodeIncreased"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include privacy_scan.sh in shell syntax checks"
 grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
