@@ -200,9 +200,10 @@ release ticket or PR.
   `reason` list whenever the perf baseline gate fails.
 - [ ] Every `performanceSanity` item in `docs/release_validation_record.json`
   references a passed `perf-baseline-verification.properties` report generated
-  by `scripts/verify_perf_baseline.sh`, with `target=perf-baseline`,
-  `missingFieldCount=0`, and a readable `baselineFile`; lightweight status-only
-  performance evidence files are not accepted.
+  by `scripts/verify_perf_baseline.sh`, with `target=perf-baseline`, a
+  `performanceKey` that matches the record key, `missingFieldCount=0`, and a
+  readable `baselineFile`; lightweight status-only or cross-key performance
+  evidence files are not accepted.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

@@ -169,6 +169,8 @@ def validate_performance_evidence(key, evidence_path):
         failures.append(f"{prefix}-status-not-passed")
     if props.get("target") != "perf-baseline":
         failures.append(f"{prefix}-target-invalid")
+    if props.get("performanceKey") != key:
+        failures.append(f"{prefix}-key-mismatch")
     if props.get("missingFieldCount") != "0":
         failures.append(f"{prefix}-missing-fields")
     baseline_file = props.get("baselineFile", "")

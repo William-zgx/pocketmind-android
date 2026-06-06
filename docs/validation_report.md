@@ -22,6 +22,38 @@
 `manual-acceptance` 报告；flow matrix 必须链接正式 `release-flow` 报告；
 performance sanity 必须链接通过的 `perf-baseline` verifier report。
 
+## 2026-06-06 Release validation performance key binding
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在要求每个 `performanceSanity`
+  evidence report 声明 `performanceKey`，并且必须和当前记录 key 匹配。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 为每个
+  performance report 写入对应 `performanceKey`。
+- 新增负例：`modelLoad` 引用 `firstLaunch` 的 perf verifier report 时必须失败，
+  并记录 `performance-modelLoad-evidence-key-mismatch`。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档，
+  不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation flow evidence hardening
 
 本轮覆盖项：

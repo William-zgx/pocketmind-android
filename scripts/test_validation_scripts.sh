@@ -1078,6 +1078,7 @@ for perf_key in firstLaunch modelLoad firstToken streamingStopCancel backgroundR
   cat > "$TMP_DIR/validation-performance-evidence/$perf_key.properties" <<VALIDATION_PERFORMANCE_EVIDENCE_PROPERTIES
 status=passed
 target=perf-baseline
+performanceKey=$perf_key
 baselineFile=$VALIDATION_PERF_BASELINE
 missingFieldCount=0
 expectedArtifactSha256=
@@ -1417,7 +1418,25 @@ expect_failure \
   "release validation verifier rejects weak performance sanity evidence" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_WEAK_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-key-mismatch"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-baseline-file-missing"
+VALIDATION_PERF_KEY_MISMATCH="$TMP_DIR/release-validation-perf-key-mismatch.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_PERF_KEY_MISMATCH" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+first_launch_evidence = Path(record["performanceSanity"]["firstLaunch"]["evidencePath"])
+record["performanceSanity"]["modelLoad"]["evidencePath"] = str(first_launch_evidence)
+record["performanceSanity"]["modelLoad"]["evidenceSha256"] = hashlib.sha256(first_launch_evidence.read_bytes()).hexdigest()
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects performance evidence key mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_KEY_MISMATCH" --report "$ARTIFACT_DIR/release-validation-perf-key-mismatch.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-key-mismatch.properties" "performance-modelLoad-evidence-key-mismatch"
 VALIDATION_SCREENSHOT_BAD_SHA="$TMP_DIR/release-validation-screenshot-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_BAD_SHA" <<'PY'
 import json
