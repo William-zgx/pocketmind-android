@@ -15,6 +15,36 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Privacy review evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_privacy_review.sh` 要求 release/security/legal 三方审批记录必须是
+  version 1，且每个 approved role 都提供存在的 evidence file 和匹配 SHA-256。
+- `docs/privacy_review.json` pending 模板新增每个 role 的 `evidencePath` /
+  `evidenceSha256` 字段；状态仍保持 `pending_manual_review`，不替代真实审批。
+- `scripts/test_validation_scripts.sh` 增加三方 privacy review evidence 正例和 release
+  evidence SHA mismatch 负例。
+- `docs/release_checklist.md` 同步隐私 review evidence path 必须绑定 SHA 的门禁要求。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_privacy_review.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_privacy_review.sh --report build/verification/privacy-review-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 approved evidence 正例和 evidence SHA
+  mismatch 负例。
+- 当前 `docs/privacy_review.json` 仍按预期未通过；真实剩余项仍是 release/security/legal
+  owner 审批、reviewer、review date 和对应 evidence。
+- 未执行模拟器：本轮只加固 privacy review 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation evidence SHA hardening
 
 本轮覆盖项：

@@ -1092,8 +1092,17 @@ assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
 PRIVACY_NOTICE="$TMP_DIR/privacy-notice.md"
 PRIVACY_REVIEW_PENDING="$TMP_DIR/privacy-review-pending.json"
 PRIVACY_REVIEW_APPROVED="$TMP_DIR/privacy-review-approved.json"
+PRIVACY_REVIEW_RELEASE_EVIDENCE="$TMP_DIR/privacy-review-release.properties"
+PRIVACY_REVIEW_SECURITY_EVIDENCE="$TMP_DIR/privacy-review-security.properties"
+PRIVACY_REVIEW_LEGAL_EVIDENCE="$TMP_DIR/privacy-review-legal.properties"
 printf 'PocketMind privacy notice\n' > "$PRIVACY_NOTICE"
+printf 'status=approved\nrole=release\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_RELEASE_EVIDENCE"
+printf 'status=approved\nrole=security\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_SECURITY_EVIDENCE"
+printf 'status=approved\nrole=legal\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_LEGAL_EVIDENCE"
 PRIVACY_NOTICE_SHA="$(shasum -a 256 "$PRIVACY_NOTICE" | awk '{print $1}')"
+PRIVACY_REVIEW_RELEASE_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_RELEASE_EVIDENCE" | awk '{print $1}')"
+PRIVACY_REVIEW_SECURITY_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_SECURITY_EVIDENCE" | awk '{print $1}')"
+PRIVACY_REVIEW_LEGAL_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_LEGAL_EVIDENCE" | awk '{print $1}')"
 cat > "$PRIVACY_REVIEW_PENDING" <<'PRIVACY_REVIEW_PENDING_JSON'
 {
   "version": 1,
@@ -1119,19 +1128,25 @@ cat > "$PRIVACY_REVIEW_APPROVED" <<PRIVACY_REVIEW_APPROVED_JSON
       "role": "release",
       "decision": "approved",
       "reviewer": "Release Reviewer",
-      "reviewDate": "2026-06-06"
+      "reviewDate": "2026-06-06",
+      "evidencePath": "$PRIVACY_REVIEW_RELEASE_EVIDENCE",
+      "evidenceSha256": "$PRIVACY_REVIEW_RELEASE_EVIDENCE_SHA"
     },
     {
       "role": "security",
       "decision": "approved",
       "reviewer": "Security Reviewer",
-      "reviewDate": "2026-06-06"
+      "reviewDate": "2026-06-06",
+      "evidencePath": "$PRIVACY_REVIEW_SECURITY_EVIDENCE",
+      "evidenceSha256": "$PRIVACY_REVIEW_SECURITY_EVIDENCE_SHA"
     },
     {
       "role": "legal",
       "decision": "approved",
       "reviewer": "Legal Reviewer",
-      "reviewDate": "2026-06-06"
+      "reviewDate": "2026-06-06",
+      "evidencePath": "$PRIVACY_REVIEW_LEGAL_EVIDENCE",
+      "evidenceSha256": "$PRIVACY_REVIEW_LEGAL_EVIDENCE_SHA"
     }
   ]
 }
@@ -1148,6 +1163,13 @@ expect_failure \
   env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_FUTURE" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
   scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-future.properties"
 assert_report_contains "$ARTIFACT_DIR/privacy-review-future.properties" "status=failed"
+PRIVACY_REVIEW_BAD_EVIDENCE_SHA="$TMP_DIR/privacy-review-bad-evidence-sha.json"
+sed 's/"evidenceSha256": "'"$PRIVACY_REVIEW_RELEASE_EVIDENCE_SHA"'"/"evidenceSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$PRIVACY_REVIEW_APPROVED" > "$PRIVACY_REVIEW_BAD_EVIDENCE_SHA"
+expect_failure \
+  "privacy review verifier rejects evidence sha mismatch" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_BAD_EVIDENCE_SHA" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-bad-evidence-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/privacy-review-bad-evidence-sha.properties" "release-evidence-sha-mismatch"
 
 MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
 MODEL_LICENSE_MANIFEST="$TMP_DIR/model-manifest.md"

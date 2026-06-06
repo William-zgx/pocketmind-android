@@ -9,19 +9,25 @@
       "role": "release",
       "decision": "pending",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "role": "security",
       "decision": "pending",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "role": "legal",
       "decision": "pending",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "evidencePath": "",
+      "evidenceSha256": ""
     }
   ]
 }

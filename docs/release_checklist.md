@@ -137,7 +137,8 @@ release ticket or PR.
 
 - [ ] `docs/privacy_notice.md` is reviewed by release, security, and legal
   owners before publication. Record the approved current notice SHA in
-  `docs/privacy_review.json`, then run `VERIFY_PRIVACY_REVIEW=1
+  `docs/privacy_review.json`; every role approval must include an evidence file
+  path and matching SHA-256. Then run `VERIFY_PRIVACY_REVIEW=1
   scripts/verify_release_gate.sh`.
 - [ ] All four recommended model downloads in `docs/model_manifest.md` have
   manually verified manifest repository, pinned upstream revision, license

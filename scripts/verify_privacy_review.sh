@@ -62,16 +62,37 @@ from pathlib import Path
 
 review_path = Path(sys.argv[1])
 notice_path = Path(sys.argv[2])
-review = json.loads(review_path.read_text())
+try:
+    review = json.loads(review_path.read_text())
+except Exception:
+    print("json-parse-error")
+    sys.exit(1)
 notice_sha = hashlib.sha256(notice_path.read_bytes()).hexdigest()
 
 failures = []
+if review.get("version") != 1:
+    failures.append("version-invalid")
 if review.get("status") != "approved":
     failures.append("status-not-approved")
 if review.get("noticePath") != str(notice_path):
     failures.append("notice-path-mismatch")
 if review.get("noticeSha256") != notice_sha:
     failures.append("notice-sha-mismatch")
+
+def non_empty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+def validate_file_sha(prefix, path, expected_sha):
+    if not non_empty_string(expected_sha):
+        failures.append(f"{prefix}-sha-missing")
+        return
+    try:
+        actual_sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        failures.append(f"{prefix}-sha-read-failed")
+        return
+    if actual_sha != expected_sha:
+        failures.append(f"{prefix}-sha-mismatch")
 
 reviews = review.get("reviews")
 if not isinstance(reviews, list):
@@ -92,6 +113,17 @@ for entry in reviews:
         failures.append(f"{role or 'unknown'}-decision-not-approved")
     if not entry.get("reviewer"):
         failures.append(f"{role or 'unknown'}-reviewer-missing")
+    evidence_path = entry.get("evidencePath", "")
+    if not non_empty_string(evidence_path):
+        failures.append(f"{role or 'unknown'}-evidence-path-missing")
+    elif not Path(evidence_path).is_file():
+        failures.append(f"{role or 'unknown'}-evidence-file-missing")
+    else:
+        validate_file_sha(
+            f"{role or 'unknown'}-evidence",
+            evidence_path,
+            entry.get("evidenceSha256", ""),
+        )
     review_date = entry.get("reviewDate", "")
     if not review_date:
         failures.append(f"{role or 'unknown'}-review-date-missing")
