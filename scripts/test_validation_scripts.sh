@@ -101,14 +101,24 @@ case "${1:-}" in
       am\ start\ -W\ -n*)
         echo "Status: ok"
         ;;
-      run-as\ com.bytedance.zgx.pocketmind\ am\ broadcast\ -n\ com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver*)
-        echo "Broadcast completed: result=0"
+      run-as\ com.bytedance.zgx.pocketmind\ am\ broadcast*\ -n\ com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver*)
+        if [[ "$*" == *"--ez clearRemoteConfig true"* ]]; then
+          echo "Broadcast completed: result=-1, data=\"remote config cleared\""
+        else
+          echo "Broadcast completed: result=-1, data=\"remote config saved\""
+        fi
+        ;;
+      pm\ clear\ com.bytedance.zgx.pocketmind)
+        echo "Success"
         ;;
       input\ tap*|input\ text*|input\ keyevent*)
         echo "OK"
         ;;
       uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
         echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote.xml"
+        ;;
+      uiautomator\ dump\ /sdcard/pocketmind-release-*.xml)
+        echo "UI hierchary dumped to: ${*:3}"
         ;;
       *)
         echo "unexpected shell command: $*" >&2
@@ -121,6 +131,9 @@ case "${1:-}" in
     case "$*" in
       "avd name")
         echo "test-avd"
+        echo "OK"
+        ;;
+      "kill")
         echo "OK"
         ;;
       *)
@@ -147,12 +160,37 @@ case "${1:-}" in
   pull)
     source="${2:-}"
     destination="${3:-}"
-    if [[ "$source" != "/sdcard/pocketmind-live-remote.xml" || -z "$destination" ]]; then
+    if [[ -z "$destination" ]]; then
       echo "unexpected pull command: $*" >&2
       exit 2
     fi
     mkdir -p "$(dirname "$destination")"
-    printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
+    case "$source" in
+      /sdcard/pocketmind-live-remote.xml)
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
+        ;;
+      /sdcard/pocketmind-release-*.xml)
+        cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
+<hierarchy>
+  <node text="模型管理" content-desc="模型管理" bounds="[760,80][980,180]" />
+  <node text="后台任务" content-desc="后台任务" bounds="[520,80][740,180]" />
+  <node text="输入问题" bounds="[120,2100][780,2220]" />
+  <node content-desc="发送" bounds="[920,2100][1020,2220]" />
+  <node content-desc="关闭模型管理" bounds="[920,120][1010,210]" />
+  <node text="读取剪贴板" bounds="[80,1180][900,1260]" />
+  <node text="确认执行" bounds="[80,1850][980,1970]" />
+  <node text="取消" bounds="[80,1990][980,2110]" />
+  <node text="暂无运行中的后台任务" bounds="[80,720][980,800]" />
+  <node text="最近审计日志" bounds="[80,1420][980,1500]" />
+  <node text="最近 Agent 轨迹" bounds="[80,1660][980,1740]" />
+</hierarchy>
+FAKE_RELEASE_SCREENSHOT_UI
+        ;;
+      *)
+        echo "unexpected pull command: $*" >&2
+        exit 2
+        ;;
+    esac
     echo "1 file pulled"
     ;;
   logcat)
@@ -332,6 +370,8 @@ grep -q 'scripts/regression_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
+grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include capture_release_screenshots.sh in shell syntax checks"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include privacy_scan.sh in shell syntax checks"
 grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
@@ -2324,7 +2364,7 @@ expect_success \
 grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
   fail "Expected live remote helper to assemble the debug APK"
 receiver_broadcast_count="$(
-  grep -c -- "shell run-as com.bytedance.zgx.pocketmind am broadcast -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
 )"
 [[ "$receiver_broadcast_count" -ge 2 ]] ||
   fail "Expected live remote helper to configure and clear the debug receiver through run-as"
@@ -2335,6 +2375,8 @@ grep -q -- "--ez clearState true" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to request state clearing during setup"
 grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to clear remote config on exit"
+grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+  fail "Expected live remote helper to pin debug receiver broadcasts to user 0"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget="
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason="
@@ -2377,6 +2419,57 @@ if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.proper
   fail "Live remote failure report must not persist the remote API key"
 fi
 
+reset_logs
+expect_failure \
+  "release screenshot capture rejects physical serial by default" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/capture_release_screenshots.sh
+assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "failedTarget=android-serial"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "reason=android-serial-not-emulator"
+
+reset_logs
+expect_success \
+  "release screenshot capture records sanitized emulator evidence" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/capture_release_screenshots.sh
+grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
+  fail "Expected release screenshot helper to assemble the debug APK"
+receiver_broadcast_count="$(
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+)"
+[[ "$receiver_broadcast_count" -ge 1 ]] ||
+  fail "Expected release screenshot helper to clear the debug receiver through run-as"
+if grep -q -- "-s emulator-5554 shell am broadcast" "$FAKE_ADB_LOG"; then
+  fail "Release screenshot helper must not broadcast to the debug receiver from the shell uid"
+fi
+grep -q -- "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_BASE_URL" "$FAKE_ADB_LOG" ||
+  fail "Expected release screenshot helper to configure debug remote base URL through MainActivity extras"
+grep -q -- "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_MODEL_NAME" "$FAKE_ADB_LOG" ||
+  fail "Expected release screenshot helper to configure debug remote model through MainActivity extras"
+grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
+  fail "Expected release screenshot helper to clear remote config on exit"
+grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+  fail "Expected release screenshot helper to pin debug receiver broadcasts to user 0"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "failedTarget="
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "reason="
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "target=release-screenshots"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "clean_device=1"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.chat-home.path=$ARTIFACT_DIR/screenshots/chat-home.png"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.model-manager.path=$ARTIFACT_DIR/screenshots/model-manager.png"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.confirmation-sheet.path=$ARTIFACT_DIR/screenshots/confirmation-sheet.png"
+assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.background-tasks-or-audit.path=$ARTIFACT_DIR/screenshots/background-tasks-or-audit.png"
+for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
+  [[ -s "$ARTIFACT_DIR/screenshots/$screenshot_name.png" ]] ||
+    fail "Expected release screenshot evidence for $screenshot_name"
+  assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.${screenshot_name}.sanitized=true"
+  grep -Eq "^screenshot[.]${screenshot_name}[.]sha256=[0-9a-f]{64}$" "$ARTIFACT_DIR/release-screenshots.properties" ||
+    fail "Expected release screenshot SHA for $screenshot_name"
+done
 REGRESSION_COUNT_FIXTURE="$TMP_DIR/android-test-count-fixture"
 mkdir -p "$REGRESSION_COUNT_FIXTURE/java/example"
 cat > "$REGRESSION_COUNT_FIXTURE/java/example/FixtureTest.kt" <<'COUNT_FIXTURE'

@@ -71,6 +71,7 @@ fail() {
 
 debug_receiver_broadcast() {
   "$ADB_BIN" -s "$SELECTED_SERIAL" shell run-as "$PACKAGE_NAME" am broadcast \
+    --user 0 \
     -n "$DEBUG_CONFIG_RECEIVER" \
     "$@"
 }

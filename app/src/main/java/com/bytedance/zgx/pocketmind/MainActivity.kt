@@ -6,6 +6,7 @@ import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.projection.MediaProjectionManager
@@ -144,6 +145,7 @@ class MainActivity : ComponentActivity() {
         viewModel.restoreStartupState(
             skipModelRuntimeWork = skipStartupModelRuntimeWork,
         )
+        configureDebugRemoteModelForScreenshotEvidenceIfPresent(intent)
         restorePendingSpecialAccessRequirement(savedInstanceState)
         handleSharedIntent(intent)
 
@@ -211,6 +213,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        configureDebugRemoteModelForScreenshotEvidenceIfPresent(intent)
         handleSharedIntent(intent)
     }
 
@@ -250,6 +253,19 @@ class MainActivity : ComponentActivity() {
             sharedInput?.let(viewModel::ingestSharedInput)
         }
     }
+
+    private fun configureDebugRemoteModelForScreenshotEvidenceIfPresent(intent: Intent) {
+        if (!isDebuggableBuild()) return
+        val baseUrl = intent.getStringExtra(EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL) ?: return
+        val modelName = intent.getStringExtra(EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME) ?: return
+        viewModel.configureDebugRemoteModelForScreenshotEvidence(
+            baseUrl = baseUrl,
+            modelName = modelName,
+        )
+    }
+
+    private fun isDebuggableBuild(): Boolean =
+        applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private fun handlePickedSharedUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -524,6 +540,10 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK =
             "com.bytedance.zgx.pocketmind.extra.SKIP_STARTUP_MODEL_RUNTIME_WORK"
+        const val EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL =
+            "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_BASE_URL"
+        const val EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME =
+            "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_MODEL_NAME"
         private const val KEY_PENDING_SPECIAL_ACCESS_REQUIREMENT_ID =
             "com.bytedance.zgx.pocketmind.state.PENDING_SPECIAL_ACCESS_REQUIREMENT_ID"
         private val SHARED_ATTACHMENT_MIME_TYPES = arrayOf(

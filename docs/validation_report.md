@@ -17,6 +17,42 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release screenshot evidence capture
+
+本轮覆盖项：
+
+- 新增 `scripts/capture_release_screenshots.sh`，在模拟器上安装 debug 包，通过
+  UiAutomator 节点导航采集 `chat-home`、`model-manager`、`confirmation-sheet`、
+  `background-tasks-or-audit` 四张脱敏发布截图。
+- 截图脚本默认只接受 emulator serial；物理设备必须显式设置
+  `ALLOW_PHYSICAL_SCREENSHOTS=1`，避免误采个人设备内容。
+- Debug-only Activity extra 只在 debuggable build 中启用，用于截图 evidence 时配置
+  远程 ready 状态；它不保存 API key，正式包不会启用。
+- `docs/release_validation_record.json` 的 screenshots 字段已更新为本次 PNG path 和
+  SHA-256；没有把截图 evidence 冒充为物理真机、API 28/32/33/34、人工验收或性能通过。
+
+验证命令：
+
+```bash
+bash -n scripts/capture_release_screenshots.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+./gradlew :app:assembleDebug
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=focus_agent_api36_arm64 ARTIFACT_DIR=build/verification/release-screenshots-current REPORT_FILE=build/verification/release-screenshots-current/release-screenshots.properties EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/capture_release_screenshots.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖截图脚本默认拒绝物理 serial、MainActivity
+  debug extra、四张截图 SHA 和脱敏标记。
+- 通过：真实 API 36 emulator 截图采集；
+  `build/verification/release-screenshots-current/release-screenshots.properties` 记录
+  `status=passed`、`serial=emulator-5554`、`api_level=36`、`clean_device=1`。
+- 通过：四张 PNG 已人工视觉检查，分别对应首页、模型管理、工具确认、后台任务页。
+- 通过：脚本结束后 `adb devices -l` 为空，没有遗留运行中的 emulator。
+- 通过：`scripts/verify_local.sh`，覆盖 shell syntax、validation script self-tests、JVM
+  tests、lint、debug/release assemble、release bundle 和 Android artifact scan。
+
 ## 2026-06-06 Emulator API matrix regression runner
 
 本轮覆盖项：

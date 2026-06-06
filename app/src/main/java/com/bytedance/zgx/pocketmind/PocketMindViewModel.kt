@@ -213,6 +213,34 @@ class PocketMindViewModel(
         restorePendingExternalOutcomeIfAny()
     }
 
+    fun configureDebugRemoteModelForScreenshotEvidence(baseUrl: String, modelName: String) {
+        val config = RemoteModelConfig(baseUrl = baseUrl, modelName = modelName, apiKey = "").normalized()
+        if (!config.isConfigured) {
+            _uiState.update { it.copy(statusText = "截图验证远程配置无效") }
+            return
+        }
+        remoteModelRepository.saveConfigWithoutApiKey(config)
+            .fold(
+                onSuccess = { normalized ->
+                    firstRunSetupRepository.markSetupDismissed()
+                    remoteModelRepository.saveMode(InferenceMode.Remote)
+                    _uiState.update {
+                        it.copy(
+                            remoteModelConfig = normalized,
+                            inferenceMode = InferenceMode.Remote,
+                            showFirstRunSetup = false,
+                        )
+                    }
+                    updateRemoteReadiness("远程模型")
+                },
+                onFailure = { throwable ->
+                    _uiState.update {
+                        it.copy(statusText = "截图验证远程配置保存失败：${throwable.cleanMessage()}")
+                    }
+                },
+            )
+    }
+
     private fun recoverBackgroundTasksOnStartup() {
         backgroundTaskScheduler.rescheduleScheduledReminders()
         backgroundTaskScheduler.reconcilePeriodicCheckOnStartup()
