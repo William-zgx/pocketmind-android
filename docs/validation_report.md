@@ -23,6 +23,36 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Model license source metadata refresh
+
+本轮覆盖项：
+
+- 重新运行 `scripts/collect_model_license_metadata.sh`，从 Hugging Face model API 刷新四个
+  推荐模型的 license metadata。
+- 在 `docs/model_license_review.json` 中补齐可由 metadata 支撑的 license name 和 pinned
+  README license source URL；不修改 `status`、`redistributionDecision`、reviewer、
+  review date 或 review evidence。
+- 保持 fail-closed：模型 license review 仍必须由人工 reviewer 完成 redistribution、
+  attribution/notice 和批准证据。
+
+验证命令：
+
+```bash
+scripts/collect_model_license_metadata.sh
+scripts/verify_model_license_review.sh --report build/verification/model-license-review-current.properties
+```
+
+结果：
+
+- 通过：metadata 刷新完成，`docs/model_license_metadata.json.recordedAt` 更新到
+  `2026-06-06T18:34:06Z`。
+- 通过：`docs/model_license_review.json` 现在记录 `chat-e2b`、`memory-embedding-300m`
+  和 `chat-e4b` 的 `Apache-2.0` license name，以及 `mobile-action-270m` 的 `Gemma`
+  license name；四个 `licenseUrl` 均指向 pinned upstream revision 的 README。
+- 预期失败：`scripts/verify_model_license_review.sh` 仍记录 `status=failed`；当前失败原因
+  只剩每个模型的人工 approval、redistribution approval、attribution notice、reviewer、
+  review evidence 和 review date。
+
 ## 2026-06-07 Upgrade install and flow candidate refresh
 
 本轮覆盖项：
