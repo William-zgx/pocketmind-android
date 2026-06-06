@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 TMP_DIR="$(mktemp -d)"
-CLEANUP_PATHS=()
+CLEANUP_PATHS=("$TMP_DIR/.cleanup-sentinel")
 cleanup_validation_test() {
   rm -rf "$TMP_DIR"
   local path
@@ -344,16 +344,19 @@ expect_failure \
   "perf baseline verifier rejects incomplete record" \
   scripts/verify_perf_baseline.sh --file "$INVALID_PERF" --report "$ARTIFACT_DIR/perf-invalid.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-invalid.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/perf-invalid.properties" "status-not-passed"
 expect_failure \
   "perf baseline verifier rejects mismatched artifact sha" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 different-sha --report "$ARTIFACT_DIR/perf-sha-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-sha-failed.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/perf-sha-failed.properties" "release-artifact-sha-mismatch"
 EMULATOR_PERF="$TMP_DIR/perf-baseline-emulator.properties"
 sed 's/deviceSerial=device-a/deviceSerial=emulator-5554/' "$VALID_PERF" > "$EMULATOR_PERF"
 expect_failure \
   "perf baseline verifier rejects emulator serials" \
   scripts/verify_perf_baseline.sh --file "$EMULATOR_PERF" --report "$ARTIFACT_DIR/perf-emulator.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-emulator.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/perf-emulator.properties" "device-serial-is-emulator"
 ZERO_PERF="$TMP_DIR/perf-baseline-zero.properties"
 sed 's/firstTokenMs=900/firstTokenMs=0/' "$VALID_PERF" > "$ZERO_PERF"
 expect_failure \
@@ -1457,6 +1460,20 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "failedTarget=perf-baseline"
 assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "failedReason=PERF_BASELINE_FILE-not-set"
+VALID_GATE_BAD_SHA_PERF="$TMP_DIR/perf-baseline-safe-apk-bad-sha.properties"
+sed 's/releaseArtifactSha256='"$SAFE_APK_SHA"'/releaseArtifactSha256=0000000000000000000000000000000000000000000000000000000000000000/' "$VALID_GATE_PERF" > "$VALID_GATE_BAD_SHA_PERF"
+expect_failure \
+  "release gate reports perf baseline child reason" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-perf-bad-sha" \
+  PERF_BASELINE_FILE="$VALID_GATE_BAD_SHA_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-perf-bad-sha/perf-baseline-verification.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/release-perf-bad-sha/perf-baseline-verification.properties" "release-artifact-sha-mismatch"
+assert_report_contains "$ARTIFACT_DIR/release-perf-bad-sha/release-gate.properties" "failedTarget=perf-baseline"
+assert_report_contains_text "$ARTIFACT_DIR/release-perf-bad-sha/release-gate.properties" "failedReason=release-artifact-sha-mismatch"
 expect_failure \
   "release gate requires approved privacy review when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-review" \

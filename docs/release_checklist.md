@@ -182,6 +182,8 @@ release ticket or PR.
 - [ ] `release-gate.properties` records `failedTarget` and `failedReason` for
   any failed gate run, so the release ticket can link the exact failing child
   report without guessing.
+- [ ] `perf-baseline-verification.properties` records a machine-readable
+  `reason` list whenever the perf baseline gate fails.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

@@ -15,6 +15,34 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Perf baseline failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/verify_perf_baseline.sh` 在 failed report 中新增机器可读 `reason` 字段，
+  记录缺失字段、emulator 设备、ABI、artifact SHA、app version、数值、时间戳等失败原因。
+- `scripts/verify_release_gate.sh` 可以把 perf baseline 子报告的 `reason` 提升到
+  `release-gate.properties.failedReason`。
+- `scripts/test_validation_scripts.sh` 覆盖 incomplete perf、artifact SHA mismatch、
+  emulator serial，以及 release gate 中 perf 子门禁失败摘要。
+- `docs/release_checklist.md` 同步 perf baseline failed report 必须提供 reason list。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_perf_baseline.sh scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 perf baseline failure reason 和 release gate
+  perf failedReason 汇总。
+- 通过：`scripts/verify_local.sh`。
+- 未执行模拟器：本轮只加固 perf/release gate 报告和测试 fixture，不改变 APK runtime
+  或 UI 行为。
+
 ## 2026-06-06 Release gate failure summary hardening
 
 本轮覆盖项：
