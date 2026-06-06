@@ -15,6 +15,51 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Remote image input unsupported-vision boundary
+
+本轮覆盖项：
+
+- 远程模式只有在当前 remote profile 声明支持 vision input 时，才进入
+  `RemoteVision` 图片 byte 读取和 `ChatImageAttachment` 构造路径。
+- 远程模式且 vision 关闭时，分享/选择图片只生成受保护图片信号；不读取图片 bytes、
+  不生成 OCR、不创建可发送 draft，并给出本地 `LocalOnly` 不支持提示。
+- 远程模式下分享文本保持受保护信号，不读取或发送分享文本值。
+
+验证命令：
+
+```bash
+./gradlew testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.multimodal.SharedInputTest' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest' \
+  --tests 'com.bytedance.zgx.pocketmind.MainActivitySharedInputModeTest'
+
+ANDROID_HOME="$HOME/Library/Android/sdk" \
+ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+scripts/verify_local.sh
+
+ANDROID_HOME="$HOME/Library/Android/sdk" \
+ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：目标 JVM 回归，覆盖 `SharedInputTest`、`PocketMindViewModelTest` 和
+  `MainActivitySharedInputModeTest`。
+- 通过：`scripts/verify_local.sh`，包含 validation script 回归、JVM tests、lint、
+  debug/androidTest APK assembly、release assembly 和 APK 内容检查。
+- 通过：完整 emulator regression：
+  `build/verification/regression-emulator-20260606-140228/regression-emulator.properties`
+  为 `status=passed`、`exit_code=0`；nested
+  `emulator-verification.properties` 和 `device-verification.properties` 均
+  `status=passed`；`instrumentation=passed`，`actual_android_test_count=26`，
+  `source_android_test_count=26`。设备为 `focus_agent_api36_arm64` /
+  `emulator-5554`，API 36，`arm64-v8a`。
+
 ## 2026-06-04 Agent privacy, public evidence, and emulator regression pass
 
 本轮覆盖项：

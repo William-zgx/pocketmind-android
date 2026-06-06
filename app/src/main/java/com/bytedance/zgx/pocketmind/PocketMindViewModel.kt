@@ -1588,10 +1588,11 @@ class PocketMindViewModel(
     fun ingestSharedInput(sharedInput: SharedInput) {
         if (sharedInput.isEmpty) return
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            if (sharedInput.hasRemoteImageAttachment() &&
-                !_uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            val remoteSupportsVisionInput = _uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            if ((sharedInput.hasRemoteImageAttachment() || sharedInput.hasProtectedImageSource()) &&
+                !remoteSupportsVisionInput
             ) {
-                rejectUnsupportedRemoteVisionInput()
+                rejectUnsupportedRemoteVisionInput(sharedInput.protectedSourceCount)
                 return
             }
             if (!sharedInput.isRemoteVisionSendable()) {
@@ -1604,10 +1605,11 @@ class PocketMindViewModel(
 
     fun stageSharedInput(sharedInput: SharedInput) {
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            if (sharedInput.hasRemoteImageAttachment() &&
-                !_uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            val remoteSupportsVisionInput = _uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            if ((sharedInput.hasRemoteImageAttachment() || sharedInput.hasProtectedImageSource()) &&
+                !remoteSupportsVisionInput
             ) {
-                rejectUnsupportedRemoteVisionInput()
+                rejectUnsupportedRemoteVisionInput(sharedInput.protectedSourceCount)
                 return
             }
             if (!sharedInput.isRemoteVisionSendable()) {
@@ -1659,11 +1661,16 @@ class PocketMindViewModel(
         }
     }
 
-    private fun rejectUnsupportedRemoteVisionInput() {
+    private fun rejectUnsupportedRemoteVisionInput(protectedSourceCount: Int = 0) {
         replaceActiveSessionMessages(
             _uiState.value.messages + ChatMessage(
                 role = MessageRole.Assistant,
-                text = "当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。",
+                text = buildString {
+                    append("当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。")
+                    if (protectedSourceCount > 0) {
+                        append("本次分享中的其他内容也未读取或发送。")
+                    }
+                },
                 privacy = MessagePrivacy.LocalOnly,
             ),
             persistNow = true,
@@ -4113,11 +4120,12 @@ class PocketMindViewModel(
 }
 
 private fun SharedInput.composerSummary(): String {
-    if (protectedSourceCount > 0 && attachments.isEmpty() && text.isBlank()) {
+    if (protectedSourceCount > 0 && protectedImageSourceCount <= 0 && attachments.isEmpty() && text.isBlank()) {
         return "受保护分享 ${protectedSourceCount} 项"
     }
     val labels = buildList {
         if (protectedSourceCount > 0) add("受保护 ${protectedSourceCount} 项")
+        if (protectedImageSourceCount > 0) add("受保护图片")
         if (text.isNotBlank()) add("文本")
         attachments.take(3).forEach { attachment ->
             add(attachment.composerSummaryLabel())
@@ -4145,6 +4153,9 @@ private fun SharedInput.remoteImageAttachments(): List<ChatImageAttachment> =
 
 private fun SharedInput.hasRemoteImageAttachment(): Boolean =
     attachments.any { attachment -> attachment.imageAttachment != null }
+
+private fun SharedInput.hasProtectedImageSource(): Boolean =
+    protectedImageSourceCount > 0
 
 private fun SharedInput.isRemoteVisionSendable(): Boolean =
     text.isBlank() &&

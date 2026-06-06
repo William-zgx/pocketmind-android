@@ -263,11 +263,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sharedInputReadMode(): SharedInputReadMode =
-        if (viewModel.uiState.value.inferenceMode == InferenceMode.Remote) {
-            SharedInputReadMode.RemoteVision
-        } else {
-            SharedInputReadMode.LocalPrompt
-        }
+        sharedInputReadModeFor(
+            inferenceMode = viewModel.uiState.value.inferenceMode,
+            remoteSupportsVisionInput = viewModel.uiState.value.remoteModelConfig.modelProfile().supportsVisionInput,
+        )
 
     private fun startVoiceInput() {
         if (!hasRuntimePermission(Manifest.permission.RECORD_AUDIO)) {
@@ -570,6 +569,16 @@ class MainActivity : ComponentActivity() {
             }.getOrDefault(false)
     }
 }
+
+internal fun sharedInputReadModeFor(
+    inferenceMode: InferenceMode,
+    remoteSupportsVisionInput: Boolean,
+): SharedInputReadMode =
+    when {
+        inferenceMode != InferenceMode.Remote -> SharedInputReadMode.LocalPrompt
+        remoteSupportsVisionInput -> SharedInputReadMode.RemoteVision
+        else -> SharedInputReadMode.RemoteVisionUnsupportedSignal
+    }
 
 private fun Bundle.recognizedSpeechText(): String? =
     getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)

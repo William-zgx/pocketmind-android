@@ -513,6 +513,90 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModeRejectsSharedImageAttachmentWhenVisionIsDisabled() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel().copy(supportsVisionInput = false),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.stageSharedInput(
+            SharedInput(
+                text = "",
+                attachments = listOf(
+                    SharedAttachment(
+                        kind = SharedAttachmentKind.Image,
+                        mimeType = "image/png",
+                        displayName = "screen.png",
+                        sizeBytes = 12L,
+                        imageAttachment = ChatImageAttachment(
+                            mimeType = "image/png",
+                            dataUrl = "data:image/png;base64,AA==",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.pendingSharedInputDraft)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(1, sessionStore.messages.size)
+        val message = sessionStore.messages.single()
+        assertEquals(MessageRole.Assistant, message.role)
+        assertEquals(MessagePrivacy.LocalOnly, message.privacy)
+        assertTrue(message.text.contains("未启用图片输入能力"))
+        assertTrue(message.text.contains("未读取或发送图片"))
+        assertFalse(message.text.contains("screen.png"))
+        assertFalse(message.text.contains("data:image/png"))
+        assertEquals("当前远程模型不支持图片输入", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun remoteModeRejectsProtectedImageSignalWhenVisionIsDisabled() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel().copy(supportsVisionInput = false),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.ingestSharedInput(
+            SharedInput(
+                text = "",
+                attachments = emptyList(),
+                protectedSourceCount = 1,
+                protectedImageSourceCount = 1,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.uiState.value.pendingSharedInputDraft)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(1, sessionStore.messages.size)
+        val message = sessionStore.messages.single()
+        assertEquals(MessageRole.Assistant, message.role)
+        assertEquals(MessagePrivacy.LocalOnly, message.privacy)
+        assertTrue(message.text.contains("未启用图片输入能力"))
+        assertTrue(message.text.contains("其他内容也未读取或发送"))
+        assertFalse(message.text.contains("1"))
+        assertEquals("当前远程模型不支持图片输入", viewModel.uiState.value.statusText)
+    }
+
+    @Test
     fun remoteModeRejectsSharedOfficeDocumentPreviewBeforeBuildingPrompt() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore()

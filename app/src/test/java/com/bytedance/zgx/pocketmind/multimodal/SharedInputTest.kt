@@ -510,6 +510,18 @@ class SharedInputTest {
     }
 
     @Test
+    fun protectedImageSharedInputBuildsValueFreePrompt() {
+        val input = SharedInput(text = "", attachments = emptyList(), protectedImageSourceCount = 2)
+
+        val prompt = input.toPrompt()
+
+        assertFalse(input.isEmpty)
+        assertTrue(prompt.contains("已收到受保护图片"))
+        assertTrue(prompt.contains("未读取或发送图片内容"))
+        assertFalse(prompt.contains("2"))
+    }
+
+    @Test
     fun promptUsesSafeAttachmentNameOnly() {
         val input = SharedInput(
             text = "",
@@ -711,6 +723,38 @@ class SharedInputTest {
             trustedRemoteImageMimeType(
                 resolverMimeType = "image/svg+xml",
                 displayName = "diagram.svg",
+            ),
+        )
+    }
+
+    @Test
+    fun protectedRemoteImageSourceDetectionUsesOnlySafeTypeSignals() {
+        assertTrue(
+            isProtectedRemoteImageSource(
+                resolverMimeType = "image/png",
+                displayName = "private.txt",
+                intentMimeType = null,
+            ),
+        )
+        assertTrue(
+            isProtectedRemoteImageSource(
+                resolverMimeType = "image/*",
+                displayName = "Receipt.JPG",
+                intentMimeType = null,
+            ),
+        )
+        assertTrue(
+            isProtectedRemoteImageSource(
+                resolverMimeType = null,
+                displayName = "unknown-file",
+                intentMimeType = "image/*",
+            ),
+        )
+        assertFalse(
+            isProtectedRemoteImageSource(
+                resolverMimeType = "text/plain",
+                displayName = "Receipt.JPG",
+                intentMimeType = "image/*",
             ),
         )
     }
@@ -1071,24 +1115,26 @@ class SharedInputTest {
 
     @Test
     fun protectedSharedAttachmentTextPreviewDoesNotOpenStreamsOrRunOcr() {
-        listOf(
-            "text/plain" to SharedAttachmentKind.Document,
-            "application/json" to SharedAttachmentKind.Document,
-            "application/rtf" to SharedAttachmentKind.Document,
-            "application/pdf" to SharedAttachmentKind.Document,
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" to SharedAttachmentKind.Document,
-            "image/png" to SharedAttachmentKind.Image,
-        ).forEach { (mimeType, kind) ->
-            val preview = readSharedAttachmentTextPreview(
-                mimeType = mimeType,
-                kind = kind,
-                openInputStream = { error("protected share must not open attachment stream") },
-                extractImageText = { error("protected share must not run OCR") },
-                extractPdfImageText = { error("protected share must not run PDF OCR") },
-                mode = SharedInputReadMode.ProtectedSignal,
-            )
+        listOf(SharedInputReadMode.ProtectedSignal, SharedInputReadMode.RemoteVisionUnsupportedSignal).forEach { mode ->
+            listOf(
+                "text/plain" to SharedAttachmentKind.Document,
+                "application/json" to SharedAttachmentKind.Document,
+                "application/rtf" to SharedAttachmentKind.Document,
+                "application/pdf" to SharedAttachmentKind.Document,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" to SharedAttachmentKind.Document,
+                "image/png" to SharedAttachmentKind.Image,
+            ).forEach { (mimeType, kind) ->
+                val preview = readSharedAttachmentTextPreview(
+                    mimeType = mimeType,
+                    kind = kind,
+                    openInputStream = { error("protected share must not open attachment stream") },
+                    extractImageText = { error("protected share must not run OCR") },
+                    extractPdfImageText = { error("protected share must not run PDF OCR") },
+                    mode = mode,
+                )
 
-            assertNull(preview)
+                assertNull(preview)
+            }
         }
     }
 

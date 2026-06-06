@@ -13,9 +13,13 @@ data class SharedInput(
     val text: String,
     val attachments: List<SharedAttachment>,
     val protectedSourceCount: Int = 0,
+    val protectedImageSourceCount: Int = 0,
 ) {
     val isEmpty: Boolean
-        get() = text.toBoundedSharedText().text.isBlank() && attachments.isEmpty() && protectedSourceCount <= 0
+        get() = text.toBoundedSharedText().text.isBlank() &&
+            attachments.isEmpty() &&
+            protectedSourceCount <= 0 &&
+            protectedImageSourceCount <= 0
 
     fun toPrompt(): String {
         val sharedText = text.toBoundedSharedText()
@@ -41,7 +45,11 @@ data class SharedInput(
             }
             .joinToString(separator = "\n")
         return buildString {
+            if (protectedImageSourceCount > 0) {
+                append("已收到受保护图片。为保护隐私，本次未读取或发送图片内容；请切换支持视觉的远程模型，或改用本地 OCR 摘录。")
+            }
             if (protectedSourceCount > 0) {
+                if (isNotEmpty()) append("\n\n")
                 if (hasAttachedImages) {
                     append("除已附加图片外，还收到受保护分享源；为保护隐私，本次未读取这些分享文本、非图片附件、文本摘录或 OCR。")
                 } else {
