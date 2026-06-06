@@ -861,18 +861,40 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/privacy-review-future.properties" "status=failed"
 
 MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
+MODEL_LICENSE_MANIFEST="$TMP_DIR/model-manifest.md"
 MODEL_LICENSE_PENDING="$TMP_DIR/model-license-pending.json"
 MODEL_LICENSE_APPROVED="$TMP_DIR/model-license-approved.json"
+cat > "$MODEL_LICENSE_MANIFEST" <<'MODEL_LICENSE_MANIFEST_MD'
+| ID | File | Repository | Upstream revision | Bytes | SHA-256 | License status |
+| --- | --- | --- | --- | ---: | --- | --- |
+| `chat-e2b` | `chat.litertlm` | `https://huggingface.co/example/chat-e2b` | `chat-revision-a` | `1` | `abc` | Pending. |
+| `memory-embedding-300m` | `memory.litertlm` | `https://huggingface.co/example/memory-embedding-300m` | `memory-revision-a` | `1` | `def` | Pending. |
+MODEL_LICENSE_MANIFEST_MD
 cat > "$MODEL_LICENSE_METADATA" <<'MODEL_LICENSE_METADATA_JSON'
 {
   "version": 1,
+  "recordedAt": "2026-06-05T00:00:00Z",
   "models": [
     {
       "id": "chat-e2b",
+      "repository": "example/chat-e2b",
+      "manifestRevision": "chat-revision-a",
+      "apiUrl": "https://huggingface.co/api/models/example/chat-e2b",
+      "modelSha": "chat-current-api-sha",
+      "gated": false,
+      "licenseTags": ["apache-2.0"],
+      "cardLicense": "apache-2.0",
       "metadataOnly": true
     },
     {
       "id": "memory-embedding-300m",
+      "repository": "example/memory-embedding-300m",
+      "manifestRevision": "memory-revision-a",
+      "apiUrl": "https://huggingface.co/api/models/example/memory-embedding-300m",
+      "modelSha": "memory-current-api-sha",
+      "gated": false,
+      "licenseTags": ["apache-2.0"],
+      "cardLicense": "apache-2.0",
       "metadataOnly": true
     }
   ]
@@ -897,7 +919,7 @@ cat > "$MODEL_LICENSE_PENDING" <<'MODEL_LICENSE_PENDING_JSON'
 MODEL_LICENSE_PENDING_JSON
 expect_failure \
   "model license verifier rejects incomplete review records" \
-  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_PENDING" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_PENDING" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-pending.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-pending.properties" "status=failed"
 cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
@@ -906,9 +928,11 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
   "models": [
     {
       "id": "chat-e2b",
+      "repository": "example/chat-e2b",
+      "upstreamRevision": "chat-revision-a",
       "status": "approved",
       "licenseName": "Apache-2.0",
-      "licenseUrl": "https://example.com/chat-license",
+      "licenseUrl": "https://huggingface.co/example/chat-e2b",
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
@@ -916,9 +940,11 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
     },
     {
       "id": "memory-embedding-300m",
+      "repository": "example/memory-embedding-300m",
+      "upstreamRevision": "memory-revision-a",
       "status": "approved",
       "licenseName": "Apache-2.0",
-      "licenseUrl": "https://example.com/memory-license",
+      "licenseUrl": "https://huggingface.co/example/memory-embedding-300m",
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
@@ -929,14 +955,28 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
 MODEL_LICENSE_APPROVED_JSON
 expect_success \
   "model license verifier accepts approved metadata-aligned records" \
-  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_APPROVED" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_APPROVED" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-approved.properties" "status=passed"
+MODEL_LICENSE_SOURCE_MISMATCH="$TMP_DIR/model-license-source-mismatch.json"
+sed 's#https://huggingface.co/example/chat-e2b#https://huggingface.co/example/wrong-model#' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_SOURCE_MISMATCH"
+expect_failure \
+  "model license verifier rejects Hugging Face license source for a different repository" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_SOURCE_MISMATCH" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-source-mismatch.properties"
+assert_report_contains "$ARTIFACT_DIR/model-license-source-mismatch.properties" "status=failed"
+MODEL_LICENSE_STALE_REVIEW="$TMP_DIR/model-license-stale-review.json"
+sed 's/2026-06-06/2026-06-04/g' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_STALE_REVIEW"
+expect_failure \
+  "model license verifier rejects review dates before metadata collection" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_STALE_REVIEW" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-stale-review.properties"
+assert_report_contains "$ARTIFACT_DIR/model-license-stale-review.properties" "status=failed"
 MODEL_LICENSE_FUTURE="$TMP_DIR/model-license-future.json"
 sed 's/2026-06-06/2999-01-01/g' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_FUTURE"
 expect_failure \
   "model license verifier rejects future review dates" \
-  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_FUTURE" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_FUTURE" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-future.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-future.properties" "status=failed"
 

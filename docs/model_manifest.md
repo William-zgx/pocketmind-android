@@ -12,8 +12,11 @@ candidate. `VERIFY_MODEL_URLS=1` can verify availability and file metadata; it
 does not verify licensing.
 `scripts/collect_model_license_metadata.sh` records current Hugging Face model
 card license metadata in `docs/model_license_metadata.json`, but that file is
-only an input to human review. The release gate still reads
-`docs/model_license_review.json` for final approval.
+only an input to human review. The collector derives the model list from this
+manifest, not from the review record, so stale review files cannot narrow the
+set of recommended models. The release gate still reads
+`docs/model_license_review.json` for final approval and requires each approval
+to name the manifest repository and pinned upstream revision.
 
 | ID | File | Repository | Upstream revision | Bytes | SHA-256 | License status |
 | --- | --- | --- | --- | ---: | --- | --- |
@@ -25,6 +28,7 @@ only an input to human review. The release gate still reads
 Custom imported or custom URL models are allowed, but they are user-supplied
 and are not covered by this manifest.
 
-For each release candidate, record the verified license name, source URL or
-license file path, attribution or notice obligations, redistribution decision,
-reviewer, and review date in the release checklist.
+For each release candidate, record the manifest repository, pinned upstream
+revision, verified license name, source URL or license file path, attribution
+or notice obligations, redistribution decision, reviewer, and review date in
+the release checklist.

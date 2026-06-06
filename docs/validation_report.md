@@ -6702,6 +6702,43 @@ scripts/verify_release_gate.sh
 
 - 需要人工完成所有推荐模型的 license / redistribution / attribution review。
 
+## 2026-06-06 Model license manifest binding hardening
+
+本轮覆盖项：
+
+- 使用只读多 Agent 审查 release gates，确认模型 license gate 不能只让
+  `docs/model_license_review.json` 和 `docs/model_license_metadata.json` 互相背书；
+  必须直接绑定 `docs/model_manifest.md` 中当前推荐模型的 ID、repository 和
+  pinned upstream revision。
+- `scripts/verify_model_license_review.sh` 新增 manifest 输入，要求 review、
+  metadata、manifest 三者模型 ID 顺序一致；metadata repository/API URL/
+  manifest revision 必须匹配 manifest；review repository/upstreamRevision 必须匹配
+  manifest。
+- license source 如果是 Hugging Face URL，必须指向同一个 manifest repository；
+  approved review date 不能早于 metadata `recordedAt` 日期；license name 必须和
+  metadata card license 或 license tag 对齐。
+- `scripts/collect_model_license_metadata.sh` 改为从 `docs/model_manifest.md`
+  派生推荐模型列表，review 文件只提供人工状态，不再决定 metadata 覆盖范围。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_model_license_review.sh scripts/collect_model_license_metadata.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 manifest/metadata/review aligned approval 成功。
+- 通过：脚本单测覆盖 Hugging Face license source 指向错误 repository 失败。
+- 通过：脚本单测覆盖 review date 早于 metadata collection 失败。
+- 通过：当前 pending `docs/model_license_review.json` 仍保持 fail-closed。
+
+仍阻塞正式 RC：
+
+- 需要人工完成所有推荐模型的 license / redistribution / attribution review。
+
 ## 2026-06-06 Review date validity gates
 
 本轮覆盖项：

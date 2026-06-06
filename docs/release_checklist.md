@@ -130,15 +130,17 @@ release ticket or PR.
   `docs/privacy_review.json`, then run `VERIFY_PRIVACY_REVIEW=1
   scripts/verify_release_gate.sh`.
 - [ ] All four recommended model downloads in `docs/model_manifest.md` have
-  manually verified license name, license source URL or file path,
-  redistribution decision, attribution or notice requirements, reviewer, and
-  review date.
+  manually verified manifest repository, pinned upstream revision, license
+  name, license source URL or file path, redistribution decision, attribution
+  or notice requirements, reviewer, and review date.
 - [ ] `docs/model_license_review.json` is updated from pending to approved
   records before broad distribution, and `VERIFY_MODEL_LICENSES=1
   scripts/verify_release_gate.sh` passes for the release candidate. The gate
-  runs `scripts/verify_model_license_review.sh`, requiring all model IDs to
-  match `docs/model_license_metadata.json` and include approved redistribution,
-  attribution or notice, reviewer, and a valid non-future review date.
+  runs `scripts/verify_model_license_review.sh`, requiring all model IDs,
+  repositories, and pinned upstream revisions to match `docs/model_manifest.md`,
+  metadata to match that manifest, and approvals to include aligned license
+  names, approved redistribution, attribution or notice, reviewer, and a valid
+  non-future review date not older than the metadata collection date.
 - [ ] README License wording distinguishes app code from third-party model
   artifacts.
 - [ ] No API keys, bearer tokens, private model endpoints, raw prompts, or

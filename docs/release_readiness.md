@@ -86,11 +86,12 @@ items below.
   `docs/model_manifest.md`, `docs/model_license_review.json`, and the release
   checklist. `VERIFY_MODEL_URLS=1` checks URL/content metadata only; it does
   not establish license readiness. `scripts/collect_model_license_metadata.sh`
-  can refresh Hugging Face model-card metadata in
-  `docs/model_license_metadata.json`, but it does not replace legal/release
-  approval. `VERIFY_MODEL_LICENSES=1` runs
+  derives the model list from `docs/model_manifest.md` and can refresh Hugging
+  Face model-card metadata in `docs/model_license_metadata.json`, but it does
+  not replace legal/release approval. `VERIFY_MODEL_LICENSES=1` runs
   `scripts/verify_model_license_review.sh` and requires approved review records
-  aligned with the current license metadata.
+  aligned with the current manifest, metadata, license source, and metadata
+  collection date.
 - Configure release signing outside source control.
 - Use `scripts/sign_release_artifacts.sh` from the private signing environment
   to produce signed APK/AAB artifacts and certificate reports once production

@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 REVIEW_FILE="${MODEL_LICENSE_REVIEW_FILE:-docs/model_license_review.json}"
 METADATA_FILE="${MODEL_LICENSE_METADATA_FILE:-docs/model_license_metadata.json}"
+MANIFEST_FILE="${MODEL_MANIFEST_FILE:-docs/model_manifest.md}"
 REPORT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -31,6 +32,7 @@ write_report() {
       printf 'target=model-license-review\n'
       printf 'reviewFile=%s\n' "$REVIEW_FILE"
       printf 'metadataFile=%s\n' "$METADATA_FILE"
+      printf 'manifestFile=%s\n' "$MANIFEST_FILE"
       printf 'reason=%s\n' "$reason"
     } > "$REPORT_FILE"
   fi
@@ -48,11 +50,17 @@ if [[ ! -f "$METADATA_FILE" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$MANIFEST_FILE" ]]; then
+  write_report failed missing-manifest-file
+  echo "Model manifest file is missing: $MANIFEST_FILE" >&2
+  exit 1
+fi
+
 TMP_FAILURES="$(mktemp)"
 trap 'rm -f "$TMP_FAILURES"' EXIT
 
 set +e
-python3 - "$REVIEW_FILE" "$METADATA_FILE" <<'PY' > "$TMP_FAILURES"
+python3 - "$REVIEW_FILE" "$METADATA_FILE" "$MANIFEST_FILE" <<'PY' > "$TMP_FAILURES"
 import json
 import re
 import sys
@@ -61,6 +69,7 @@ from pathlib import Path
 
 review_path = Path(sys.argv[1])
 metadata_path = Path(sys.argv[2])
+manifest_path = Path(sys.argv[3])
 
 try:
     review = json.loads(review_path.read_text())
@@ -70,6 +79,52 @@ except Exception:
     sys.exit(1)
 
 failures = []
+
+def non_empty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+def normalize_license(value):
+    normalized = re.sub(r"[^a-z0-9]+", "", value.lower())
+    return normalized.replace("license", "")
+
+def repo_from_huggingface_url(url):
+    prefix = "https://huggingface.co/"
+    if not isinstance(url, str) or not url.startswith(prefix):
+        return ""
+    suffix = url[len(prefix):].strip("/")
+    if not suffix:
+        return ""
+    if suffix.startswith("api/models/"):
+        return suffix[len("api/models/"):].strip("/")
+    parts = suffix.split("/")
+    if len(parts) < 2:
+        return ""
+    return "/".join(parts[:2])
+
+def parse_manifest(path):
+    models = []
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line.startswith("| `"):
+            continue
+        columns = [part.strip() for part in line.strip("|").split("|")]
+        if len(columns) < 6:
+            continue
+        model_id = columns[0].strip("`")
+        repository_url = columns[2].strip("`")
+        revision = columns[3].strip("`")
+        if not model_id or model_id == "ID":
+            continue
+        repository = repo_from_huggingface_url(repository_url)
+        if not repository:
+            failures.append(f"{model_id}-manifest-repository-invalid")
+        models.append({
+            "id": model_id,
+            "repository": repository,
+            "upstreamRevision": revision,
+        })
+    return models
+
 if review.get("version") != 1:
     failures.append("review-version-invalid")
 if metadata.get("version") != 1:
@@ -84,7 +139,25 @@ if not isinstance(metadata_models, list) or not metadata_models:
     failures.append("metadata-models-missing")
     metadata_models = []
 
+manifest_models = parse_manifest(manifest_path)
+if not manifest_models:
+    failures.append("manifest-models-missing")
+
+manifest_ids = [entry["id"] for entry in manifest_models]
+manifest_by_id = {entry["id"]: entry for entry in manifest_models}
+
+recorded_at = metadata.get("recordedAt", "")
+metadata_record_date = None
+if not recorded_at:
+    failures.append("metadata-recorded-at-missing")
+else:
+    try:
+        metadata_record_date = date.fromisoformat(recorded_at.split("T", 1)[0])
+    except ValueError:
+        failures.append("metadata-recorded-at-invalid")
+
 metadata_ids = []
+metadata_by_id = {}
 for entry in metadata_models:
     if not isinstance(entry, dict):
         failures.append("metadata-entry-invalid")
@@ -93,8 +166,32 @@ for entry in metadata_models:
     if not model_id:
         failures.append("metadata-id-missing")
     metadata_ids.append(model_id)
+    if model_id:
+        metadata_by_id[model_id] = entry
     if entry.get("metadataOnly") is not True:
         failures.append(f"{model_id or 'unknown'}-metadata-only-not-true")
+    manifest_entry = manifest_by_id.get(model_id)
+    if manifest_entry:
+        if entry.get("repository") != manifest_entry["repository"]:
+            failures.append(f"{model_id}-metadata-repository-mismatch")
+        if entry.get("manifestRevision") != manifest_entry["upstreamRevision"]:
+            failures.append(f"{model_id}-metadata-manifest-revision-mismatch")
+        api_url = entry.get("apiUrl", "")
+        expected_api_url = f"https://huggingface.co/api/models/{manifest_entry['repository']}"
+        if api_url != expected_api_url:
+            failures.append(f"{model_id}-metadata-api-url-mismatch")
+    if not non_empty_string(entry.get("modelSha")):
+        failures.append(f"{model_id or 'unknown'}-metadata-model-sha-missing")
+    if entry.get("gated") is not False:
+        failures.append(f"{model_id or 'unknown'}-metadata-gated-not-false")
+    license_values = []
+    if non_empty_string(entry.get("cardLicense")):
+        license_values.append(entry["cardLicense"])
+    license_tags = entry.get("licenseTags")
+    if isinstance(license_tags, list):
+        license_values.extend(tag for tag in license_tags if non_empty_string(tag))
+    if not license_values:
+        failures.append(f"{model_id or 'unknown'}-metadata-license-missing")
 
 review_ids = []
 seen_ids = set()
@@ -111,6 +208,8 @@ for entry in review_models:
         failures.append(f"{model_id}-duplicate")
     seen_ids.add(model_id)
     review_ids.append(model_id)
+    manifest_entry = manifest_by_id.get(model_id)
+    metadata_entry = metadata_by_id.get(model_id)
 
     if entry.get("status") != "approved":
         failures.append(f"{model_id or 'unknown'}-status-not-approved")
@@ -118,12 +217,36 @@ for entry in review_models:
         failures.append(f"{model_id or 'unknown'}-redistribution-not-approved")
     if not entry.get("licenseName"):
         failures.append(f"{model_id or 'unknown'}-license-name-missing")
+    elif metadata_entry:
+        metadata_license_values = []
+        if non_empty_string(metadata_entry.get("cardLicense")):
+            metadata_license_values.append(metadata_entry["cardLicense"])
+        tags = metadata_entry.get("licenseTags")
+        if isinstance(tags, list):
+            metadata_license_values.extend(tag for tag in tags if non_empty_string(tag))
+        review_license = normalize_license(entry["licenseName"])
+        metadata_licenses = [normalize_license(value) for value in metadata_license_values]
+        if metadata_licenses and not any(
+            license_value and (license_value in review_license or review_license in license_value)
+            for license_value in metadata_licenses
+        ):
+            failures.append(f"{model_id or 'unknown'}-license-name-metadata-mismatch")
+
+    if manifest_entry:
+        if entry.get("repository") != manifest_entry["repository"]:
+            failures.append(f"{model_id or 'unknown'}-repository-mismatch")
+        if entry.get("upstreamRevision") != manifest_entry["upstreamRevision"]:
+            failures.append(f"{model_id or 'unknown'}-upstream-revision-mismatch")
 
     license_source = entry.get("licenseUrl", "")
     if not license_source:
         failures.append(f"{model_id or 'unknown'}-license-source-missing")
     elif not license_source.startswith("https://") and not Path(license_source).is_file():
         failures.append(f"{model_id or 'unknown'}-license-source-invalid")
+    elif manifest_entry and license_source.startswith("https://huggingface.co/"):
+        source_repo = repo_from_huggingface_url(license_source)
+        if source_repo != manifest_entry["repository"]:
+            failures.append(f"{model_id or 'unknown'}-license-source-repository-mismatch")
 
     if not entry.get("attributionNotice"):
         failures.append(f"{model_id or 'unknown'}-attribution-notice-missing")
@@ -142,9 +265,15 @@ for entry in review_models:
         else:
             if parsed_date > today:
                 failures.append(f"{model_id or 'unknown'}-review-date-in-future")
+            if metadata_record_date and parsed_date < metadata_record_date:
+                failures.append(f"{model_id or 'unknown'}-review-date-before-metadata")
 
 if metadata_ids and review_ids != metadata_ids:
     failures.append("review-model-ids-do-not-match-metadata")
+if manifest_ids and metadata_ids != manifest_ids:
+    failures.append("metadata-model-ids-do-not-match-manifest")
+if manifest_ids and review_ids != manifest_ids:
+    failures.append("review-model-ids-do-not-match-manifest")
 
 if failures:
     print(",".join(failures))
