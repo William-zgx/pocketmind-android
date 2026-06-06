@@ -15,6 +15,36 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release gate failure summary hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_gate.sh` 的 `release-gate.properties` 新增 `failedTarget` 和
+  `failedReason` 字段，失败时指向具体失败子门禁和原因。
+- privacy scan、contract tests、artifact scan、perf baseline、mapping、release record、
+  store policy、operations、validation、model license、privacy review 的失败路径统一走
+  `fail_gate`，避免 `set -e` 直接退出而缺少总 gate 失败摘要。
+- 保留所有子报告文件作为权威细节；总报告只做定位索引。
+- `scripts/test_validation_scripts.sh` 覆盖 missing perf、signing cert、privacy/model
+  review、artifact scan、release record、mapping、store policy、operations、validation
+  等失败目标。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 release gate 失败摘要字段。
+- 通过：`scripts/verify_local.sh`，覆盖 shell syntax、validation script self-tests、JVM
+  tests、lint、debug/release assemble、release bundle 和 Android artifact scan。
+- 未执行模拟器：本轮只加固 release gate 报告和测试 fixture，不改变 APK runtime 或 UI
+  行为。
+
 ## 2026-06-06 Release blocker evidence hardening
 
 本轮覆盖项：

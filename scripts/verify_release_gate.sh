@@ -59,9 +59,13 @@ fi
 
 write_gate_report() {
   local status="$1"
+  local failed_target="${2:-}"
+  local failed_reason="${3:-}"
   {
     printf 'status=%s\n' "$status"
     printf 'target=release-gate\n'
+    printf 'failedTarget=%s\n' "$failed_target"
+    printf 'failedReason=%s\n' "$failed_reason"
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'publicRelease=%s\n' "$PUBLIC_RELEASE"
     printf 'verifyReleaseRecord=%s\n' "$VERIFY_RELEASE_RECORD"
@@ -85,6 +89,24 @@ write_gate_report() {
   } > "$ARTIFACT_DIR/release-gate.properties"
 }
 
+report_reason_for() {
+  local report_file="$1"
+  if [[ -f "$report_file" ]]; then
+    awk -F= '$1 == "reason" {print $2; exit}' "$report_file"
+  fi
+}
+
+fail_gate() {
+  local failed_target="$1"
+  local report_file="${2:-}"
+  local failed_reason="${3:-}"
+  if [[ -z "$failed_reason" && -n "$report_file" ]]; then
+    failed_reason="$(report_reason_for "$report_file")"
+  fi
+  write_gate_report failed "$failed_target" "$failed_reason"
+  exit 1
+}
+
 if [[ "$PUBLIC_RELEASE" == "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
   {
     printf 'status=failed\n'
@@ -92,17 +114,25 @@ if [[ "$PUBLIC_RELEASE" == "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
     printf 'reason=PUBLIC_RELEASE-EXPECTED_SIGNING_CERT_SHA256-not-set\n'
   } > "$ARTIFACT_DIR/signing-cert.properties"
   echo "PUBLIC_RELEASE=1 requires EXPECTED_SIGNING_CERT_SHA256." >&2
-  write_gate_report failed
-  exit 1
+  fail_gate signing-cert "$ARTIFACT_DIR/signing-cert.properties" "PUBLIC_RELEASE-EXPECTED_SIGNING_CERT_SHA256-not-set"
 fi
 
-scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" app/src/main docs scripts
+if ! scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" app/src/main docs scripts; then
+  fail_gate privacy-scan "$ARTIFACT_DIR/privacy-scan.properties"
+fi
 
 if [[ "$VERIFY_CONTRACT_TESTS" == "1" ]]; then
-  "$GRADLE_CMD" :app:testDebugUnitTest \
+  if ! "$GRADLE_CMD" :app:testDebugUnitTest \
     --tests com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest \
     --tests com.bytedance.zgx.pocketmind.docs.ModelManifestDocumentationTest \
-    --tests com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest
+    --tests com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest; then
+    {
+      printf 'status=failed\n'
+      printf 'target=contract-tests\n'
+      printf 'reason=contract-tests-failed\n'
+    } > "$ARTIFACT_DIR/contract-tests.properties"
+    fail_gate contract-tests "$ARTIFACT_DIR/contract-tests.properties" "contract-tests-failed"
+  fi
   {
     printf 'status=passed\n'
     printf 'target=contract-tests\n'
@@ -130,8 +160,7 @@ if [[ "$REQUIRE_AAB" == "1" && ! -f "$RELEASE_AAB" ]]; then
     printf 'releaseAab=%s\n' "$RELEASE_AAB"
   } > "$ARTIFACT_DIR/android-artifact-scan.properties"
   echo "REQUIRE_AAB=1 but release AAB is missing: $RELEASE_AAB" >&2
-  write_gate_report failed
-  exit 1
+  fail_gate android-artifact-scan "$ARTIFACT_DIR/android-artifact-scan.properties" "REQUIRE_AAB-but-release-aab-missing"
 fi
 if [[ "${#artifact_args[@]}" -gt 0 ]]; then
   scan_args=("${artifact_args[@]}" --report "$ARTIFACT_DIR/android-artifact-scan.properties")
@@ -141,7 +170,9 @@ if [[ "${#artifact_args[@]}" -gt 0 ]]; then
   if [[ -n "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
     scan_args+=(--expected-certificate-sha256 "$EXPECTED_SIGNING_CERT_SHA256")
   fi
-  scripts/scan_android_artifacts.sh "${scan_args[@]}"
+  if ! scripts/scan_android_artifacts.sh "${scan_args[@]}"; then
+    fail_gate android-artifact-scan "$ARTIFACT_DIR/android-artifact-scan.properties"
+  fi
 else
   {
     printf 'status=skipped\n'
@@ -164,7 +195,9 @@ if [[ -n "$PERF_BASELINE_FILE" ]]; then
   elif [[ -f "$RELEASE_APK" ]]; then
     perf_args+=(--artifact-sha256 "$(shasum -a 256 "$RELEASE_APK" | awk '{print $1}')")
   fi
-  scripts/verify_perf_baseline.sh "${perf_args[@]}"
+  if ! scripts/verify_perf_baseline.sh "${perf_args[@]}"; then
+    fail_gate perf-baseline "$ARTIFACT_DIR/perf-baseline-verification.properties"
+  fi
 else
   {
     printf 'status=failed\n'
@@ -172,14 +205,12 @@ else
     printf 'reason=PERF_BASELINE_FILE-not-set\n'
   } > "$ARTIFACT_DIR/perf-baseline-verification.properties"
   echo "PERF_BASELINE_FILE must point at the RC perf-baseline.properties file." >&2
-  write_gate_report failed
-  exit 1
+  fail_gate perf-baseline "$ARTIFACT_DIR/perf-baseline-verification.properties" "PERF_BASELINE_FILE-not-set"
 fi
 
 if [[ "$VERIFY_RELEASE_MAPPING" == "1" ]]; then
   if ! scripts/verify_release_mapping.sh --file "$RELEASE_MAPPING_FILE" --report "$ARTIFACT_DIR/release-mapping.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate release-mapping "$ARTIFACT_DIR/release-mapping.properties"
   fi
 else
   {
@@ -215,8 +246,7 @@ if [[ "$VERIFY_RELEASE_RECORD" == "1" ]]; then
     )
   fi
   if ! env "${release_record_env[@]}" scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate release-record "$ARTIFACT_DIR/release-record.properties"
   fi
 else
   {
@@ -229,8 +259,7 @@ fi
 
 if [[ "$VERIFY_STORE_POLICY" == "1" ]]; then
   if ! scripts/verify_store_policy_record.sh --file "$STORE_POLICY_FILE" --report "$ARTIFACT_DIR/store-policy-record.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate store-policy-record "$ARTIFACT_DIR/store-policy-record.properties"
   fi
 else
   {
@@ -243,8 +272,7 @@ fi
 
 if [[ "$VERIFY_RELEASE_OPERATIONS" == "1" ]]; then
   if ! scripts/verify_release_operations_record.sh --file "$OPERATIONS_RECORD_FILE" --report "$ARTIFACT_DIR/release-operations-record.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate release-operations-record "$ARTIFACT_DIR/release-operations-record.properties"
   fi
 else
   {
@@ -257,8 +285,7 @@ fi
 
 if [[ "$VERIFY_RELEASE_VALIDATION" == "1" ]]; then
   if ! scripts/verify_release_validation_record.sh --file "$VALIDATION_RECORD_FILE" --report "$ARTIFACT_DIR/release-validation-record.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate release-validation-record "$ARTIFACT_DIR/release-validation-record.properties"
   fi
 else
   {
@@ -271,8 +298,7 @@ fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then
   if ! scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-review.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate model-license-review "$ARTIFACT_DIR/model-license-review.properties"
   fi
 else
   {
@@ -284,8 +310,7 @@ fi
 
 if [[ "$VERIFY_PRIVACY_REVIEW" == "1" ]]; then
   if ! scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review.properties"; then
-    write_gate_report failed
-    exit 1
+    fail_gate privacy-review "$ARTIFACT_DIR/privacy-review.properties"
   fi
 else
   {

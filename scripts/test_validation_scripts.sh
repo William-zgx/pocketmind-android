@@ -1448,6 +1448,16 @@ VALID_GATE_PERF_BASELINE
 VALID_GATE_AAB_PERF="$TMP_DIR/perf-baseline-safe-aab.properties"
 sed "s/releaseArtifactSha256=$SAFE_APK_SHA/releaseArtifactSha256=$SAFE_AAB_SHA/" "$VALID_GATE_PERF" > "$VALID_GATE_AAB_PERF"
 expect_failure \
+  "release gate reports missing perf baseline in gate summary" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-missing-perf" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "failedTarget=perf-baseline"
+assert_report_contains "$ARTIFACT_DIR/release-missing-perf/release-gate.properties" "failedReason=PERF_BASELINE_FILE-not-set"
+expect_failure \
   "release gate requires approved privacy review when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-review" \
   PERF_BASELINE_FILE="$VALID_GATE_PERF" \
@@ -1457,6 +1467,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-privacy-review/privacy-review.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-privacy-review/release-gate.properties" "failedTarget=privacy-review"
 expect_failure \
   "release gate requires approved model license review when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-model-license" \
@@ -1467,6 +1478,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-model-license/model-license-review.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-model-license/release-gate.properties" "failedTarget=model-license-review"
 expect_failure \
   "public release profile requires expected signing certificate" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/public-release-missing-cert" \
@@ -1486,6 +1498,8 @@ assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.p
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireSignedArtifact=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseMapping=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "failedTarget=signing-cert"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "failedReason=PUBLIC_RELEASE-EXPECTED_SIGNING_CERT_SHA256-not-set"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/signing-cert.properties" "status=failed"
 
 expect_failure \
@@ -1498,6 +1512,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-require-aab/release-gate.properties" "failedTarget=android-artifact-scan"
 expect_failure \
   "release gate defaults signed aab path when signed aab is required" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-signed-default-aab" \
@@ -1523,6 +1538,7 @@ expect_failure \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-record-artifact-mismatch/release-record.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-record-artifact-mismatch/release-record.properties" "expectedReleaseArtifactPath=$SAFE_AAB"
+assert_report_contains "$ARTIFACT_DIR/release-record-artifact-mismatch/release-gate.properties" "failedTarget=release-record"
 expect_failure \
   "release gate requires mapping when mapping gate is enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-mapping-gate" \
@@ -1534,6 +1550,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-mapping-gate/release-mapping.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-mapping-gate/release-gate.properties" "failedTarget=release-mapping"
 expect_failure \
   "release gate requires approved release record when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-record-gate" \
@@ -1545,6 +1562,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-record-gate/release-record.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-record-gate/release-gate.properties" "failedTarget=release-record"
 expect_failure \
   "release gate requires approved store policy when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-store-policy-gate" \
@@ -1558,6 +1576,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-store-policy-gate/store-policy-record.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-store-policy-gate/release-gate.properties" "failedTarget=store-policy-record"
 expect_failure \
   "release gate requires approved operations record when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-operations-gate" \
@@ -1569,6 +1588,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-operations-gate/release-operations-record.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-operations-gate/release-gate.properties" "failedTarget=release-operations-record"
 expect_failure \
   "release gate requires approved validation record when enabled" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-validation-gate" \
@@ -1580,6 +1600,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-validation-gate/release-validation-record.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-validation-gate/release-gate.properties" "failedTarget=release-validation-record"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh
