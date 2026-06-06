@@ -22,6 +22,11 @@ release ticket or PR.
 - [ ] Agent/tool behavior changes are summarized, including remote
   OpenAI-style `tool_calls`, public evidence batch execution, all-or-nothing
   mixed-batch rejection, and the privacy boundary for LocalOnly tool results.
+- [ ] `docs/release_record.json` is updated for the release candidate and
+  `VERIFY_RELEASE_RECORD=1 scripts/verify_release_gate.sh` passes. The gate
+  checks the recorded Gradle version, Git commit, artifact checksum, signing
+  certificate fingerprint, evidence files, unsupported capabilities, Agent
+  behavior summary, and resolved or accepted blockers.
 
 ## Versioning And Release Track
 

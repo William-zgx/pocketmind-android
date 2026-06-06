@@ -6694,3 +6694,33 @@ scripts/regression_emulator.sh
 - 通过：仅模拟器回归；`focus_agent_api36_arm64` / `emulator-5554` / API 36 /
   `arm64-v8a`，`build/verification/regression-emulator-20260606-121722/regression-emulator.properties`
   记录 `status=passed`，instrumentation 为 `OK (26 tests)`。
+
+## 2026-06-06 Release record gate
+
+本轮覆盖项：
+
+- 新增 `docs/release_record.json`，把 release owner、reviewer、target
+  channel、Gradle version、Git commit、artifact checksum、signing certificate
+  fingerprint、verification reports、unsupported capabilities、Agent behavior
+  summary 和 blocker 决策收敛为机器可读记录。
+- 新增 `scripts/verify_release_record.sh`，校验 release record 已 approved，
+  且 Gradle 版本、当前 checkout 可追溯的 Git commit、artifact SHA/size、证书
+  SHA、证据文件和 blocker resolved/accepted 状态都一致。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_RELEASE_RECORD=1`；
+  `PUBLIC_RELEASE=1` profile 会自动开启 release record gate。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 pending release record 失败。
+- 通过：脚本单测覆盖 approved release record 成功。
+- 通过：脚本单测覆盖 future release date 和 artifact SHA mismatch 失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用 `verifyReleaseRecord=1`。
+- 通过：脚本单测覆盖 `VERIFY_RELEASE_RECORD=1` 时 release gate 对 pending
+  record fail-closed。

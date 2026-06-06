@@ -14,10 +14,10 @@ items below.
 - Manual release checklist added for store metadata, screenshots,
   privacy/license review, signing, test gates, and rollback planning.
 - Machine-readable release gates now cover capability matrix drift,
-  privacy scanning, privacy notice review records, APK/AAB artifact scanning,
-  model license review records, RC perf-baseline verification, artifact SHA
-  matching, and optional public release enforcement for signed artifacts plus
-  AAB presence and release mapping output.
+  release record completeness, privacy scanning, privacy notice review records,
+  APK/AAB artifact scanning, model license review records, RC perf-baseline
+  verification, artifact SHA matching, and optional public release enforcement
+  for signed artifacts plus AAB presence and release mapping output.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -56,6 +56,12 @@ items below.
   before publishing it as an external policy. Record approvals in
   `docs/privacy_review.json`; `VERIFY_PRIVACY_REVIEW=1` verifies that all
   required roles approved the current notice SHA.
+- Fill `docs/release_record.json` for the final release candidate with owner,
+  reviewer, target channel, changelog, release notes, artifact checksum, signing
+  certificate fingerprint, verification reports, and resolved or accepted
+  blockers. `VERIFY_RELEASE_RECORD=1` verifies the record against the current
+  Gradle version, a Git commit reachable from the current checkout, local
+  artifact, and evidence files.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in
@@ -86,5 +92,5 @@ items below.
 - For public distribution, run the release gate with
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
   production signing and bundle generation are complete. `PUBLIC_RELEASE=1`
-  enables privacy review, model license, AAB, signed-artifact, and certificate
-  fingerprint checks, plus release mapping verification.
+  enables release record, privacy review, model license, AAB, signed-artifact,
+  and certificate fingerprint checks, plus release mapping verification.

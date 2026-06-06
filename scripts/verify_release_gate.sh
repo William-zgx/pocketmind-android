@@ -16,6 +16,8 @@ RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
 PUBLIC_RELEASE="${PUBLIC_RELEASE:-0}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
+VERIFY_RELEASE_RECORD="${VERIFY_RELEASE_RECORD:-0}"
+RELEASE_RECORD_FILE="${RELEASE_RECORD_FILE:-docs/release_record.json}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
@@ -27,6 +29,7 @@ GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 mkdir -p "$ARTIFACT_DIR"
 
 if [[ "$PUBLIC_RELEASE" == "1" ]]; then
+  VERIFY_RELEASE_RECORD=1
   VERIFY_MODEL_LICENSES=1
   VERIFY_PRIVACY_REVIEW=1
   REQUIRE_AAB=1
@@ -41,6 +44,8 @@ write_gate_report() {
     printf 'target=release-gate\n'
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'publicRelease=%s\n' "$PUBLIC_RELEASE"
+    printf 'verifyReleaseRecord=%s\n' "$VERIFY_RELEASE_RECORD"
+    printf 'releaseRecordFile=%s\n' "$RELEASE_RECORD_FILE"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
@@ -151,6 +156,20 @@ else
     printf 'reason=VERIFY_RELEASE_MAPPING-not-enabled\n'
     printf 'mappingFile=%s\n' "$RELEASE_MAPPING_FILE"
   } > "$ARTIFACT_DIR/release-mapping.properties"
+fi
+
+if [[ "$VERIFY_RELEASE_RECORD" == "1" ]]; then
+  if ! scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=release-record\n'
+    printf 'reason=VERIFY_RELEASE_RECORD-not-enabled\n'
+    printf 'recordFile=%s\n' "$RELEASE_RECORD_FILE"
+  } > "$ARTIFACT_DIR/release-record.properties"
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then

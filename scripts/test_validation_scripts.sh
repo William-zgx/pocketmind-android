@@ -263,6 +263,8 @@ grep -q 'scripts/verify_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_perf_baseline.sh in shell syntax checks"
 grep -q 'scripts/verify_privacy_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_privacy_review.sh in shell syntax checks"
+grep -q 'scripts/verify_release_record.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_release_record.sh in shell syntax checks"
 grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_mapping.sh' scripts/verify_local.sh ||
@@ -339,6 +341,92 @@ expect_failure \
   "release mapping verifier rejects empty mapping file" \
   scripts/verify_release_mapping.sh --file "$EMPTY_RELEASE_MAPPING" --report "$ARTIFACT_DIR/release-mapping-empty.properties"
 assert_report_contains "$ARTIFACT_DIR/release-mapping-empty.properties" "status=failed"
+
+RELEASE_RECORD_ARTIFACT="$TMP_DIR/release-record.aab"
+RELEASE_RECORD_REPORT="$TMP_DIR/release-record-report.properties"
+RELEASE_RECORD_PENDING="$TMP_DIR/release-record-pending.json"
+RELEASE_RECORD_APPROVED="$TMP_DIR/release-record-approved.json"
+printf 'release artifact\n' > "$RELEASE_RECORD_ARTIFACT"
+printf 'status=passed\n' > "$RELEASE_RECORD_REPORT"
+RELEASE_RECORD_ARTIFACT_SHA="$(shasum -a 256 "$RELEASE_RECORD_ARTIFACT" | awk '{print $1}')"
+RELEASE_RECORD_ARTIFACT_SIZE="$(wc -c < "$RELEASE_RECORD_ARTIFACT" | tr -d ' ')"
+RELEASE_RECORD_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_REPORT" | awk '{print $1}')"
+RELEASE_RECORD_HEAD="$(git rev-parse HEAD)"
+RELEASE_RECORD_DATE="$(date +%F)"
+cat > "$RELEASE_RECORD_PENDING" <<'RELEASE_RECORD_PENDING_JSON'
+{
+  "version": 1,
+  "status": "pending_release_record",
+  "release": {}
+}
+RELEASE_RECORD_PENDING_JSON
+expect_failure \
+  "release record verifier rejects pending records" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_PENDING" --report "$ARTIFACT_DIR/release-record-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-pending.properties" "status=failed"
+cat > "$RELEASE_RECORD_APPROVED" <<RELEASE_RECORD_APPROVED_JSON
+{
+  "version": 1,
+  "status": "approved",
+  "release": {
+    "applicationId": "com.bytedance.zgx.pocketmind",
+    "versionCode": 1,
+    "versionName": "0.1.0",
+    "gitCommit": "$RELEASE_RECORD_HEAD",
+    "gitBranch": "main",
+    "targetChannel": "internal_testing",
+    "releaseDate": "$RELEASE_RECORD_DATE",
+    "owner": "Release Owner",
+    "reviewer": "Release Reviewer",
+    "changelog": "Initial release candidate.",
+    "releaseNotes": "Initial internal release.",
+    "agentBehaviorSummary": "Remote OpenAI-style public read-only tool calls execute through the local Agent runtime and mixed private/action batches fail closed before execution.",
+    "unsupportedCapabilities": [
+      "Full PDF parsing",
+      "Local image semantic understanding without a configured vision model"
+    ],
+    "artifact": {
+      "type": "aab",
+      "path": "$RELEASE_RECORD_ARTIFACT",
+      "sha256": "$RELEASE_RECORD_ARTIFACT_SHA",
+      "sizeBytes": $RELEASE_RECORD_ARTIFACT_SIZE,
+      "signingCertificateSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "verificationReports": [
+      {
+        "name": "local",
+        "path": "$RELEASE_RECORD_REPORT",
+        "sha256": "$RELEASE_RECORD_REPORT_SHA"
+      }
+    ],
+    "blockers": [
+      {
+        "id": "privacy-review",
+        "status": "accepted",
+        "owner": "Release Owner",
+        "date": "$RELEASE_RECORD_DATE",
+        "riskNote": "Accepted for internal testing only."
+      }
+    ]
+  }
+}
+RELEASE_RECORD_APPROVED_JSON
+expect_success \
+  "release record verifier accepts approved current record" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_APPROVED" --report "$ARTIFACT_DIR/release-record-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-approved.properties" "status=passed"
+RELEASE_RECORD_FUTURE="$TMP_DIR/release-record-future.json"
+sed 's/"releaseDate": "'"$RELEASE_RECORD_DATE"'"/"releaseDate": "2999-01-01"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_FUTURE"
+expect_failure \
+  "release record verifier rejects future release dates" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_FUTURE" --report "$ARTIFACT_DIR/release-record-future.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-future.properties" "status=failed"
+RELEASE_RECORD_BAD_SHA="$TMP_DIR/release-record-bad-sha.json"
+sed 's/"sha256": "'"$RELEASE_RECORD_ARTIFACT_SHA"'"/"sha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_BAD_SHA"
+expect_failure \
+  "release record verifier rejects artifact sha mismatch" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_BAD_SHA" --report "$ARTIFACT_DIR/release-record-bad-sha.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-bad-sha.properties" "status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
@@ -620,6 +708,7 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "publicRelease=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseRecord=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyPrivacyReview=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
@@ -648,6 +737,17 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-mapping-gate/release-mapping.properties" "status=failed"
+expect_failure \
+  "release gate requires approved release record when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-record-gate" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_RELEASE_RECORD=1 \
+  RELEASE_RECORD_FILE="$RELEASE_RECORD_PENDING" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-record-gate/release-record.properties" "status=failed"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh
