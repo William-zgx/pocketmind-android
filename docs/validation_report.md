@@ -15,6 +15,42 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation evidence SHA hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 要求 release validation 中的 emulator
+  regression report、physical device report、API matrix evidence、manual/flow/perf
+  evidence 和 sanitized screenshots 都提供匹配 SHA-256。
+- `docs/release_validation_record.json` 将已真实存在的 API 36 emulator regression
+  证据绑定到当前 `regression-emulator.properties` SHA；pending 项仍保持空证据并继续阻塞
+  release。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 自动注入 evidence
+  SHA，并新增 report、API、manual evidence、screenshot SHA mismatch 负例。
+- `docs/release_checklist.md` 同步 validation evidence path 必须绑定 SHA 的门禁要求。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 approved SHA-bound evidence 正例，以及
+  emulator report、API evidence、manual evidence、screenshot SHA mismatch 负例。
+- 通过：`AgentCoreDocumentationTest` targeted JVM test。
+- 通过：`scripts/verify_local.sh`，覆盖 shell syntax、validation script self-tests、JVM
+  tests、lint、debug/release assemble、release bundle 和 Android artifact scan。
+- 当前 `docs/release_validation_record.json` 仍按预期未通过；真实剩余项仍是未完成的
+  physical device、API 28/32/33/34、manual/flow/perf、截图和 review。
+- 未执行模拟器：本轮只加固 release validation 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Release operations evidence hardening
 
 本轮覆盖项：

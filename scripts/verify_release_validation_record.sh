@@ -52,6 +52,7 @@ trap 'rm -f "$TMP_FAILURES"' EXIT
 set +e
 python3 - "$VALIDATION_RECORD_FILE" "$ANDROID_TEST_SOURCE_DIR" > "$TMP_FAILURES" <<'PY'
 import json
+import hashlib
 import re
 import sys
 from datetime import date
@@ -96,6 +97,18 @@ def validate_date_field(value, prefix):
         if parsed_date > date.today():
             failures.append(f"{prefix}-date-in-future")
 
+def validate_file_sha(prefix, path, expected_sha):
+    if not non_empty_string(expected_sha):
+        failures.append(f"{prefix}-sha-missing")
+        return
+    try:
+        actual_sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        failures.append(f"{prefix}-sha-read-failed")
+        return
+    if actual_sha != expected_sha:
+        failures.append(f"{prefix}-sha-mismatch")
+
 def validate_evidence_record(section, key, value):
     prefix = f"{section}-{key}"
     if isinstance(value, str):
@@ -116,6 +129,8 @@ def validate_evidence_record(section, key, value):
         failures.append(f"{prefix}-evidence-path-missing")
     elif not Path(evidence_path).is_file():
         failures.append(f"{prefix}-evidence-file-missing")
+    else:
+        validate_file_sha(f"{prefix}-evidence", evidence_path, value.get("evidenceSha256", ""))
     if not non_empty_string(value.get("owner")):
         failures.append(f"{prefix}-owner-missing")
     validate_date_field(value.get("date", ""), prefix)
@@ -158,6 +173,7 @@ if not emulator_report:
 elif not Path(emulator_report).is_file():
     failures.append("emulator-report-missing")
 else:
+    validate_file_sha("emulator-report", emulator_report, emulator.get("reportSha256", ""))
     props = properties_for(emulator_report)
     if props.get("status") != "passed":
         failures.append("emulator-report-status-not-passed")
@@ -194,6 +210,7 @@ if not device_report:
 elif not Path(device_report).is_file():
     failures.append("physical-device-report-missing")
 else:
+    validate_file_sha("physical-device-report", device_report, physical.get("reportSha256", ""))
     props = properties_for(device_report)
     report_serial = props.get("serial", "")
     if props.get("status") != "passed":
@@ -242,6 +259,8 @@ for entry in api_matrix:
         failures.append(f"api-{api_level}-evidence-path-missing")
     elif not Path(evidence_path).is_file():
         failures.append(f"api-{api_level}-evidence-file-missing")
+    else:
+        validate_file_sha(f"api-{api_level}-evidence", evidence_path, entry.get("evidenceSha256", ""))
 for missing in sorted(required_apis - seen_apis):
     failures.append(f"api-{missing}-missing")
 
@@ -309,6 +328,8 @@ for entry in screenshots:
         failures.append(f"{name or 'unknown'}-screenshot-path-missing")
     elif not Path(path).is_file():
         failures.append(f"{name or 'unknown'}-screenshot-missing")
+    else:
+        validate_file_sha(f"{name or 'unknown'}-screenshot", path, entry.get("sha256", ""))
     if entry.get("sanitized") is not True:
         failures.append(f"{name or 'unknown'}-screenshot-not-sanitized")
 for missing in sorted(required_screenshots - seen_screenshots):

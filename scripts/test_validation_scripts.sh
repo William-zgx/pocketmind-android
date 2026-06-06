@@ -919,6 +919,30 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
   }
 }
 VALIDATION_APPROVED_JSON
+python3 - "$VALIDATION_APPROVED" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record_path = Path(sys.argv[1])
+record = json.loads(record_path.read_text())
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+record["emulatorRegression"]["reportSha256"] = sha(record["emulatorRegression"]["reportPath"])
+record["physicalDevice"]["reportSha256"] = sha(record["physicalDevice"]["reportPath"])
+for entry in record["apiMatrix"]:
+    entry["evidenceSha256"] = sha(entry["evidencePath"])
+for section in ("manualAcceptance", "flowMatrix", "performanceSanity"):
+    for item in record[section].values():
+        item["evidenceSha256"] = sha(item["evidencePath"])
+for entry in record["screenshots"]:
+    entry["sha256"] = sha(entry["path"])
+
+record_path.write_text(json.dumps(record, indent=2))
+PY
 expect_success \
   "release validation verifier accepts approved evidence record" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-approved.properties"
@@ -939,6 +963,62 @@ expect_failure \
   "release validation verifier rejects bare passed manual acceptance" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_BARE_MANUAL" --report "$ARTIFACT_DIR/release-validation-bare-manual.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-bare-manual.properties" "manual-modelSetup-evidence-record-invalid"
+VALIDATION_EMULATOR_BAD_SHA="$TMP_DIR/release-validation-emulator-bad-sha.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_EMULATOR_BAD_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["emulatorRegression"]["reportSha256"] = "0" * 64
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects emulator report sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_EMULATOR_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-emulator-bad-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-emulator-bad-sha.properties" "emulator-report-sha-mismatch"
+VALIDATION_API_BAD_SHA="$TMP_DIR/release-validation-api-bad-sha.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_API_BAD_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["apiMatrix"][0]["evidenceSha256"] = "0" * 64
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects api evidence sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-api-bad-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-bad-sha.properties" "api-28-evidence-sha-mismatch"
+VALIDATION_MANUAL_BAD_SHA="$TMP_DIR/release-validation-manual-bad-sha.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_MANUAL_BAD_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["manualAcceptance"]["modelSetup"]["evidenceSha256"] = "0" * 64
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects manual evidence sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_MANUAL_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-manual-bad-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-manual-bad-sha.properties" "manual-modelSetup-evidence-sha-mismatch"
+VALIDATION_SCREENSHOT_BAD_SHA="$TMP_DIR/release-validation-screenshot-bad-sha.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_BAD_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["screenshots"][0]["sha256"] = "0" * 64
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects screenshot sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_SCREENSHOT_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-screenshot-bad-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-bad-sha.properties" "chat-home-screenshot-sha-mismatch"
 VALIDATION_MISSING_DEVICE="$TMP_DIR/release-validation-missing-device.json"
 sed 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$TMP_DIR/missing-device.properties"'"#' "$VALIDATION_APPROVED" > "$VALIDATION_MISSING_DEVICE"
 expect_failure \
@@ -955,7 +1035,17 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_EMULATOR_AS_PHYSICAL" --report "$ARTIFACT_DIR/release-validation-emulator-as-physical.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-emulator-as-physical.properties" "status=failed"
 VALIDATION_API_GAP="$TMP_DIR/release-validation-api-gap.json"
-sed 's/"apiLevel": 34, "status": "passed"/"apiLevel": 34, "status": "pending"/' "$VALIDATION_APPROVED" > "$VALIDATION_API_GAP"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_API_GAP" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+for entry in record["apiMatrix"]:
+    if entry.get("apiLevel") == 34:
+        entry["status"] = "pending"
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
 expect_failure \
   "release validation verifier rejects incomplete api matrix" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_API_GAP" --report "$ARTIFACT_DIR/release-validation-api-gap.properties"
@@ -967,7 +1057,17 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_API_MISSING_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-api-missing-evidence.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-api-missing-evidence.properties" "status=failed"
 VALIDATION_UNSANITIZED_SCREENSHOT="$TMP_DIR/release-validation-unsanitized-screenshot.json"
-sed 's/\("name": "chat-home", "path": "[^"]*", "sanitized": \)true/\1false/' "$VALIDATION_APPROVED" > "$VALIDATION_UNSANITIZED_SCREENSHOT"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_UNSANITIZED_SCREENSHOT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+for entry in record["screenshots"]:
+    if entry.get("name") == "chat-home":
+        entry["sanitized"] = False
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
 expect_failure \
   "release validation verifier rejects unsanitized screenshots" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_UNSANITIZED_SCREENSHOT" --report "$ARTIFACT_DIR/release-validation-unsanitized.properties"

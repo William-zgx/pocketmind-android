@@ -5,6 +5,7 @@
   "emulatorRegression": {
     "status": "passed",
     "reportPath": "build/verification/regression-emulator-20260606-160247/regression-emulator.properties",
+    "reportSha256": "2dd674e58c21972f6d7984501e1f4aa1f4aa9a455886537dc986cd48ec66681e",
     "avd": "focus_agent_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
@@ -13,6 +14,7 @@
   "physicalDevice": {
     "status": "pending",
     "reportPath": "",
+    "reportSha256": "",
     "serial": "",
     "apiLevel": 0,
     "abi": "",
@@ -23,31 +25,36 @@
       "apiLevel": 28,
       "status": "pending",
       "evidence": "",
-      "evidencePath": ""
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "apiLevel": 32,
       "status": "pending",
       "evidence": "",
-      "evidencePath": ""
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "apiLevel": 33,
       "status": "pending",
       "evidence": "",
-      "evidencePath": ""
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "apiLevel": 34,
       "status": "pending",
       "evidence": "",
-      "evidencePath": ""
+      "evidencePath": "",
+      "evidenceSha256": ""
     },
     {
       "apiLevel": 36,
       "status": "passed",
       "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64.",
-      "evidencePath": "build/verification/regression-emulator-20260606-160247/regression-emulator.properties"
+      "evidencePath": "build/verification/regression-emulator-20260606-160247/regression-emulator.properties",
+      "evidenceSha256": "2dd674e58c21972f6d7984501e1f4aa1f4aa9a455886537dc986cd48ec66681e"
     }
   ],
   "manualAcceptance": {
@@ -85,21 +92,25 @@
     {
       "name": "chat-home",
       "path": "",
+      "sha256": "",
       "sanitized": false
     },
     {
       "name": "model-manager",
       "path": "",
+      "sha256": "",
       "sanitized": false
     },
     {
       "name": "confirmation-sheet",
       "path": "",
+      "sha256": "",
       "sanitized": false
     },
     {
       "name": "background-tasks-or-audit",
       "path": "",
+      "sha256": "",
       "sanitized": false
     }
   ],

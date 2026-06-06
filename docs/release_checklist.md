@@ -129,6 +129,9 @@ release ticket or PR.
   redacted metadata.
 - [ ] Screenshots do not include real contacts, notifications, clipboard text,
   current-screen text, API keys, emails, phone numbers, or internal hostnames.
+- [ ] Every screenshot attached to release validation is listed in
+  `docs/release_validation_record.json` with its sanitized flag and matching
+  SHA-256.
 
 ## Privacy And License
 
@@ -190,7 +193,8 @@ release ticket or PR.
   `CLEAN_DEVICE` value, executed command, instrumentation result, and
   `instrumentation_test_count` from the verification report. Emulator release
   records should link `regression-emulator.properties` plus the nested
-  emulator/device reports.
+  emulator/device reports, and each linked report must include a matching
+  SHA-256 in `docs/release_validation_record.json`.
 - [ ] Manual acceptance in `docs/phone_acceptance.md` is sampled for model
   setup, remote-mode privacy, tool confirmation, permissions, background
   reminders, sharing, and multimodal entry points.
@@ -201,8 +205,8 @@ release ticket or PR.
 - [ ] Every manual acceptance, flow matrix, and performance sanity item in
   `docs/release_validation_record.json` records a structured evidence object
   with `status=passed`, a summary, an evidence file path that exists in the RC
-  artifact bundle, owner, and non-future date; a bare string `passed` is not
-  acceptable evidence.
+  artifact bundle, matching `evidenceSha256`, owner, and non-future date; a
+  bare string `passed` is not acceptable evidence.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.
@@ -210,7 +214,8 @@ release ticket or PR.
   permission behavior, API 33 media/notification permissions, API 34 selected
   visual media access, API 36 target behavior, and one physical arm64 device
   with realistic LiteRT-LM CPU/GPU fallback. Each API matrix row must include
-  an evidence file path that exists in the RC validation artifact bundle.
+  an evidence file path that exists in the RC validation artifact bundle and a
+  matching `evidenceSha256`.
 - [ ] Matrix covers first install, upgrade install, local model download and
   verification, custom model import or custom URL rejection path, remote model
   HTTPS configuration, encrypted API key clear, session persistence, memory
@@ -224,7 +229,8 @@ release ticket or PR.
   checks emulator regression, rejects `emulator-*` serials as physical-device
   instrumentation evidence, verifies API matrix coverage, manual acceptance,
   system-mediated flows, remote public evidence samples, mixed-batch rejection,
-  sanitized screenshots, flow coverage, and performance sanity evidence.
+  sanitized screenshots with matching SHA-256, flow coverage, and performance
+  sanity evidence.
 
 ## Crash, ANR, And Monitoring
 
