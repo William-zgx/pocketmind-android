@@ -17,6 +17,38 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation API36 evidence refresh after image boundary
+
+本轮覆盖项：
+
+- `docs/release_validation_record.json` 的 `emulatorRegression` 和 API 36 evidence
+  从较早的 API 36 emulator report 更新到 post shared-image no-implicit-OCR boundary 的
+  API 36 matrix nested report。
+- `docs/release_readiness.md` 同步记录当前 API 36 release-candidate emulator
+  evidence 和 matrix evidence path。
+- 整体 release validation 仍保持 `pending_validation`；没有把 API 36 emulator
+  evidence 冒充为真机、API 28/32/33/34、manual acceptance、flow matrix、
+  performance sanity 或 reviewer approval。
+
+验证命令：
+
+```bash
+shasum -a 256 build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：API 36 nested regression report SHA-256 为
+  `4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b`，与
+  `docs/release_validation_record.json` 中的 `emulatorRegression.reportSha256` 和
+  API 36 `evidenceSha256` 一致。
+- 预期失败：当前 release validation record 仍未 approved；
+  `build/verification/release-validation-current.properties` 继续记录未完成的真机、
+  API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date 项。
+- 未执行模拟器：本轮只刷新已存在的通过证据引用；不新增 runtime 行为验证。
+
 ## 2026-06-06 Release flow candidate evidence rejection
 
 本轮覆盖项：

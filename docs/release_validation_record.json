@@ -4,8 +4,8 @@
   "status": "pending_validation",
   "emulatorRegression": {
     "status": "passed",
-    "reportPath": "build/verification/regression-emulator-20260606-182722/regression-emulator.properties",
-    "reportSha256": "9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51",
+    "reportPath": "build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties",
+    "reportSha256": "4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b",
     "avd": "focus_agent_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
@@ -52,9 +52,9 @@
     {
       "apiLevel": 36,
       "status": "passed",
-      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64.",
-      "evidencePath": "build/verification/regression-emulator-20260606-182722/regression-emulator.properties",
-      "evidenceSha256": "9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51"
+      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64 after the shared image no-implicit-OCR boundary change.",
+      "evidencePath": "build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties",
+      "evidenceSha256": "4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b"
     }
   ],
   "manualAcceptance": {

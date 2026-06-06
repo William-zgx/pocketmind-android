@@ -49,17 +49,18 @@ items below.
   2026-06-03. This is not a replacement for the final release-candidate
   device/instrumentation gate.
 - Current release-candidate emulator regression passed with
-  `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
-  `emulator-5554` (API 36, `arm64-v8a`):
-  `build/verification/regression-emulator-20260606-182722/regression-emulator.properties`
-  records `status=passed`, nested emulator/device reports passed, and
-  `actual_android_test_count=28` matching the 28 AndroidTest source count.
+  `scripts/regression_emulator_api_matrix.sh --required-apis 36` on
+  `focus_agent_api36_arm64` / `emulator-5554` (API 36, `arm64-v8a`):
+  `build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties`
+  records `status=passed`, nested emulator/device reports passed,
+  `actual_android_test_count=28` matching the 28 AndroidTest source count,
+  and binds the post image no-implicit-OCR boundary.
 - Emulator API matrix readiness is now machine-readable. The current local
   environment reports API 36 ready and API 28/32/33/34 missing system images
   and AVDs in
   `build/verification/emulator-api-matrix-readiness.properties`.
 - API 36 has also passed through the new matrix runner:
-  `build/verification/regression-emulator-api36-current/regression-emulator-api-matrix.properties`
+  `build/verification/regression-emulator-api36-no-implicit-image-ocr/regression-emulator-api-matrix.properties`
   records `status=passed`, `passedApis=36`, and links the nested API 36
   `regression-emulator.properties` with 28 AndroidTest(s).
 
