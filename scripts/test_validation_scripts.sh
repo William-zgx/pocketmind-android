@@ -152,8 +152,11 @@ case "${1:-}" in
       exit 2
     fi
     mkdir -p "$(dirname "$destination")"
-    printf '<hierarchy><node text="%s" /></hierarchy>\n' "${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}" > "$destination"
+    printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
     echo "1 file pulled"
+    ;;
+  logcat)
+    echo "fake live remote logcat"
     ;;
   *)
     echo "unexpected adb command: $*" >&2
@@ -1979,6 +1982,38 @@ export ARTIFACT_DIR
 
 reset_logs
 LIVE_REMOTE_TEST_TOKEN="$TMP_DIR/live-remote-token-from-env"
+expect_failure \
+  "live remote emulator reports missing base url reason before Gradle" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
+  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  scripts/live_remote_emulator.sh
+assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget=configuration"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason=missing-base-url"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "ui_dump=$ARTIFACT_DIR/live-remote-result.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "logcat_file=$ARTIFACT_DIR/live-remote-logcat.txt"
+
+reset_logs
+expect_failure \
+  "live remote emulator rejects physical serial" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" GRADLE_CMD="$FAKE_GRADLE" \
+  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
+  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  scripts/live_remote_emulator.sh
+assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget=emulator-selection"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason=android-serial-not-emulator"
+
+reset_logs
 expect_success \
   "live remote emulator uses app uid for debug receiver broadcasts" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
@@ -2003,10 +2038,45 @@ grep -q -- "--ez clearState true" "$FAKE_ADB_LOG" ||
 grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to clear remote config on exit"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget="
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "base_url=<redacted>"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "evidence_dir=$ARTIFACT_DIR"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "ui_dump=$ARTIFACT_DIR/live-remote-result.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "logcat_file=$ARTIFACT_DIR/live-remote-logcat.txt"
 if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.properties"; then
   fail "Live remote report must not persist the remote API key"
+fi
+
+reset_logs
+expect_failure \
+  "live remote emulator reports expected text missing with evidence" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  FAKE_LIVE_REMOTE_UI_TEXT="WRONG_REMOTE_TEXT" \
+  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
+  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  scripts/live_remote_emulator.sh
+grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
+  fail "Expected live remote helper to assemble the debug APK before expected-text validation"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget=expected-response"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason=expected-text-not-found"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "ui_dump=$ARTIFACT_DIR/live-remote-result.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "logcat_file=$ARTIFACT_DIR/live-remote-logcat.txt"
+[[ -s "$ARTIFACT_DIR/live-remote-result.png" ]] ||
+  fail "Expected live remote failure screenshot evidence"
+[[ -s "$ARTIFACT_DIR/live-remote-result.xml" ]] ||
+  fail "Expected live remote failure UI dump evidence"
+[[ -s "$ARTIFACT_DIR/live-remote-logcat.txt" ]] ||
+  fail "Expected live remote failure logcat evidence"
+if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.properties"; then
+  fail "Live remote failure report must not persist the remote API key"
 fi
 
 REGRESSION_COUNT_FIXTURE="$TMP_DIR/android-test-count-fixture"

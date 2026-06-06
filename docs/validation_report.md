@@ -17,6 +17,37 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Live remote emulator failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/live_remote_emulator.sh` 的 report 新增 `failedTarget`、`reason`、
+  `evidence_dir`、`screenshot`、`ui_dump` 和 `logcat_file`。
+- 缺少 `POCKETMIND_LIVE_REMOTE_BASE_URL` / model / API key、非 emulator serial、
+  assemble/install/config broadcast、UI 输入、远端请求失败、预期文本缺失等路径会写入
+  机器可读失败原因。
+- 失败且已选中 emulator 时，会尽量捕获截图、UI dump 和短 logcat。
+- `scripts/test_validation_scripts.sh` 覆盖缺配置、非 emulator serial、成功 redaction、
+  expected text missing，并确认失败 report 不落盘 API key。
+- `docs/release_checklist.md` 同步 live remote report 失败字段和证据路径要求。
+
+验证命令：
+
+```bash
+bash -n scripts/live_remote_emulator.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 live remote failedTarget / reason、
+  screenshot / UI dump / logcat evidence path，以及 API key redaction。
+- 通过：`scripts/verify_local.sh`。
+- 未执行真实 live remote 模型请求：当前没有临时注入
+  `POCKETMIND_LIVE_REMOTE_BASE_URL`、`POCKETMIND_LIVE_REMOTE_MODEL` 和
+  `POCKETMIND_LIVE_REMOTE_API_KEY`。
+
 ## 2026-06-06 Emulator failure evidence contract hardening
 
 本轮覆盖项：
