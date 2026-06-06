@@ -205,8 +205,12 @@ release ticket or PR.
   references a passed `perf-baseline-verification.properties` report generated
   by `scripts/verify_perf_baseline.sh`, with `target=perf-baseline`, a
   `performanceKey` that matches the record key, `missingFieldCount=0`, and a
-  readable `baselineFile`; lightweight status-only or cross-key performance
-  evidence files are not accepted.
+  readable `baselineFile` plus matching `baselineSha256`. The verifier report
+  must include non-empty `expectedArtifactSha256` and `expectedAppVersion`
+  values, and the linked baseline must match those values, come from a
+  non-emulator `arm64-v8a` device, record `oomOrAnrObserved=false`, and have a
+  fresh UTC `recordedAt`; lightweight status-only, cross-key, or baseline-file
+  swapped performance evidence files are not accepted.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

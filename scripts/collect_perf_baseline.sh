@@ -163,6 +163,7 @@ mkdir -p "$(dirname "$OUT_FILE")"
 if ! scripts/verify_perf_baseline.sh \
   --file "$OUT_FILE" \
   --artifact-sha256 "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')" \
+  --app-version "$APP_VERSION" \
   --report "$VERIFY_REPORT_FILE"; then
   verifier_reason="$(report_value "$VERIFY_REPORT_FILE" reason)"
   [[ -n "$verifier_reason" ]] || verifier_reason="perf-baseline-verification-failed"

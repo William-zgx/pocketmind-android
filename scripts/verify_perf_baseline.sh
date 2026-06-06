@@ -43,6 +43,11 @@ write_report() {
       printf 'target=perf-baseline\n'
       printf 'reason=%s\n' "$reason"
       printf 'baselineFile=%s\n' "${BASELINE_FILE:-}"
+      if [[ -n "${BASELINE_FILE:-}" && -f "$BASELINE_FILE" ]]; then
+        printf 'baselineSha256=%s\n' "$(shasum -a 256 "$BASELINE_FILE" | awk '{print $1}')"
+      else
+        printf 'baselineSha256=\n'
+      fi
       printf 'missingFieldCount=%s\n' "$missing"
       printf 'expectedArtifactSha256=%s\n' "$EXPECTED_ARTIFACT_SHA256"
       printf 'expectedAppVersion=%s\n' "$EXPECTED_APP_VERSION"

@@ -541,6 +541,7 @@ expect_success \
   "perf baseline verifier accepts complete record" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --app-version 0.1.0 --report "$ARTIFACT_DIR/perf.properties"
 assert_report_contains "$ARTIFACT_DIR/perf.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/perf.properties" "baselineSha256=$(shasum -a 256 "$VALID_PERF" | awk '{print $1}')"
 expect_success \
   "perf baseline verifier accepts matching artifact sha" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 "$VALID_PERF_SHA" --report "$ARTIFACT_DIR/perf-sha.properties"
@@ -1162,15 +1163,17 @@ memoryPeakMb=512
 oomOrAnrObserved=false
 recordedAt=$PERF_RECORDED_AT
 VALIDATION_PERF_BASELINE_PROPERTIES
+VALIDATION_PERF_BASELINE_SHA="$(shasum -a 256 "$VALIDATION_PERF_BASELINE" | awk '{print $1}')"
 for perf_key in firstLaunch modelLoad firstToken streamingStopCancel backgroundReminderDelivery memoryPressure; do
   cat > "$TMP_DIR/validation-performance-evidence/$perf_key.properties" <<VALIDATION_PERFORMANCE_EVIDENCE_PROPERTIES
 status=passed
 target=perf-baseline
 performanceKey=$perf_key
 baselineFile=$VALIDATION_PERF_BASELINE
+baselineSha256=$VALIDATION_PERF_BASELINE_SHA
 missingFieldCount=0
-expectedArtifactSha256=
-expectedAppVersion=
+expectedArtifactSha256=$VALID_PERF_SHA
+expectedAppVersion=0.1.0
 maxRecordAgeDays=30
 VALIDATION_PERFORMANCE_EVIDENCE_PROPERTIES
 done
@@ -1565,6 +1568,8 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_WEAK_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-target-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-key-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-expected-artifact-sha-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-expected-app-version-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-baseline-file-missing"
 VALIDATION_PERF_KEY_MISMATCH="$TMP_DIR/release-validation-perf-key-mismatch.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_PERF_KEY_MISMATCH" <<'PY'
@@ -1583,6 +1588,68 @@ expect_failure \
   "release validation verifier rejects performance evidence key mismatch" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_KEY_MISMATCH" --report "$ARTIFACT_DIR/release-validation-perf-key-mismatch.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-key-mismatch.properties" "performance-modelLoad-evidence-key-mismatch"
+VALIDATION_PERF_BASELINE_SHA_MISMATCH="$TMP_DIR/release-validation-perf-baseline-sha-mismatch.json"
+VALIDATION_PERF_BASELINE_SHA_MISMATCH_EVIDENCE="$TMP_DIR/validation-performance-evidence/firstLaunch-sha-mismatch.properties"
+cat > "$VALIDATION_PERF_BASELINE_SHA_MISMATCH_EVIDENCE" <<VALIDATION_PERF_BASELINE_SHA_MISMATCH_EVIDENCE_PROPERTIES
+status=passed
+target=perf-baseline
+performanceKey=firstLaunch
+baselineFile=$VALIDATION_PERF_BASELINE
+baselineSha256=$VALIDATION_PERF_BASELINE_SHA
+missingFieldCount=0
+expectedArtifactSha256=2222222222222222222222222222222222222222222222222222222222222222
+expectedAppVersion=0.1.0
+maxRecordAgeDays=30
+VALIDATION_PERF_BASELINE_SHA_MISMATCH_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_PERF_BASELINE_SHA_MISMATCH" "$VALIDATION_PERF_BASELINE_SHA_MISMATCH_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["performanceSanity"]["firstLaunch"]["evidencePath"] = str(evidence)
+record["performanceSanity"]["firstLaunch"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects performance baseline artifact sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_BASELINE_SHA_MISMATCH" --report "$ARTIFACT_DIR/release-validation-perf-baseline-sha-mismatch.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-baseline-sha-mismatch.properties" "performance-firstLaunch-evidence-baseline-artifact-sha-mismatch"
+VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH="$TMP_DIR/release-validation-perf-baseline-file-sha-mismatch.json"
+VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH_EVIDENCE="$TMP_DIR/validation-performance-evidence/firstLaunch-file-sha-mismatch.properties"
+cat > "$VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH_EVIDENCE" <<VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH_EVIDENCE_PROPERTIES
+status=passed
+target=perf-baseline
+performanceKey=firstLaunch
+baselineFile=$VALIDATION_PERF_BASELINE
+baselineSha256=0000000000000000000000000000000000000000000000000000000000000000
+missingFieldCount=0
+expectedArtifactSha256=$VALID_PERF_SHA
+expectedAppVersion=0.1.0
+maxRecordAgeDays=30
+VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH" "$VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["performanceSanity"]["firstLaunch"]["evidencePath"] = str(evidence)
+record["performanceSanity"]["firstLaunch"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects performance baseline file sha mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_BASELINE_FILE_SHA_MISMATCH" --report "$ARTIFACT_DIR/release-validation-perf-baseline-file-sha-mismatch.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-baseline-file-sha-mismatch.properties" "performance-firstLaunch-evidence-baseline-sha-mismatch"
 VALIDATION_SCREENSHOT_BAD_SHA="$TMP_DIR/release-validation-screenshot-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_BAD_SHA" <<'PY'
 import json
@@ -2788,6 +2855,8 @@ expect_success \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh
 assert_report_contains "$COLLECTED_PERF" "status=passed"
+assert_report_contains "$COLLECTED_PERF.verification.properties" "expectedAppVersion=1.0"
+assert_report_contains "$COLLECTED_PERF.verification.properties" "baselineSha256=$(shasum -a 256 "$COLLECTED_PERF" | awk '{print $1}')"
 
 expect_success \
   "doctor local without adb" \

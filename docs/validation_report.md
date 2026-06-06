@@ -63,6 +63,45 @@ ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
 - 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档；
   没有重新跑 API matrix。
 
+## 2026-06-06 Release validation performance semantics hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在要求每个 performance evidence
+  verifier report 包含有效 `expectedArtifactSha256` 和非空 `expectedAppVersion`。
+- release validation 会读取 linked `baselineFile`，并确认 baseline 的
+  `baselineSha256`、`releaseArtifactSha256` / `appVersion` 与 verifier report 的
+  expected 字段匹配。
+- baseline 必须来自非 emulator 设备、`abi=arm64-v8a`、`oomOrAnrObserved=false`，
+  且 `recordedAt` 必须是 UTC、非未来、未超过 `maxRecordAgeDays`。
+- `scripts/verify_perf_baseline.sh` 现在会在 verifier report 中写入
+  `baselineSha256`；`scripts/collect_perf_baseline.sh` 调用 verifier 时会传入
+  `--app-version "$APP_VERSION"`。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为绑定
+  baseline SHA、artifact SHA 和 app version，并新增 baseline file SHA mismatch
+  与 baseline artifact SHA mismatch 负例。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。
+- 未执行真机：本轮只加固 release validation 门禁脚本、测试 fixture 和文档；
+  没有采集新的 perf baseline。
+
 ## 2026-06-06 Release validation physical device report hardening
 
 本轮覆盖项：

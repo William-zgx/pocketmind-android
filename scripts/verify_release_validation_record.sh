@@ -55,7 +55,7 @@ import json
 import hashlib
 import re
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 record_path = Path(sys.argv[1])
@@ -96,6 +96,21 @@ def validate_date_field(value, prefix):
     else:
         if parsed_date > date.today():
             failures.append(f"{prefix}-date-in-future")
+
+def validate_utc_timestamp_fresh(value, max_age_days, prefix):
+    if not non_empty_string(value):
+        failures.append(f"{prefix}-recorded-at-missing")
+        return
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        failures.append(f"{prefix}-recorded-at-invalid")
+        return
+    now = datetime.now(timezone.utc)
+    if parsed > now:
+        failures.append(f"{prefix}-recorded-at-in-future")
+    elif (now - parsed).days > max_age_days:
+        failures.append(f"{prefix}-recorded-at-stale")
 
 def validate_file_sha(prefix, path, expected_sha):
     if not non_empty_string(expected_sha):
@@ -303,11 +318,46 @@ def validate_performance_evidence(key, evidence_path):
         failures.append(f"{prefix}-key-mismatch")
     if props.get("missingFieldCount") != "0":
         failures.append(f"{prefix}-missing-fields")
+    expected_sha = props.get("expectedArtifactSha256", "")
+    if not re.match(r"^[0-9a-fA-F]{64}$", expected_sha):
+        failures.append(f"{prefix}-expected-artifact-sha-invalid")
+    expected_app_version = props.get("expectedAppVersion", "")
+    if not non_empty_string(expected_app_version):
+        failures.append(f"{prefix}-expected-app-version-missing")
+    try:
+        max_record_age_days = int(props.get("maxRecordAgeDays", ""))
+    except ValueError:
+        max_record_age_days = None
+        failures.append(f"{prefix}-max-record-age-invalid")
+    else:
+        if max_record_age_days <= 0:
+            failures.append(f"{prefix}-max-record-age-invalid")
     baseline_file = props.get("baselineFile", "")
     if not non_empty_string(baseline_file):
         failures.append(f"{prefix}-baseline-file-missing")
     elif not Path(baseline_file).is_file():
         failures.append(f"{prefix}-baseline-file-read-failed")
+    else:
+        expected_baseline_sha = props.get("baselineSha256", "")
+        if not re.match(r"^[0-9a-fA-F]{64}$", expected_baseline_sha):
+            failures.append(f"{prefix}-baseline-sha-invalid")
+        else:
+            validate_file_sha(f"{prefix}-baseline", baseline_file, expected_baseline_sha)
+        baseline_props = properties_for(baseline_file)
+        if baseline_props.get("status") != "passed":
+            failures.append(f"{prefix}-baseline-status-not-passed")
+        if baseline_props.get("releaseArtifactSha256") != expected_sha:
+            failures.append(f"{prefix}-baseline-artifact-sha-mismatch")
+        if baseline_props.get("appVersion") != expected_app_version:
+            failures.append(f"{prefix}-baseline-app-version-mismatch")
+        if baseline_props.get("deviceSerial", "").startswith("emulator-") or not non_empty_string(baseline_props.get("deviceSerial", "")):
+            failures.append(f"{prefix}-baseline-device-serial-invalid")
+        if baseline_props.get("abi") != "arm64-v8a":
+            failures.append(f"{prefix}-baseline-abi-invalid")
+        if baseline_props.get("oomOrAnrObserved") != "false":
+            failures.append(f"{prefix}-baseline-oom-or-anr-observed")
+        if max_record_age_days is not None and max_record_age_days > 0:
+            validate_utc_timestamp_fresh(baseline_props.get("recordedAt", ""), max_record_age_days, prefix)
 
 def validate_manual_evidence(key, evidence_path):
     prefix = f"manual-{key}-evidence"
