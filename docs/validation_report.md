@@ -23,6 +23,42 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Upgrade install and flow candidate refresh
+
+本轮覆盖项：
+
+- 刷新当前 HEAD 的 API 36 emulator upgrade install smoke：从上一个 app 源码版本构建
+  base debug APK，再覆盖安装当前 debug APK，并运行 `MainActivitySmokeTest`。
+- 刷新 release flow matrix candidate evidence；继续证明 candidate evidence 不能替代正式
+  `target=release-flow` / `releaseFlowPassed=true` 的 release evidence。
+- 不修改 `docs/release_validation_record.json`：`flowMatrix.upgradeInstall` 和其他 flow
+  项仍保持 pending。
+
+验证命令：
+
+```bash
+ARTIFACT_DIR=build/verification/release-flow-matrix-current REPORT_FILE=build/verification/release-flow-matrix-current/release-flow-matrix-candidate-evidence.properties scripts/collect_release_flow_matrix_evidence.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=pocketmind_api36_arm64 ARTIFACT_DIR=build/verification/upgrade-install-emulator-current REPORT_FILE=build/verification/upgrade-install-emulator-current/upgrade-install-emulator.properties EMULATOR_ARGS='-wipe-data -no-window -no-audio -no-boot-anim -no-snapshot-save -gpu swiftshader_indirect' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/verify_upgrade_install_emulator.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：API 36 upgrade install smoke，
+  `build/verification/upgrade-install-emulator-current/upgrade-install-emulator.properties`
+  记录 `status=passed`、`target=upgrade-install-emulator`、`baseRef=0be4bde...`、
+  `currentCommit=61f3be9...`、`signerSha256Matches=true`、`instrumentation=passed`、
+  `instrumentation_test_count=4`，SHA-256 为
+  `7b380a00f564ed72227dc4ce1e718eb5201afe9ecd997dfd608e8dc3a96bef7a`。
+- 通过：upgrade package evidence 显示 `firstInstallTime` 保持
+  `2026-06-07 02:30:25`，`lastUpdateTime` 更新到 `2026-06-07 02:30:36`；
+  debug base/current `versionCode` 均为 1，因此 `versionCodeIncreased=false`。
+- 预期失败：release flow candidate collector 生成 8 个 candidate evidence 文件，但总报告仍
+  `status=failed` / `failedTarget=flow-matrix`，SHA-256 为
+  `d5b922bc708b0635000db60b028aece633dee29dc5317d3eacd799fc60302f6f`。
+- 预期失败：release validation record 仍未 approved，真实剩余项继续是 physical device、
+  API 28/32/33/34、manual acceptance、正式 flow evidence、performance 和 reviewer/date。
+
 ## 2026-06-07 Manual review install and setup page loop fix
 
 本轮覆盖项：
