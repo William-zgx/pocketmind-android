@@ -9727,3 +9727,36 @@ bash scripts/verify_local.sh
   内的证据路径。
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Release validation consumes Crash/ANR smoke evidence
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 新增 Crash/ANR smoke report 校验：
+  要求 nested emulator report 指向 `crash_anr_smoke_report_file`，且该 report
+  为 `status=passed`、`target=crash-anr-smoke-evidence`、`logcatAnalyzed=true`。
+- 校验 smoke report 中的 `noLaunchCrash`、`noInstallCrash`、`noCrashLoop`、
+  `noFatalNativeLiteRtLmFailure`、`noReproducibleAnr` 都为 true，并要求 crash、
+  ANR、LiteRT fatal 和 instrumentation failure counters 为 0。
+- 校验 smoke report 绑定的 device report、instrumentation output、logcat path
+  与 nested emulator/device evidence 一致，并验证 report 中记录的 SHA-256。
+- `scripts/test_validation_scripts.sh` 的 release validation fixture 新增 top-level
+  emulator 和 API matrix 的 smoke evidence；新增缺失 smoke report 的 fail-closed
+  负例。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：approved release validation fixture 必须包含 nested Crash/ANR smoke
+  evidence 才能通过。
+- 通过：API matrix nested emulator report 缺少 `crash_anr_smoke_report_file` 时
+  release validation verifier fail-closed。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。

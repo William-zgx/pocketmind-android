@@ -394,6 +394,55 @@ assert_report_contains_text() {
     fail "Expected $file to contain text: $expected"
 }
 
+write_crash_anr_smoke_fixture() {
+  local report_file="$1"
+  local device_report="$2"
+  local instrumentation_output="$3"
+  local logcat_file="$4"
+  local serial="$5"
+  local api_level="$6"
+  local abi="$7"
+
+  mkdir -p "$(dirname "$report_file")"
+  cat > "$report_file" <<CRASH_ANR_SMOKE_FIXTURE_PROPERTIES
+status=passed
+target=crash-anr-smoke-evidence
+reason=
+operationsRecordField=crashAnrSmoke.evidence
+window=test fixture
+track=local-emulator
+packageName=com.bytedance.zgx.pocketmind
+deviceReportFile=$device_report
+deviceReportSha256=$(shasum -a 256 "$device_report" | awk '{print $1}')
+deviceReportSizeBytes=$(wc -c < "$device_report" | tr -d ' ')
+deviceStatus=passed
+instrumentationStatus=passed
+instrumentationTestCount=$SOURCE_ANDROID_TEST_COUNT
+serial=$serial
+apiLevel=$api_level
+abi=$abi
+instrumentationOutputFile=$instrumentation_output
+instrumentationOutputSha256=$(shasum -a 256 "$instrumentation_output" | awk '{print $1}')
+instrumentationOutputSizeBytes=$(wc -c < "$instrumentation_output" | tr -d ' ')
+logcatFile=$logcat_file
+logcatSha256=$(shasum -a 256 "$logcat_file" | awk '{print $1}')
+logcatSizeBytes=$(wc -c < "$logcat_file" | tr -d ' ')
+logcatAnalyzed=true
+instrumentationCrashSignalCount=0
+instrumentationFailureSignalCount=0
+crashSignalCount=0
+installCrashSignalCount=0
+anrSignalCount=0
+fatalLiteRtLmSignalCount=0
+noLaunchCrash=true
+noInstallCrash=true
+noCrashLoop=true
+noFatalNativeLiteRtLmFailure=true
+noReproducibleAnr=true
+failureEvidencePolicy=Attach logcat, tombstones, and ANR traces for any failure; state no crash or ANR when none were observed.
+CRASH_ANR_SMOKE_FIXTURE_PROPERTIES
+}
+
 reset_logs() {
   export VERIFICATION_REPORT_FILE="$ARTIFACT_DIR/device-verification.properties"
   export INSTRUMENTATION_OUTPUT_FILE="$ARTIFACT_DIR/instrumentation.txt"
@@ -1173,12 +1222,16 @@ assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-bad-sha.prop
 VALIDATION_PENDING="$TMP_DIR/release-validation-pending.json"
 VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"
 VALIDATION_EMULATOR_REPORT="$TMP_DIR/regression-emulator.properties"
+VALIDATION_EMULATOR_HELPER_REPORT="$TMP_DIR/emulator-verification.properties"
 VALIDATION_DEVICE_REPORT="$TMP_DIR/device-verification.properties"
 VALIDATION_EMULATOR_DEVICE_REPORT="$TMP_DIR/emulator-device-verification.properties"
+VALIDATION_EMULATOR_LOGCAT="$TMP_DIR/emulator-logcat.txt"
+VALIDATION_EMULATOR_SMOKE_REPORT="$TMP_DIR/emulator-crash-anr-smoke.properties"
 VALIDATION_SCREENSHOT_REPORT="$TMP_DIR/release-screenshots.properties"
 VALIDATION_INSTRUMENTATION_OUTPUT="$TMP_DIR/instrumentation.txt"
 VALIDATION_DATE="$(date +%F)"
 printf 'OK (%s tests)\n' "$SOURCE_ANDROID_TEST_COUNT" > "$VALIDATION_INSTRUMENTATION_OUTPUT"
+printf 'clean emulator validation logcat\n' > "$VALIDATION_EMULATOR_LOGCAT"
 mkdir -p "$TMP_DIR/validation-screenshots"
 python3 - "$TMP_DIR/validation-screenshots" <<'PY'
 import base64
@@ -1216,10 +1269,13 @@ for api_level in 28 32 33 34 36; do
   api_evidence_dir="$TMP_DIR/validation-api-evidence/api-$api_level"
   mkdir -p "$api_evidence_dir"
   api_instrumentation_output="$api_evidence_dir/instrumentation.txt"
+  api_logcat_file="$api_evidence_dir/logcat.txt"
   api_device_report="$api_evidence_dir/device-verification.properties"
   api_emulator_report="$api_evidence_dir/emulator-verification.properties"
+  api_smoke_report="$api_evidence_dir/crash-anr-smoke.properties"
   api_regression_report="$TMP_DIR/validation-api-evidence/api-$api_level.properties"
   printf 'OK (%s tests)\n' "$SOURCE_ANDROID_TEST_COUNT" > "$api_instrumentation_output"
+  printf 'clean api %s emulator validation logcat\n' "$api_level" > "$api_logcat_file"
   cat > "$api_device_report" <<VALIDATION_API_DEVICE_EVIDENCE_PROPERTIES
 status=passed
 exit_code=0
@@ -1236,6 +1292,9 @@ data_free_kb=4194304
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
 instrumentation_output_file=$api_instrumentation_output
+logcat_file=$api_logcat_file
+logcat_captured=1
+logcat_tail_lines=500
 debug_apk=app/build/outputs/apk/debug/app-debug.apk
 android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 VALIDATION_API_DEVICE_EVIDENCE_PROPERTIES
@@ -1256,9 +1315,18 @@ evidence_dir=$api_evidence_dir
 screenshot_file=$api_evidence_dir/screenshot.png
 window_dump_file=$api_evidence_dir/window.xml
 logcat_file=$api_evidence_dir/logcat.txt
+crash_anr_smoke_report_file=$api_smoke_report
 emulator_log=$api_evidence_dir-emulator.log
 device_report_file=$api_device_report
 VALIDATION_API_EMULATOR_EVIDENCE_PROPERTIES
+  write_crash_anr_smoke_fixture \
+    "$api_smoke_report" \
+    "$api_device_report" \
+    "$api_instrumentation_output" \
+    "$api_logcat_file" \
+    "emulator-$api_level" \
+    "$api_level" \
+    "arm64-v8a"
   cat > "$api_regression_report" <<VALIDATION_API_EVIDENCE_PROPERTIES
 status=passed
 exit_code=0
@@ -1353,14 +1421,23 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-validation-pending.properties" "status=failed"
 cat > "$VALIDATION_EMULATOR_REPORT" <<VALIDATION_EMULATOR_REPORT_PROPERTIES
 status=passed
+exit_code=0
 target=regression-emulator
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
 clean_device=1
 source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+serial=emulator-5554
 avd=test-avd
 api_level=36
 abi=arm64-v8a
+instrumentation_output_file=$VALIDATION_INSTRUMENTATION_OUTPUT
+emulator_report_file=$VALIDATION_EMULATOR_HELPER_REPORT
+device_report_file=$VALIDATION_EMULATOR_DEVICE_REPORT
 VALIDATION_EMULATOR_REPORT_PROPERTIES
 cat > "$VALIDATION_DEVICE_REPORT" <<VALIDATION_DEVICE_REPORT_PROPERTIES
 status=passed
@@ -1397,9 +1474,41 @@ data_free_kb=4194304
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
 instrumentation_output_file=$VALIDATION_INSTRUMENTATION_OUTPUT
+logcat_file=$VALIDATION_EMULATOR_LOGCAT
+logcat_captured=1
+logcat_tail_lines=500
 debug_apk=app/build/outputs/apk/debug/app-debug.apk
 android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 VALIDATION_EMULATOR_DEVICE_REPORT_PROPERTIES
+cat > "$VALIDATION_EMULATOR_HELPER_REPORT" <<VALIDATION_EMULATOR_HELPER_REPORT_PROPERTIES
+status=passed
+exit_code=0
+target=emulator
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+serial=emulator-5554
+api_level=36
+abi=arm64-v8a
+avd=test-avd
+clean_device=1
+evidence_dir=$TMP_DIR
+screenshot_file=$TMP_DIR/screenshot.png
+window_dump_file=$TMP_DIR/window.xml
+logcat_file=$VALIDATION_EMULATOR_LOGCAT
+crash_anr_smoke_report_file=$VALIDATION_EMULATOR_SMOKE_REPORT
+emulator_log=$TMP_DIR-emulator.log
+device_report_file=$VALIDATION_EMULATOR_DEVICE_REPORT
+VALIDATION_EMULATOR_HELPER_REPORT_PROPERTIES
+write_crash_anr_smoke_fixture \
+  "$VALIDATION_EMULATOR_SMOKE_REPORT" \
+  "$VALIDATION_EMULATOR_DEVICE_REPORT" \
+  "$VALIDATION_INSTRUMENTATION_OUTPUT" \
+  "$VALIDATION_EMULATOR_LOGCAT" \
+  "emulator-5554" \
+  "36" \
+  "arm64-v8a"
 cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
 {
   "version": 1,
@@ -1695,6 +1804,32 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-evidence-instrumentation-output-file-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-emulator-report-path-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-device-report-path-missing"
+VALIDATION_API_MISSING_SMOKE="$TMP_DIR/release-validation-api-missing-smoke.json"
+VALIDATION_API_MISSING_SMOKE_DIR="$TMP_DIR/validation-api-evidence/missing-smoke-api-28"
+VALIDATION_API_MISSING_SMOKE_EMULATOR_REPORT="$VALIDATION_API_MISSING_SMOKE_DIR/emulator-verification.properties"
+VALIDATION_API_MISSING_SMOKE_EVIDENCE="$TMP_DIR/validation-api-evidence/missing-smoke-api-28.properties"
+mkdir -p "$VALIDATION_API_MISSING_SMOKE_DIR"
+grep -v '^crash_anr_smoke_report_file=' "$TMP_DIR/validation-api-evidence/api-28/emulator-verification.properties" > "$VALIDATION_API_MISSING_SMOKE_EMULATOR_REPORT"
+sed "s#^emulator_report_file=.*#emulator_report_file=$VALIDATION_API_MISSING_SMOKE_EMULATOR_REPORT#" \
+  "$TMP_DIR/validation-api-evidence/api-28.properties" > "$VALIDATION_API_MISSING_SMOKE_EVIDENCE"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_API_MISSING_SMOKE" "$VALIDATION_API_MISSING_SMOKE_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["apiMatrix"][0]["evidencePath"] = str(evidence)
+record["apiMatrix"][0]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects api matrix nested emulator report without crash smoke evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_MISSING_SMOKE" --report "$ARTIFACT_DIR/release-validation-api-missing-smoke.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-smoke.properties" "api-28-emulator-report-crash-anr-smoke-path-missing"
 VALIDATION_MANUAL_BAD_SHA="$TMP_DIR/release-validation-manual-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_MANUAL_BAD_SHA" <<'PY'
 import json

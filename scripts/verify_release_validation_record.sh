@@ -211,6 +211,132 @@ def validate_api_matrix_evidence(api_level, evidence_path):
     validate_api_nested_emulator_report(api_level, props)
     validate_api_nested_device_report(api_level, props)
 
+def validate_logcat_artifact(prefix, logcat_file):
+    if not non_empty_string(logcat_file):
+        failures.append(f"{prefix}-logcat-file-missing")
+        return
+    path = Path(logcat_file)
+    if not path.is_file():
+        failures.append(f"{prefix}-logcat-file-missing")
+    elif path.stat().st_size <= 0:
+        failures.append(f"{prefix}-logcat-file-empty")
+
+def validate_crash_anr_smoke_report(prefix, smoke_report, expected_device_report="", expected_instrumentation_output="", expected_logcat_file=""):
+    smoke_prefix = f"{prefix}-crash-anr-smoke"
+    if not non_empty_string(smoke_report):
+        failures.append(f"{smoke_prefix}-path-missing")
+        return
+    if not Path(smoke_report).is_file():
+        failures.append(f"{smoke_prefix}-missing")
+        return
+    props = properties_for(smoke_report)
+    if props.get("status") != "passed":
+        failures.append(f"{smoke_prefix}-status-not-passed")
+    if props.get("target") != "crash-anr-smoke-evidence":
+        failures.append(f"{smoke_prefix}-target-invalid")
+    if props.get("operationsRecordField") != "crashAnrSmoke.evidence":
+        failures.append(f"{smoke_prefix}-operations-field-invalid")
+    if props.get("logcatAnalyzed") != "true":
+        failures.append(f"{smoke_prefix}-logcat-not-analyzed")
+    if props.get("deviceStatus") != "passed":
+        failures.append(f"{smoke_prefix}-device-status-not-passed")
+    if props.get("instrumentationStatus") != "passed":
+        failures.append(f"{smoke_prefix}-instrumentation-status-not-passed")
+    for field in (
+        "noLaunchCrash",
+        "noInstallCrash",
+        "noCrashLoop",
+        "noFatalNativeLiteRtLmFailure",
+        "noReproducibleAnr",
+    ):
+        if props.get(field) != "true":
+            failures.append(f"{smoke_prefix}-{field}-not-true")
+    for field in (
+        "instrumentationCrashSignalCount",
+        "instrumentationFailureSignalCount",
+        "crashSignalCount",
+        "installCrashSignalCount",
+        "anrSignalCount",
+        "fatalLiteRtLmSignalCount",
+    ):
+        if props.get(field) != "0":
+            failures.append(f"{smoke_prefix}-{field}-nonzero")
+    if non_empty_string(expected_device_report) and props.get("deviceReportFile") != expected_device_report:
+        failures.append(f"{smoke_prefix}-device-report-mismatch")
+    if non_empty_string(expected_instrumentation_output) and props.get("instrumentationOutputFile") != expected_instrumentation_output:
+        failures.append(f"{smoke_prefix}-instrumentation-output-mismatch")
+    if non_empty_string(expected_logcat_file) and props.get("logcatFile") != expected_logcat_file:
+        failures.append(f"{smoke_prefix}-logcat-file-mismatch")
+
+    device_report = props.get("deviceReportFile", "")
+    if non_empty_string(device_report):
+        if not Path(device_report).is_file():
+            failures.append(f"{smoke_prefix}-device-report-missing")
+        elif not non_empty_string(props.get("deviceReportSha256", "")):
+            failures.append(f"{smoke_prefix}-device-report-sha-missing")
+        else:
+            validate_file_sha(f"{smoke_prefix}-device-report", device_report, props.get("deviceReportSha256", ""))
+    instrumentation_output = props.get("instrumentationOutputFile", "")
+    if non_empty_string(instrumentation_output):
+        if not Path(instrumentation_output).is_file():
+            failures.append(f"{smoke_prefix}-instrumentation-output-missing")
+        elif not non_empty_string(props.get("instrumentationOutputSha256", "")):
+            failures.append(f"{smoke_prefix}-instrumentation-output-sha-missing")
+        else:
+            validate_file_sha(f"{smoke_prefix}-instrumentation-output", instrumentation_output, props.get("instrumentationOutputSha256", ""))
+    logcat_file = props.get("logcatFile", "")
+    validate_logcat_artifact(smoke_prefix, logcat_file)
+    if non_empty_string(logcat_file) and Path(logcat_file).is_file():
+        if not non_empty_string(props.get("logcatSha256", "")):
+            failures.append(f"{smoke_prefix}-logcat-sha-missing")
+        else:
+            validate_file_sha(f"{smoke_prefix}-logcat", logcat_file, props.get("logcatSha256", ""))
+
+def validate_nested_emulator_report(prefix, regression_props, expected_api_level, expected_avd, expected_abi):
+    emulator_report = regression_props.get("emulator_report_file", "")
+    if not non_empty_string(emulator_report):
+        failures.append(f"{prefix}-emulator-report-path-missing")
+        return
+    if not Path(emulator_report).is_file():
+        failures.append(f"{prefix}-emulator-report-missing")
+        return
+    props = properties_for(emulator_report)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-emulator-report-status-not-passed")
+    if props.get("exit_code") != "0":
+        failures.append(f"{prefix}-emulator-report-exit-code-invalid")
+    if props.get("target") != "emulator":
+        failures.append(f"{prefix}-emulator-report-target-invalid")
+    if props.get("failedTarget", ""):
+        failures.append(f"{prefix}-emulator-report-failed-target-not-empty")
+    if props.get("reason", ""):
+        failures.append(f"{prefix}-emulator-report-reason-not-empty")
+    if props.get("clean_device") != "1":
+        failures.append(f"{prefix}-emulator-report-clean-device-not-true")
+    if props.get("serial") != regression_props.get("serial", ""):
+        failures.append(f"{prefix}-emulator-report-serial-mismatch")
+    if props.get("api_level") != str(expected_api_level):
+        failures.append(f"{prefix}-emulator-report-api-mismatch")
+    report_abis = {item.strip() for item in props.get("abi", "").split(",") if item.strip()}
+    if expected_abi not in report_abis:
+        failures.append(f"{prefix}-emulator-report-abi-mismatch")
+    if props.get("avd") != expected_avd:
+        failures.append(f"{prefix}-emulator-report-avd-mismatch")
+    if props.get("device_report_file") != regression_props.get("device_report_file", ""):
+        failures.append(f"{prefix}-emulator-report-device-report-mismatch")
+    if not non_empty_string(props.get("started_at_utc", "")):
+        failures.append(f"{prefix}-emulator-report-started-at-missing")
+    if not non_empty_string(props.get("finished_at_utc", "")):
+        failures.append(f"{prefix}-emulator-report-finished-at-missing")
+    validate_logcat_artifact(f"{prefix}-emulator-report", props.get("logcat_file", ""))
+    validate_crash_anr_smoke_report(
+        f"{prefix}-emulator-report",
+        props.get("crash_anr_smoke_report_file", ""),
+        expected_device_report=props.get("device_report_file", ""),
+        expected_instrumentation_output=regression_props.get("instrumentation_output_file", ""),
+        expected_logcat_file=props.get("logcat_file", ""),
+    )
+
 def validate_api_nested_emulator_report(api_level, regression_props):
     prefix = f"api-{api_level}-emulator-report"
     emulator_report = regression_props.get("emulator_report_file", "")
@@ -248,6 +374,14 @@ def validate_api_nested_emulator_report(api_level, regression_props):
         failures.append(f"{prefix}-started-at-missing")
     if not non_empty_string(props.get("finished_at_utc", "")):
         failures.append(f"{prefix}-finished-at-missing")
+    validate_logcat_artifact(prefix, props.get("logcat_file", ""))
+    validate_crash_anr_smoke_report(
+        prefix,
+        props.get("crash_anr_smoke_report_file", ""),
+        expected_device_report=props.get("device_report_file", ""),
+        expected_instrumentation_output=regression_props.get("instrumentation_output_file", ""),
+        expected_logcat_file=props.get("logcat_file", ""),
+    )
 
 def validate_api_nested_device_report(api_level, regression_props):
     prefix = f"api-{api_level}-device-report"
@@ -508,6 +642,13 @@ else:
     else:
         if actual_count < source_android_test_count:
             failures.append("emulator-report-test-count-too-low")
+    validate_nested_emulator_report(
+        "emulator-regression",
+        props,
+        emulator.get("apiLevel"),
+        emulator.get("avd"),
+        emulator.get("abi"),
+    )
 
 physical = record.get("physicalDevice")
 if not isinstance(physical, dict):
