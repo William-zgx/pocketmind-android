@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "policy": "Public release builds require VERIFY_PRIVACY_REVIEW=1 and approved release/security/legal records for the current privacy notice SHA.",
+  "noticePath": "docs/privacy_notice.md",
+  "noticeSha256": "aedd788c410cf23adc04eefc87417cd1128ce101188b2a95dfe6ea4e9d14340c",
+  "status": "pending_manual_review",
+  "reviews": [
+    {
+      "role": "release",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewDate": ""
+    },
+    {
+      "role": "security",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewDate": ""
+    },
+    {
+      "role": "legal",
+      "decision": "pending",
+      "reviewer": "",
+      "reviewDate": ""
+    }
+  ]
+}

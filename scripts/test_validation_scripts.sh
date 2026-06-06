@@ -261,6 +261,8 @@ grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include scan_android_artifacts.sh in shell syntax checks"
 grep -q 'scripts/verify_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_perf_baseline.sh in shell syntax checks"
+grep -q 'scripts/verify_privacy_review.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_privacy_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
 grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
@@ -329,6 +331,59 @@ expect_failure \
   scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-failed.properties" "$UNSAFE_PRIVACY_DIR"
 assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
 
+PRIVACY_NOTICE="$TMP_DIR/privacy-notice.md"
+PRIVACY_REVIEW_PENDING="$TMP_DIR/privacy-review-pending.json"
+PRIVACY_REVIEW_APPROVED="$TMP_DIR/privacy-review-approved.json"
+printf 'PocketMind privacy notice\n' > "$PRIVACY_NOTICE"
+PRIVACY_NOTICE_SHA="$(shasum -a 256 "$PRIVACY_NOTICE" | awk '{print $1}')"
+cat > "$PRIVACY_REVIEW_PENDING" <<'PRIVACY_REVIEW_PENDING_JSON'
+{
+  "version": 1,
+  "noticePath": "PLACEHOLDER",
+  "noticeSha256": "PLACEHOLDER",
+  "status": "pending_manual_review",
+  "reviews": []
+}
+PRIVACY_REVIEW_PENDING_JSON
+expect_failure \
+  "privacy review verifier rejects pending records" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_PENDING" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/privacy-review-pending.properties" "status=failed"
+cat > "$PRIVACY_REVIEW_APPROVED" <<PRIVACY_REVIEW_APPROVED_JSON
+{
+  "version": 1,
+  "noticePath": "$PRIVACY_NOTICE",
+  "noticeSha256": "$PRIVACY_NOTICE_SHA",
+  "status": "approved",
+  "reviews": [
+    {
+      "role": "release",
+      "decision": "approved",
+      "reviewer": "Release Reviewer",
+      "reviewDate": "2026-06-06"
+    },
+    {
+      "role": "security",
+      "decision": "approved",
+      "reviewer": "Security Reviewer",
+      "reviewDate": "2026-06-06"
+    },
+    {
+      "role": "legal",
+      "decision": "approved",
+      "reviewer": "Legal Reviewer",
+      "reviewDate": "2026-06-06"
+    }
+  ]
+}
+PRIVACY_REVIEW_APPROVED_JSON
+expect_success \
+  "privacy review verifier accepts approved current notice" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_APPROVED" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/privacy-review-approved.properties" "status=passed"
+
 SAFE_APK="$TMP_DIR/safe.apk"
 SAFE_AAB="$TMP_DIR/safe.aab"
 UNSAFE_APK="$TMP_DIR/unsafe.apk"
@@ -385,6 +440,41 @@ expect_success \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --report "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "allowDebugCertificate=1"
+
+VALID_GATE_PERF="$TMP_DIR/perf-baseline-safe-apk.properties"
+SAFE_APK_SHA="$(shasum -a 256 "$SAFE_APK" | awk '{print $1}')"
+cat > "$VALID_GATE_PERF" <<VALID_GATE_PERF_BASELINE
+status=passed
+deviceSerial=device-a
+deviceModel=Pixel Test
+androidApi=36
+abi=arm64-v8a
+appVersion=1.0
+releaseArtifactSha256=$SAFE_APK_SHA
+modelId=chat-e2b
+backend=GPU
+firstLaunchInteractiveMs=1200
+modelLoadMs=3500
+firstTokenMs=900
+tokensPerSecond=12.5
+stopGenerationRecoveryMs=200
+gpuFallbackStatus=not-needed
+visionInputMs=500
+memorySearch5kMs=25
+memoryPeakMb=512
+oomOrAnrObserved=false
+recordedAt=2026-06-06T00:00:00Z
+VALID_GATE_PERF_BASELINE
+expect_failure \
+  "release gate requires approved privacy review when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-privacy-review" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_PRIVACY_REVIEW=1 \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-privacy-review/privacy-review.properties" "status=failed"
 
 expect_failure \
   "release gate requires aab when public gate requests it" \

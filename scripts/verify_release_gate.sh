@@ -14,6 +14,7 @@ fi
 RELEASE_APK="${RELEASE_APK:-$DEFAULT_RELEASE_APK}"
 RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
+VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
@@ -28,6 +29,7 @@ write_gate_report() {
     printf 'target=release-gate\n'
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
+    printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
     printf 'requireSignedArtifact=%s\n' "$REQUIRE_SIGNED_ARTIFACT"
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
@@ -128,6 +130,19 @@ else
     printf 'target=model-license-review\n'
     printf 'reason=VERIFY_MODEL_LICENSES-not-enabled\n'
   } > "$ARTIFACT_DIR/model-license-review.properties"
+fi
+
+if [[ "$VERIFY_PRIVACY_REVIEW" == "1" ]]; then
+  if ! scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=privacy-review\n'
+    printf 'reason=VERIFY_PRIVACY_REVIEW-not-enabled\n'
+  } > "$ARTIFACT_DIR/privacy-review.properties"
 fi
 
 write_gate_report passed

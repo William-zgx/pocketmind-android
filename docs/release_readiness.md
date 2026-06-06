@@ -14,9 +14,10 @@ items below.
 - Manual release checklist added for store metadata, screenshots,
   privacy/license review, signing, test gates, and rollback planning.
 - Machine-readable release gates now cover capability matrix drift,
-  privacy scanning, APK/AAB artifact scanning, model license review records,
-  RC perf-baseline verification, artifact SHA matching, and optional public
-  release enforcement for signed artifacts plus AAB presence.
+  privacy scanning, privacy notice review records, APK/AAB artifact scanning,
+  model license review records, RC perf-baseline verification, artifact SHA
+  matching, and optional public release enforcement for signed artifacts plus
+  AAB presence.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -52,7 +53,9 @@ items below.
 ## Remaining
 
 - Review `docs/privacy_notice.md` with release, security, and legal owners
-  before publishing it as an external policy.
+  before publishing it as an external policy. Record approvals in
+  `docs/privacy_review.json`; `VERIFY_PRIVACY_REVIEW=1` verifies that all
+  required roles approved the current notice SHA.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in
@@ -77,5 +80,6 @@ items below.
   `docs/perf_baseline_template.properties`, then pass it to
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`.
 - For public distribution, run the release gate with
-  `VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1 REQUIRE_SIGNED_ARTIFACT=1` after
-  production signing and bundle generation are complete.
+  `VERIFY_PRIVACY_REVIEW=1 VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1
+  REQUIRE_SIGNED_ARTIFACT=1` after production signing and bundle generation are
+  complete.

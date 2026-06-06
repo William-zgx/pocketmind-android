@@ -6473,3 +6473,41 @@ scripts/regression_emulator.sh
 
 - 当前验证满足模拟器回归要求，但不替代 production signing、模型 license /
   redistribution 人工批准和正式发布隐私审查。
+
+## 2026-06-06 Privacy review release gate
+
+本轮覆盖项：
+
+- 新增 `docs/privacy_review.json`，记录 release/security/legal 三方对当前
+  `docs/privacy_notice.md` SHA 的 review 状态；当前状态为
+  `pending_manual_review`，用于阻塞 public RC。
+- 新增 `scripts/verify_privacy_review.sh`，校验 review 文件、notice 路径、notice
+  SHA、三方 reviewer、review date 与 approved decision。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_PRIVACY_REVIEW=1`，public gate
+  开启后会要求隐私 review 完成。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+
+ARTIFACT_DIR=build/verification/release-gate-privacy-negative \
+VERIFY_PRIVACY_REVIEW=1 \
+PERF_BASELINE_FILE=build/verification/release-gate-privacy-negative/perf-baseline.properties \
+VERIFY_MODEL_LICENSES=0 \
+VERIFY_CONTRACT_TESTS=0 \
+scripts/verify_release_gate.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 pending privacy review 失败、approved 当前 notice 成功。
+- 通过：release gate 集成负向验证；`VERIFY_PRIVACY_REVIEW=1` 时，当前 pending
+  `docs/privacy_review.json` 生成
+  `build/verification/release-gate-privacy-negative/privacy-review.properties`
+  `status=failed`。
+
+仍阻塞正式 RC：
+
+- 需要 release/security/legal owner 在 `docs/privacy_review.json` 中批准当前
+  privacy notice SHA。
