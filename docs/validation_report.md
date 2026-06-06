@@ -17,6 +17,39 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation API matrix evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在会校验每个 `apiMatrix`
+  evidence 文件本身，而不只相信 JSON 中的 `status=passed` 和 SHA。
+- API matrix evidence 必须是 nested per-API `regression-emulator.properties`：
+  `status=passed`、`target=regression-emulator`、`clean_device=1`、API level
+  匹配、`abi=arm64-v8a`、AVD 非空，且 `actual_android_test_count` 不低于
+  AndroidTest source count。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为完整
+  per-API regression report 形态，并新增弱证据负例：只有 `status=passed` /
+  `api_level=28` 的文件必须被拒绝。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check` 和 validation script self-tests。
+- 预期失败：当前 release validation record 仍未 approved；API 36 evidence
+  已是完整 nested regression report，失败原因仍集中在未完成的真机、API 28/32/33/34、
+  manual acceptance、flow matrix、performance sanity 和 reviewer/date 项。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档，
+  不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation API36 evidence refresh after image boundary
 
 本轮覆盖项：

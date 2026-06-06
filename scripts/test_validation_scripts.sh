@@ -1017,7 +1017,15 @@ for screenshot_name in chat-home model-manager confirmation-sheet background-tas
 done
 mkdir -p "$TMP_DIR/validation-api-evidence"
 for api_level in 28 32 33 34 36; do
-  printf 'status=passed\napi_level=%s\n' "$api_level" > "$TMP_DIR/validation-api-evidence/api-$api_level.properties"
+  cat > "$TMP_DIR/validation-api-evidence/api-$api_level.properties" <<VALIDATION_API_EVIDENCE_PROPERTIES
+status=passed
+target=regression-emulator
+clean_device=1
+actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+api_level=$api_level
+abi=arm64-v8a
+avd=api${api_level}-avd
+VALIDATION_API_EVIDENCE_PROPERTIES
 done
 mkdir -p "$TMP_DIR/validation-manual-evidence" "$TMP_DIR/validation-flow-evidence" "$TMP_DIR/validation-performance-evidence"
 for manual_key in \
@@ -1253,6 +1261,31 @@ expect_failure \
   "release validation verifier rejects api evidence sha mismatch" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_API_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-api-bad-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-bad-sha.properties" "api-28-evidence-sha-mismatch"
+VALIDATION_API_WEAK_EVIDENCE="$TMP_DIR/release-validation-api-weak-evidence.json"
+VALIDATION_API_WEAK_EVIDENCE_FILE="$TMP_DIR/validation-api-evidence/weak-api-28.properties"
+cat > "$VALIDATION_API_WEAK_EVIDENCE_FILE" <<'VALIDATION_API_WEAK_EVIDENCE_PROPERTIES'
+status=passed
+api_level=28
+VALIDATION_API_WEAK_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_API_WEAK_EVIDENCE" "$VALIDATION_API_WEAK_EVIDENCE_FILE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["apiMatrix"][0]["evidencePath"] = str(evidence)
+record["apiMatrix"][0]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak api matrix evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_WEAK_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties" "api-28-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties" "api-28-evidence-test-count-invalid"
 VALIDATION_MANUAL_BAD_SHA="$TMP_DIR/release-validation-manual-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_MANUAL_BAD_SHA" <<'PY'
 import json

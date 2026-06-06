@@ -217,6 +217,9 @@ release ticket or PR.
   `scripts/regression_emulator_api_matrix.sh` passes for API 28/32/33/34/36.
   Attach the top-level `regression-emulator-api-matrix.properties` plus each
   nested API `regression-emulator.properties` report and matching SHA-256.
+  Each nested report must have `status=passed`, `target=regression-emulator`,
+  `clean_device=1`, matching API level, `abi=arm64-v8a`, a non-empty AVD name,
+  and an `actual_android_test_count` that covers the AndroidTest source count.
 - [ ] `scripts/install_and_test_device.sh` passes on at least one physical
   arm64 device before a broad release candidate.
 - [ ] Validation record includes device serial or AVD name, API level, ABI,
@@ -251,8 +254,9 @@ release ticket or PR.
   permission behavior, API 33 media/notification permissions, API 34 selected
   visual media access, API 36 target behavior, and one physical arm64 device
   with realistic LiteRT-LM CPU/GPU fallback. Each API matrix row must include
-  an evidence file path that exists in the RC validation artifact bundle and a
-  matching `evidenceSha256`.
+  a nested per-API regression evidence file path that exists in the RC
+  validation artifact bundle and a matching `evidenceSha256`; lightweight
+  status-only evidence files are not accepted.
 - [ ] Matrix covers first install, upgrade install, local model download and
   verification, custom model import or custom URL rejection path, remote model
   HTTPS configuration, encrypted API key clear, session persistence, memory

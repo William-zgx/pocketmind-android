@@ -142,6 +142,29 @@ def validate_evidence_record(section, key, value):
         failures.append(f"{prefix}-owner-missing")
     validate_date_field(value.get("date", ""), prefix)
 
+def validate_api_matrix_evidence(api_level, evidence_path):
+    prefix = f"api-{api_level}-evidence"
+    props = properties_for(evidence_path)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-status-not-passed")
+    if props.get("target") != "regression-emulator":
+        failures.append(f"{prefix}-target-invalid")
+    if props.get("clean_device") != "1":
+        failures.append(f"{prefix}-clean-device-not-true")
+    if props.get("api_level") != str(api_level):
+        failures.append(f"{prefix}-api-mismatch")
+    if props.get("abi") != "arm64-v8a":
+        failures.append(f"{prefix}-abi-mismatch")
+    if not non_empty_string(props.get("avd", "")):
+        failures.append(f"{prefix}-avd-missing")
+    try:
+        actual_count = int(props.get("actual_android_test_count", ""))
+    except ValueError:
+        failures.append(f"{prefix}-test-count-invalid")
+    else:
+        if actual_count < source_android_test_count:
+            failures.append(f"{prefix}-test-count-too-low")
+
 def count_android_tests():
     count = 0
     if not android_test_source_dir.is_dir():
@@ -268,6 +291,7 @@ for entry in api_matrix:
         failures.append(f"api-{api_level}-evidence-file-missing")
     else:
         validate_file_sha(f"api-{api_level}-evidence", evidence_path, entry.get("evidenceSha256", ""))
+        validate_api_matrix_evidence(api_level, evidence_path)
 for missing in sorted(required_apis - seen_apis):
     failures.append(f"api-{missing}-missing")
 
