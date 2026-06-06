@@ -277,10 +277,12 @@ release ticket or PR.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.
-- [ ] `scripts/live_remote_emulator.sh` reports `failedTarget` and `reason`
-  for missing configuration, emulator selection, install/configuration,
-  remote request, and expected-response failures, and links screenshot,
-  UI dump, and logcat evidence paths without persisting API keys.
+- [ ] `scripts/live_remote_emulator.sh` defaults to emulator validation and only
+  accepts a physical serial when `POCKETMIND_LIVE_REMOTE_TARGET=device` is set.
+  It reports `failedTarget` and `reason` for missing configuration,
+  emulator/device selection, install/configuration, remote request, and
+  expected-response failures, and links screenshot, UI dump, and logcat
+  evidence paths without persisting API keys.
 - [ ] Matrix covers at least: API 28 minimum behavior, API 32 legacy storage
   permission behavior, API 33 media/notification permissions, API 34 selected
   visual media access, API 36 target behavior, and one physical arm64 device

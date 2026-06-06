@@ -23,6 +23,43 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-06 Physical install and live remote device validation
+
+本轮覆盖项：
+
+- 在真实设备 `fb6272c` 上重新安装当前 debug APK 和 androidTest APK，并完整跑
+  `MainActivitySmokeTest` 4 条发布 smoke。
+- `scripts/live_remote_emulator.sh` 保持默认只选 emulator；新增显式
+  `POCKETMIND_LIVE_REMOTE_TARGET=device` 后才允许选择真机 serial。
+- live remote 输入坐标改为读取设备屏幕尺寸后按比例计算，覆盖 1200x2670 真机；
+  成功路径也保存 screenshot、UI dump 和 logcat evidence。
+- 使用用户提供的远程模型配置做真机 live remote 验证；API key 只通过静默 stdin/env
+  注入，报告和 artifact 不记录实际密钥。
+
+验证命令：
+
+```bash
+ANDROID_SERIAL=fb6272c CLEAN_DEVICE=0 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest INSTRUMENTATION_TIMEOUT_SECONDS=600 ARTIFACT_DIR=build/verification/physical-device-install-retry-wide-timeout VERIFICATION_REPORT_FILE=build/verification/physical-device-install-retry-wide-timeout/device-verification.properties INSTRUMENTATION_OUTPUT_FILE=build/verification/physical-device-install-retry-wide-timeout/instrumentation.txt scripts/install_and_test_device.sh
+bash -n scripts/live_remote_emulator.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+POCKETMIND_LIVE_REMOTE_TARGET=device ANDROID_SERIAL=fb6272c POCKETMIND_LIVE_REMOTE_BASE_URL=<redacted> POCKETMIND_LIVE_REMOTE_MODEL=<redacted> POCKETMIND_LIVE_REMOTE_API_KEY=<provided-secret> POCKETMIND_LIVE_REMOTE_PROMPT="Return POCKETMIND_LIVE_OK" POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT=POCKETMIND_LIVE_OK POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=60 ARTIFACT_DIR=build/verification/live-remote-device-deepseek-final REPORT_FILE=build/verification/live-remote-device-deepseek-final/live-remote-device.properties scripts/live_remote_emulator.sh
+```
+
+结果：
+
+- 通过：真机 `fb6272c` 安装成功，`MainActivitySmokeTest` 4 条通过，
+  `build/verification/physical-device-install-retry-wide-timeout/device-verification.properties`
+  记录 `status=passed`、`target=device`、`api_level=36`、`abi=arm64-v8a`、
+  `instrumentation=passed`、`instrumentation_test_count=4`，SHA-256
+  `bb50a6deb34bede4681deb9e93437546fd197a239c0b7bf59089e8911b1a18b7`。
+- 通过：live remote 真机验证返回 `POCKETMIND_LIVE_OK`，报告
+  `build/verification/live-remote-device-deepseek-final/live-remote-device.properties`
+  记录 `status=passed`、`target=live-remote-device`、`device_target=device`、
+  `serial=fb6272c`，并链接 screenshot、UI dump 和 logcat，SHA-256
+  `29845bd67c9b3e1eef3134cf1840944e6cbad4750af45d7faa6e7c1434ac20cc`。
+- 通过：live remote 报告只记录 `base_url=<redacted>`、`model=<redacted>` 和
+  `api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY`；实际 API key 未落盘。
+
 ## 2026-06-06 Physical smoke scope narrowing
 
 本轮覆盖项：

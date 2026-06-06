@@ -159,14 +159,17 @@ AVD_NAME=focus_agent_api36_arm64 scripts/regression_emulator.sh
 
 ### Live remote model check
 
-真实远程模型检查使用 debug APK 和 `scripts/live_remote_emulator.sh`。脚本不内置任何
+真实远程模型检查使用 debug APK 和 `scripts/live_remote_emulator.sh`。脚本默认只选择
+emulator；需要在真机上验证时必须显式设置
+`POCKETMIND_LIVE_REMOTE_TARGET=device ANDROID_SERIAL=<serial>`。脚本不内置任何
 provider endpoint、model 或 key；必须通过 `POCKETMIND_LIVE_REMOTE_BASE_URL`、
-`POCKETMIND_LIVE_REMOTE_MODEL` 和 `POCKETMIND_LIVE_REMOTE_API_KEY` 显式传入配置。
-脚本会通过 debug-only ADB receiver 写入远程配置，发送一个固定提示，保存截图、
-UI dump 和 `live-remote-emulator.properties`，报告只记录 base URL、model 和密钥的
-来源变量名，不记录实际 endpoint、model 或密钥值。脚本退出时会通过 debug receiver
-清空模拟器内保存的远程配置。默认提示不包含预期 token，验收通过必须来自远程助手
-回复中的 `POCKETMIND_LIVE_OK`。
+`POCKETMIND_LIVE_REMOTE_MODEL` 和 `POCKETMIND_LIVE_REMOTE_API_KEY` 显式传入配置，
+密钥应从临时环境或静默 stdin 注入。脚本会通过 debug-only ADB receiver 写入远程配置，
+发送一个固定提示，保存截图、UI dump、短 logcat 和
+`live-remote-<target>.properties`；报告只记录 base URL、model 和密钥的来源变量名，
+不记录实际 endpoint、model 或密钥值。脚本退出时会通过 debug receiver 清空设备内保存的
+远程配置。默认提示不包含预期 token，验收通过必须来自远程助手回复中的
+`POCKETMIND_LIVE_OK`。
 
 ## 必须手工验收的系统入口
 

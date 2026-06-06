@@ -9,8 +9,9 @@ export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK}"
 export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_SDK}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 ADB_BIN="${ANDROID_SDK}/platform-tools/adb"
-ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/live-remote-emulator-$(date +%Y%m%d-%H%M%S)}"
-REPORT_FILE="${REPORT_FILE:-${ARTIFACT_DIR}/live-remote-emulator.properties}"
+LIVE_REMOTE_TARGET="${POCKETMIND_LIVE_REMOTE_TARGET:-emulator}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/live-remote-${LIVE_REMOTE_TARGET}-$(date +%Y%m%d-%H%M%S)}"
+REPORT_FILE="${REPORT_FILE:-${ARTIFACT_DIR}/live-remote-${LIVE_REMOTE_TARGET}.properties}"
 SCREENSHOT_FILE="${ARTIFACT_DIR}/live-remote-result.png"
 UI_DUMP_FILE="${ARTIFACT_DIR}/live-remote-result.xml"
 LOGCAT_FILE="${ARTIFACT_DIR}/live-remote-logcat.txt"
@@ -40,7 +41,8 @@ write_report() {
   {
     echo "status=$status"
     echo "exit_code=$exit_code"
-    echo "target=live-remote-emulator"
+    echo "target=live-remote-$LIVE_REMOTE_TARGET"
+    echo "device_target=$LIVE_REMOTE_TARGET"
     echo "failedTarget=${FAILED_TARGET:-}"
     echo "reason=${FAILURE_REASON:-}"
     echo "started_at_utc=$STARTED_AT_UTC"
@@ -58,7 +60,7 @@ write_report() {
     echo "ui_dump=$UI_DUMP_FILE"
     echo "logcat_file=$LOGCAT_FILE"
   } > "$REPORT_FILE"
-  echo "Live remote emulator report: $REPORT_FILE"
+  echo "Live remote $LIVE_REMOTE_TARGET report: $REPORT_FILE"
 }
 
 fail() {
@@ -83,24 +85,44 @@ clear_remote_config() {
   debug_receiver_broadcast --ez clearRemoteConfig true >/dev/null 2>&1 || true
 }
 
-select_emulator() {
+select_device() {
+  case "$LIVE_REMOTE_TARGET" in
+    emulator|device)
+      ;;
+    *)
+      fail target invalid-target "POCKETMIND_LIVE_REMOTE_TARGET must be emulator or device."
+      ;;
+  esac
+
   if [[ -n "${ANDROID_SERIAL:-}" ]]; then
-    [[ "$ANDROID_SERIAL" == emulator-* ]] ||
+    if [[ "$LIVE_REMOTE_TARGET" == "emulator" && "$ANDROID_SERIAL" != emulator-* ]]; then
       fail emulator-selection android-serial-not-emulator "ANDROID_SERIAL=$ANDROID_SERIAL is not an emulator serial."
+    fi
+    if [[ "$LIVE_REMOTE_TARGET" == "device" && "$ANDROID_SERIAL" == emulator-* ]]; then
+      fail device-selection android-serial-is-emulator "ANDROID_SERIAL=$ANDROID_SERIAL is not a physical device serial."
+    fi
     local state
     state="$("$ADB_BIN" devices | awk -v serial="$ANDROID_SERIAL" '$1 == serial {print $2; found = 1} END {if (!found) print ""}')"
     [[ "$state" == "device" ]] ||
-      fail emulator-selection selected-emulator-unavailable "ANDROID_SERIAL=$ANDROID_SERIAL is not an authorized emulator; state is ${state:-missing}."
+      fail "$LIVE_REMOTE_TARGET-selection" "selected-$LIVE_REMOTE_TARGET-unavailable" \
+        "ANDROID_SERIAL=$ANDROID_SERIAL is not an authorized $LIVE_REMOTE_TARGET; state is ${state:-missing}."
     SELECTED_SERIAL="$ANDROID_SERIAL"
     return
   fi
 
   local serials=()
-  while IFS= read -r serial; do
-    [[ -n "$serial" ]] && serials+=("$serial")
-  done < <("$ADB_BIN" devices | awk 'NR > 1 && $1 ~ /^emulator-[0-9]+$/ && $2 == "device" {print $1}')
+  if [[ "$LIVE_REMOTE_TARGET" == "emulator" ]]; then
+    while IFS= read -r serial; do
+      [[ -n "$serial" ]] && serials+=("$serial")
+    done < <("$ADB_BIN" devices | awk 'NR > 1 && $1 ~ /^emulator-[0-9]+$/ && $2 == "device" {print $1}')
+  else
+    while IFS= read -r serial; do
+      [[ -n "$serial" ]] && serials+=("$serial")
+    done < <("$ADB_BIN" devices | awk 'NR > 1 && $1 !~ /^emulator-[0-9]+$/ && $2 == "device" {print $1}')
+  fi
   [[ "${#serials[@]}" -eq 1 ]] ||
-    fail emulator-selection no-single-authorized-emulator "Start exactly one authorized emulator or set ANDROID_SERIAL."
+    fail "$LIVE_REMOTE_TARGET-selection" "no-single-authorized-$LIVE_REMOTE_TARGET" \
+      "Connect exactly one authorized $LIVE_REMOTE_TARGET or set ANDROID_SERIAL."
   SELECTED_SERIAL="${serials[0]}"
 }
 
@@ -114,6 +136,17 @@ capture_failure_evidence() {
   "$ADB_BIN" -s "$SELECTED_SERIAL" shell uiautomator dump /sdcard/pocketmind-live-remote.xml >/dev/null 2>&1 || true
   "$ADB_BIN" -s "$SELECTED_SERIAL" pull /sdcard/pocketmind-live-remote.xml "$UI_DUMP_FILE" >/dev/null 2>&1 || true
   "$ADB_BIN" -s "$SELECTED_SERIAL" logcat -d -t 300 > "$LOGCAT_FILE" 2>/dev/null || true
+}
+
+read_screen_size() {
+  local raw size
+  raw="$("${ADB[@]}" shell wm size 2>/dev/null | tr -d '\r' || true)"
+  size="$(sed -nE 's/.*: ([0-9]+)x([0-9]+).*/\1 \2/p' <<<"$raw" | tail -n 1)"
+  if [[ -n "$size" ]]; then
+    printf '%s\n' "$size"
+  else
+    printf '1080 2400\n'
+  fi
 }
 
 trap 'status=$?; capture_failure_evidence "$status"; clear_remote_config; write_report "$status"; exit "$status"' EXIT
@@ -130,11 +163,11 @@ MODEL_SOURCE="POCKETMIND_LIVE_REMOTE_MODEL"
 API_KEY_SOURCE="POCKETMIND_LIVE_REMOTE_API_KEY"
 
 if ! scripts/doctor.sh --device; then
-  fail doctor doctor-device-failed "Android emulator environment check failed."
+  fail doctor doctor-device-failed "Android $LIVE_REMOTE_TARGET environment check failed."
 fi
-select_emulator
+select_device
 ADB=("$ADB_BIN" -s "$SELECTED_SERIAL")
-echo "Using Android emulator: $SELECTED_SERIAL"
+echo "Using Android $LIVE_REMOTE_TARGET: $SELECTED_SERIAL"
 mkdir -p "$ARTIFACT_DIR"
 
 if ! "$GRADLE_CMD" :app:assembleDebug; then
@@ -157,7 +190,12 @@ if ! "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null; then
   fail app-launch app-launch-failed "MainActivity launch failed."
 fi
 sleep 2
-if ! "${ADB[@]}" shell input tap 320 2225; then
+read -r screen_width screen_height <<<"$(read_screen_size)"
+prompt_tap_x="${POCKETMIND_LIVE_REMOTE_PROMPT_TAP_X:-$((screen_width * 32 / 100))}"
+prompt_tap_y="${POCKETMIND_LIVE_REMOTE_PROMPT_TAP_Y:-$((screen_height - 150))}"
+send_tap_x="${POCKETMIND_LIVE_REMOTE_SEND_TAP_X:-$((screen_width - 120))}"
+send_tap_y="${POCKETMIND_LIVE_REMOTE_SEND_TAP_Y:-$((screen_height - 150))}"
+if ! "${ADB[@]}" shell input tap "$prompt_tap_x" "$prompt_tap_y"; then
   fail ui-input prompt-field-tap-failed "Prompt field tap failed."
 fi
 encoded_prompt="${LIVE_REMOTE_PROMPT// /%s}"
@@ -169,7 +207,7 @@ if ! "${ADB[@]}" shell input keyevent 4; then
   fail ui-input keyboard-dismiss-failed "Keyboard dismiss failed."
 fi
 sleep 0.8
-if ! "${ADB[@]}" shell input tap 980 2245; then
+if ! "${ADB[@]}" shell input tap "$send_tap_x" "$send_tap_y"; then
   fail ui-input send-button-tap-failed "Send button tap failed."
 fi
 sleep "${POCKETMIND_LIVE_REMOTE_WAIT_SECONDS:-45}"
@@ -183,6 +221,9 @@ fi
 if ! "${ADB[@]}" pull /sdcard/pocketmind-live-remote.xml "$UI_DUMP_FILE" >/dev/null; then
   fail evidence ui-dump-pull-failed "Live remote UI dump pull failed."
 fi
+if ! "${ADB[@]}" logcat -d -t 300 > "$LOGCAT_FILE"; then
+  fail evidence logcat-capture-failed "Live remote logcat capture failed."
+fi
 
 if grep -Fq "远程模型请求失败" "$UI_DUMP_FILE"; then
   fail remote-request remote-request-failed "Live remote request failed; inspect $UI_DUMP_FILE."
@@ -192,4 +233,4 @@ grep -Fq -- "$LIVE_REMOTE_EXPECTED_TEXT" "$UI_DUMP_FILE" ||
   fail expected-response expected-text-not-found "Expected live remote response evidence in UI dump; inspect $UI_DUMP_FILE."
 
 set +x
-echo "Live remote emulator validation passed."
+echo "Live remote $LIVE_REMOTE_TARGET validation passed."

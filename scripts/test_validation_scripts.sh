@@ -86,6 +86,9 @@ case "${1:-}" in
       "getprop sys.boot_completed")
         echo "1"
         ;;
+      "wm size")
+        echo "Physical size: ${FAKE_WM_SIZE:-1080x2400}"
+        ;;
       "df -k /data")
         printf 'Filesystem 1K-blocks Used Available Use%% Mounted on\n'
         printf '/dev/block 5000000 1000 %s 1%% /data\n' "${FAKE_DATA_FREE_KB:-4000000}"
@@ -3168,6 +3171,8 @@ expect_failure \
   scripts/live_remote_emulator.sh
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "target=live-remote-emulator"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "device_target=emulator"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget=configuration"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason=missing-base-url"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
@@ -3188,6 +3193,43 @@ assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget=emulator-selection"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason=android-serial-not-emulator"
+
+reset_logs
+expect_success \
+  "live remote helper allows explicit physical target" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" GRADLE_CMD="$FAKE_GRADLE" \
+  POCKETMIND_LIVE_REMOTE_TARGET=device \
+  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
+  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  scripts/live_remote_emulator.sh
+grep -q -- "-s device-a install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to install the debug APK on the selected device"
+grep -q -- "-s device-a shell wm size" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to read the device screen size"
+grep -q -- "-s device-a shell input tap 345 2250" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to tap the prompt field using screen-relative coordinates"
+grep -q -- "-s device-a shell input tap 960 2250" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to tap the send button using screen-relative coordinates"
+receiver_broadcast_count="$(
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+)"
+[[ "$receiver_broadcast_count" -ge 2 ]] ||
+  fail "Expected explicit physical live remote helper to configure and clear the debug receiver"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "target=live-remote-device"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "device_target=device"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "serial=device-a"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "base_url=<redacted>"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "model=<redacted>"
+[[ -s "$ARTIFACT_DIR/live-remote-logcat.txt" ]] ||
+  fail "Expected physical live remote success logcat evidence"
+if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-device.properties"; then
+  fail "Physical live remote report must not persist the remote API key"
+fi
 
 reset_logs
 expect_success \
@@ -3216,6 +3258,8 @@ grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
 grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to pin debug receiver broadcasts to user 0"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "target=live-remote-emulator"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "device_target=emulator"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget="
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
@@ -3224,6 +3268,8 @@ assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "evidence
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "ui_dump=$ARTIFACT_DIR/live-remote-result.xml"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "logcat_file=$ARTIFACT_DIR/live-remote-logcat.txt"
+[[ -s "$ARTIFACT_DIR/live-remote-logcat.txt" ]] ||
+  fail "Expected live remote success logcat evidence"
 if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.properties"; then
   fail "Live remote report must not persist the remote API key"
 fi
