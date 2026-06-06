@@ -23,6 +23,91 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 No-model main shell entry polish
+
+本轮覆盖项：
+
+- 无本地/远程模型时，首屏从“接入默认页”观感收敛为主界面：主标题改为
+  “开始和 PocketMind 对话”，先展示离线问答、显式记忆、图片/文件和确认动作。
+- 模型接入降级为紧凑的“模型未就绪”状态条；首屏移除模型选择 chip，模型切换仍保留在模型管理页。
+- 首页按钮文案保持单行：配置远程模型、下载模型、导入模型、模型管理。
+- Targeted smoke 固定 `home_capability_pills` 与 `model_startup_banner`，避免回退到大接入面板。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:compileDebugKotlin \
+  :app:compileDebugAndroidTestKotlin :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest' \
+  --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest'
+ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 \
+  ARTIFACT_DIR=build/verification/main-shell-entry-final \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#quickRemoteConfigEntryOpensRemoteModelForm,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#privacyButtonOpensAppPrivacyNotice' \
+  scripts/verify_emulator.sh
+ANDROID_SERIAL=emulator-5554 \
+  ARTIFACT_DIR=build/verification/main-shell-entry-fresh-start-final \
+  MAIN_COPY_TEXT='开始和 PocketMind 对话' \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell pm clear com.bytedance.zgx.pocketmind
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am force-stop com.bytedance.zgx.pocketmind.test
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am force-stop com.bytedance.zgx.pocketmind
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 uninstall com.bytedance.zgx.pocketmind.test
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell pm clear com.bytedance.zgx.pocketmind
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 exec-out uiautomator dump /dev/tty \
+  > build/verification/current-main-shell-after-wording/current.xml
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 exec-out screencap -p \
+  > build/verification/current-main-shell-after-wording/current.png
+```
+
+结果：
+
+- 通过：debug Kotlin、androidTest Kotlin 编译和 targeted JVM tests。
+- 通过：API 36 arm64 targeted smoke，
+  `build/verification/main-shell-entry-final/device-verification.properties`
+  包含 `status=passed`、`instrumentation_test_count=3`。
+- 通过：API 36 arm64 fresh-start，
+  `build/verification/main-shell-entry-fresh-start-final/fresh-start-main-shell.properties`
+  包含 `status=passed`、`first_run_setup_visible=false`、`main_shell_copy_visible=true`。
+- 通过：当前模拟器已安装并停在新首页；UI dump 显示“开始和 PocketMind 对话”、
+  “没有模型时只展示启动选项”、“模型未就绪”、“配置远程模型，立即试用”、
+  “下载模型”、“导入模型”和“模型管理”。截图保存于
+  `build/verification/current-main-shell-after-wording/current.png`。
+- 说明：targeted smoke 后模拟器上曾残留 `com.bytedance.zgx.pocketmind.test` instrumentation，
+  导致 `uiautomator dump` 报 UiAutomation already registered，并短暂显示空白测试窗口；force-stop
+  并卸载 test APK 后，正式 App 进程表只剩 `com.bytedance.zgx.pocketmind`，当前首页恢复正常。
+
+## 2026-06-07 Calendar local planning and skill smoke stability
+
+本轮覆盖项：
+
+- Safety policy 不再把 ISO 日期/时间窗口误判为手机号，避免“查忙闲 2026-06-01T09:00:00Z
+  到 2026-06-01T10:00:00Z”被远程/本地边界拦错。
+- 远程模式下，日历忙闲先走远程发送确认；确认后仍在本地生成日历权限动作草稿，不调用远程模型。
+- Runtime permission UI 增加日历忙闲确认卡验证：展示日历权限说明，不展示 special access。
+- Skill UI smoke 以 ready remote config 启动并等待可用输入框，降低被无模型首屏状态干扰的概率。
+- GitHub emulator regression workflow 扩展到 PR/push，防止只在手动/定时任务中发现模拟器回归。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.safety.SafetyPolicyTest' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModePlansCalendarAvailabilityLocallyAfterSendDisclosure' \
+  --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 \
+  ARTIFACT_DIR=build/verification/calendar-skill-runtime-final \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest#calendarAvailabilityConfirmationShowsRuntimePermissionRequirementWithoutSpecialAccess,com.bytedance.zgx.pocketmind.MainActivitySkillUiTest' \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM tests，覆盖 ISO 时间窗口安全策略、远程模式日历本地规划和首屏文案合同。
+- 通过：API 36 arm64 targeted emulator，
+  `build/verification/calendar-skill-runtime-final/device-verification.properties`
+  包含 `status=passed`、`instrumentation_test_count=5`，覆盖 4 个 skill UI 用例和 1 个日历权限 UI 用例。
+
 ## 2026-06-07 Start path and sensitive capability disclosure contract
 
 本轮覆盖项：

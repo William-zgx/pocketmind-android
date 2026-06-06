@@ -47,6 +47,28 @@ class MainActivityRuntimePermissionUiTest {
     }
 
     @Test
+    fun calendarAvailabilityConfirmationShowsRuntimePermissionRequirementWithoutSpecialAccess() {
+        launchReadyRemoteActivity().use {
+            composeRule.waitForTag("app_title")
+
+            composeRule.sendPrompt("查忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z")
+
+            composeRule.waitForTag("runtime_permission_requirements", timeoutMillis = 10_000)
+            composeRule.onNodeWithText("查询日历忙闲").assertIsDisplayed()
+            composeRule.onNodeWithTag("runtime_permission_requirements")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后可能请求系统权限")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("日历权限：用于只读查询忙闲时间段，不读取标题、地点或参与人。")
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("special_access_requirements")
+
+            composeRule.onNodeWithTag("action_dismiss_button").performClick()
+            composeRule.waitForTagGone("runtime_permission_requirements")
+        }
+    }
+
+    @Test
     fun recentScreenshotOcrConfirmationShowsImageReadRationaleAndCancelsCleanly() {
         launchReadyRemoteActivity().use {
             composeRule.waitForTag("app_title")

@@ -35,8 +35,10 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("app_title")
 
         composeRule.onNodeWithTag("app_title").assertIsDisplayed()
-        composeRule.waitForText("隐私优先的随身 AI 助手")
-        composeRule.waitForText("本地模型让基础问答离线可用；远程多模态是可选入口；远程发送和设备动作都会先让你确认。")
+        composeRule.waitForText("开始和 PocketMind 对话")
+        composeRule.waitForText("模型未就绪")
+        composeRule.onNodeWithTag("home_capability_pills").assertIsDisplayed()
+        composeRule.onNodeWithTag("model_startup_banner").assertIsDisplayed()
         composeRule.onNodeWithTag("top_model_button").assertIsDisplayed()
         composeRule.onNodeWithTag("top_session_button").assertIsDisplayed()
         composeRule.onNodeWithTag("composer_attachment_button").assertIsDisplayed()

@@ -182,6 +182,63 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModePlansCalendarAvailabilityLocallyAfterSendDisclosure() = runTest(dispatcher) {
+        val traceStore = InMemoryAgentTraceStore()
+        val orchestrator = AssistantOrchestrator(
+            memoryIndex = MemoryRepository(),
+            actionPlanningRuntime = RecordingActionRuntime(likelyAction = false),
+            traceStore = traceStore,
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = orchestrator,
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("查忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z")
+        advanceUntilIdle()
+
+        val disclosureState = viewModel.uiState.value
+        assertTrue(
+            "Expected remote send disclosure before local calendar planning, " +
+                "status=${disclosureState.statusText}, " +
+                "isReady=${disclosureState.isReady}, " +
+                "pendingAction=${disclosureState.pendingConfirmation?.draft?.functionName}, " +
+                "remoteCalls=${remoteRuntime.calls.size}",
+            disclosureState.pendingRemoteSendDisclosure != null,
+        )
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals("远程发送待确认", disclosureState.statusText)
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        val confirmedState = viewModel.uiState.value
+        val confirmation = requireNotNull(confirmedState.pendingConfirmation)
+        assertEquals(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY, confirmation.draft.functionName)
+        assertEquals(
+            MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
+            confirmation.toolRequest?.toolName,
+        )
+        assertEquals(
+            listOf(Manifest.permission.READ_CALENDAR),
+            confirmation.runtimePermissionRequirementsFor().flatMap { it.permissions },
+        )
+        assertEquals("动作草稿待确认 · 规则回退", confirmedState.statusText)
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(
+            AgentRunState.AwaitingUserConfirmation,
+            orchestrator.recentTraceRuns(limit = 1).single().run.state,
+        )
+    }
+
+    @Test
     fun remoteSendDisclosureCancelKeepsRuntimeIdle() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val viewModel = createViewModel(

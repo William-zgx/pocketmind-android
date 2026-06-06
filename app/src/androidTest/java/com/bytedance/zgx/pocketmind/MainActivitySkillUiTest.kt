@@ -1,6 +1,7 @@
 package com.bytedance.zgx.pocketmind
 
 import android.content.Context
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
@@ -38,7 +39,12 @@ class MainActivitySkillUiTest {
     @get:Rule
     val composeRule: AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity> =
         createAndroidComposeTestRule(
-            ActivityScenarioRule(mainActivitySkipStartupIntent(targetContext)),
+            ActivityScenarioRule(
+                mainActivitySkipStartupIntent(
+                    context = targetContext,
+                    debugRemoteModelConfig = ReadyRemoteModelConfig,
+                ),
+            ),
         ) { rule -> activityFromScenarioRule(rule) }
 
     @Test
@@ -119,14 +125,22 @@ class MainActivitySkillUiTest {
     }
 
     private fun ComposeTestRule.sendPrompt(prompt: String) {
+        waitForReadyComposer()
         onNodeWithTag("composer_input").performTextClearance()
         onNodeWithTag("composer_input").performTextInput(prompt)
         onNodeWithTag("composer_send_button").performClick()
         confirmRemoteSendIfPresent()
     }
 
+    private fun ComposeTestRule.waitForReadyComposer(timeoutMillis: Long = 10_000) {
+        waitUntil(timeoutMillis = timeoutMillis) {
+            onAllNodesWithText("输入问题").fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithTag("composer_input").assertIsEnabled()
+    }
+
     private fun ComposeTestRule.confirmRemoteSendIfPresent() {
-        val needsConfirmation = waitForOptionalTag("remote_send_disclosure_sheet", timeoutMillis = 1_500)
+        val needsConfirmation = waitForOptionalTag("remote_send_disclosure_sheet", timeoutMillis = 5_000)
         if (!needsConfirmation) return
         onNodeWithTag("remote_send_confirm_button").performClick()
         waitForTagGone("remote_send_disclosure_sheet")

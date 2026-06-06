@@ -9,6 +9,7 @@ import com.bytedance.zgx.pocketmind.tool.ToolRequest
 import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.ToolSpec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -219,6 +220,20 @@ class SafetyPolicyTest {
         assertTrue(policy.containsSensitivePersonalOrSecretContent("Slack token xoxb-123456789012-abcdefabcdef"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("-----BEGIN PRIVATE KEY-----"))
         assertTrue(policy.containsSensitivePersonalOrSecretContent("client_secret = superSecret123"))
+    }
+
+    @Test
+    fun isoToolTimeWindowsAreNotTreatedAsPhoneNumbersByOutboundGate() {
+        assertFalse(
+            policy.containsSensitivePersonalOrSecretContent(
+                "查忙闲 2026-06-01T09:00:00Z 到 2026-06-01T10:00:00Z",
+            ),
+        )
+        assertFalse(
+            policy.containsSensitivePersonalOrSecretContent(
+                "calendar availability 2026-06-01T09:00:00Z to 2026-06-01T10:00:00Z",
+            ),
+        )
     }
 
     private fun toolSpec(

@@ -285,7 +285,6 @@ fun PocketMindScreen(
                             onPickModel = { pickModel.launch(arrayOf("*/*")) },
                             onDownloadModel = onDownloadModel,
                             onCancelDownload = onCancelDownload,
-                            onRecommendedModelSelected = onRecommendedModelSelected,
                             onSetupModelToggled = onSetupModelToggled,
                             onDownloadSetupModels = onDownloadSetupModels,
                             onSkipFirstRunSetup = onSkipFirstRunSetup,
@@ -747,7 +746,6 @@ private fun ChatEmptyState(
     onPickModel: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
-    onRecommendedModelSelected: (String) -> Unit,
     onSetupModelToggled: (String, Boolean) -> Unit,
     onDownloadSetupModels: () -> Unit,
     onSkipFirstRunSetup: () -> Unit,
@@ -757,7 +755,7 @@ private fun ChatEmptyState(
     val readyTitle = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady -> "远程模型已就绪"
         state.isReady -> "本机模型已就绪"
-        else -> PRODUCT_SETUP_TITLE_TEXT
+        else -> PRODUCT_HOME_TITLE_TEXT
     }
     val readyDescription = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady ->
@@ -765,7 +763,7 @@ private fun ChatEmptyState(
         state.isReady ->
             "当前会话为空，选择一个开场问题，或在底部直接输入。问答和历史记录会保留在本机。"
         else ->
-            PRODUCT_SETUP_DESCRIPTION_TEXT
+            PRODUCT_HOME_DESCRIPTION_TEXT
     }
     Column(
         modifier = Modifier
@@ -809,6 +807,7 @@ private fun ChatEmptyState(
                         onSendPrompt = onSendPrompt,
                     )
                 } else {
+                    HomeCapabilityPills()
                     QuickModelSetup(
                         state = state,
                         onOpenModelManager = onOpenModelManager,
@@ -816,7 +815,6 @@ private fun ChatEmptyState(
                         onPickModel = onPickModel,
                         onDownloadModel = onDownloadModel,
                         onCancelDownload = onCancelDownload,
-                        onRecommendedModelSelected = onRecommendedModelSelected,
                     )
                 }
             }
@@ -836,6 +834,34 @@ private fun ChatEmptyState(
                 state = state,
                 requiredBytes = state.pendingSelectedChatDownloadBytes(),
             )
+        }
+    }
+}
+
+@Composable
+private fun HomeCapabilityPills() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag("home_capability_pills"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HOME_CAPABILITY_PILLS.forEach { label ->
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f)),
+            ) {
+                Text(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -962,78 +988,92 @@ private fun QuickModelSetup(
     onPickModel: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
-    onRecommendedModelSelected: (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("model_startup_banner"),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            state.recommendedModels.forEach { model ->
-                FilterChip(
-                    selected = model.id == state.selectedModelId,
-                    enabled = !state.isBusy,
-                    onClick = { onRecommendedModelSelected(model.id) },
-                    label = { Text(model.shortName) },
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RuntimeStatusBadge(state)
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = MODEL_STARTUP_BANNER_TITLE,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-        Text(
-            text = "${state.selectedRecommendedModel.shortName} · " +
-                "${ModelCatalog.formatBytes(state.selectedRecommendedModel.byteSize)} · " +
-                state.selectedRecommendedModel.deviceHint,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        ModelPathGuidance(
-            selectedModel = state.selectedRecommendedModel,
-        )
-        if (state.isDownloading || state.downloadProgressPercent != null || state.totalBytes > 0L) {
-            ProgressBlock(state)
-        }
-        FilledTonalButton(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("quick_remote_config_button"),
-            onClick = onOpenRemoteModelConfig,
-            enabled = !state.isBusy,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Cloud,
-                contentDescription = null,
+            Text(
+                text = MODEL_STARTUP_BANNER_DESCRIPTION,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(" 配置远程模型（无需下载）")
-        }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onDownloadModel,
-            enabled = !state.isBusy && !state.isDownloading,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Download,
-                contentDescription = null,
+            Text(
+                text = "本地推荐：${state.selectedRecommendedModel.shortName} · " +
+                    ModelCatalog.formatBytes(state.selectedRecommendedModel.byteSize),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Text(" 下载 ${state.selectedRecommendedModel.shortName}")
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(
-                modifier = Modifier.weight(1f),
-                onClick = onPickModel,
+            if (state.isDownloading || state.downloadProgressPercent != null || state.totalBytes > 0L) {
+                ProgressBlock(state)
+            }
+            FilledTonalButton(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("quick_remote_config_button"),
+                onClick = onOpenRemoteModelConfig,
                 enabled = !state.isBusy,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.FolderOpen,
+                    imageVector = Icons.Filled.Cloud,
                     contentDescription = null,
                 )
-                Text(" 导入")
+                Text(" 配置远程模型，立即试用")
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = onDownloadModel,
+                    enabled = !state.isBusy && !state.isDownloading,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Download,
+                        contentDescription = null,
+                    )
+                    Text(" 下载模型")
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onPickModel,
+                    enabled = !state.isBusy,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = null,
+                    )
+                    Text(" 导入模型")
+                }
             }
             OutlinedButton(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 onClick = onOpenModelManager,
                 enabled = !state.isBusy,
             ) {
@@ -1043,13 +1083,13 @@ private fun QuickModelSetup(
                 )
                 Text(" 模型管理")
             }
-        }
-        if (state.isDownloading) {
-            TextButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onCancelDownload,
-            ) {
-                Text("取消下载")
+            if (state.isDownloading) {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onCancelDownload,
+                ) {
+                    Text("取消下载")
+                }
             }
         }
     }
@@ -2990,11 +3030,24 @@ internal const val PRODUCT_POSITIONING_TEXT =
 internal const val PRODUCT_POSITIONING_SHORT_TEXT =
     "隐私优先的随身 AI 助手"
 
-internal const val PRODUCT_SETUP_TITLE_TEXT =
-    "隐私优先的随身 AI 助手"
+internal const val PRODUCT_HOME_TITLE_TEXT =
+    "开始和 PocketMind 对话"
 
-internal const val PRODUCT_SETUP_DESCRIPTION_TEXT =
-    "本地模型让基础问答离线可用；远程多模态是可选入口；远程发送和设备动作都会先让你确认。"
+internal const val PRODUCT_HOME_DESCRIPTION_TEXT =
+    "先输入问题、附加图片或准备设备动作；没有模型时只展示启动选项，不读取本地数据，也不会自动发送远程请求。"
+
+internal const val MODEL_STARTUP_BANNER_TITLE =
+    "模型未就绪"
+
+internal const val MODEL_STARTUP_BANNER_DESCRIPTION =
+    "配置远程模型可立即试用；下载或导入本地模型后可离线问答。远程发送和设备动作仍会先让你确认。"
+
+internal val HOME_CAPABILITY_PILLS = listOf(
+    "离线问答",
+    "显式记忆",
+    "图片/文件",
+    "确认动作",
+)
 
 internal const val LOCAL_SETUP_PANEL_TITLE =
     "离线基础问答可选下载"

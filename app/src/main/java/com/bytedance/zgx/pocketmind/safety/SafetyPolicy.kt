@@ -76,8 +76,9 @@ class SafetyPolicy {
 
     private fun String.containsSensitiveNetworkSearchContent(): Boolean {
         val normalized = lowercase()
+        val withoutIsoTimeWindows = isoDateOrDateTimePattern.replace(this, " ")
         return emailPattern.containsMatchIn(this) ||
-            phonePattern.containsMatchIn(this) ||
+            phonePattern.containsMatchIn(withoutIsoTimeWindows) ||
             chineseIdPattern.containsMatchIn(this) ||
             secretTokenPattern.containsMatchIn(this) ||
             cloudSecretPattern.containsMatchIn(this) ||
@@ -107,6 +108,9 @@ class SafetyPolicy {
             ToolPermission.ReadsDeviceContext,
         )
         val emailPattern = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}""")
+        val isoDateOrDateTimePattern = Regex(
+            """\b\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?)?\b""",
+        )
         val phonePattern = Regex("""(?<!\d)(?:\+?\d[\d\s-]{6,}\d|1[3-9]\d{9})(?!\d)""")
         val chineseIdPattern = Regex("""(?<!\d)\d{17}[0-9Xx](?!\d)""")
         val secretTokenPattern = Regex("""\b(?:sk-[A-Za-z0-9_-]{16,}|[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b""")
