@@ -12,7 +12,7 @@ release ticket or PR.
 - [ ] APK/AAB artifact path, SHA-256, signing certificate fingerprint, and
   verification evidence links are recorded.
 - [ ] Open blockers are either resolved or explicitly accepted by the release
-  owner with a dated risk note.
+  owner with a dated risk note, evidence file, and matching SHA-256.
 - [ ] Target audience is clear: internal testing, closed testing, or broader
   distribution.
 - [ ] Known unsupported capabilities are called out, especially screenshot
@@ -27,11 +27,11 @@ release ticket or PR.
   checks the recorded Gradle version, current HEAD Git commit, artifact
   checksum, signing certificate fingerprint, `status=passed` verification evidence files,
   unsupported capabilities, Agent behavior summary, and resolved or accepted
-  blockers. For `PUBLIC_RELEASE=1`, the record must use a public distribution
-  channel and match the final AAB path, artifact SHA-256, and production
-  signing certificate SHA-256 passed to the release gate; it also requires a
-  clean Git worktree unless `ALLOW_DIRTY_RELEASE=1` is explicitly set for
-  non-production dry-run validation.
+  blockers with matching evidence SHA-256. For `PUBLIC_RELEASE=1`, the record
+  must use a public distribution channel and match the final AAB path, artifact
+  SHA-256, and production signing certificate SHA-256 passed to the release
+  gate; it also requires a clean Git worktree unless `ALLOW_DIRTY_RELEASE=1` is
+  explicitly set for non-production dry-run validation.
 
 ## Versioning And Release Track
 

@@ -15,6 +15,37 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release blocker evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_record.sh` 要求每个 resolved/accepted blocker 都提供存在的
+  `evidencePath`，并匹配 `evidenceSha256`。
+- `docs/release_record.json` pending 模板为 privacy review、model license review 和
+  production signing blocker 新增 evidence path / sha 字段；状态仍保持
+  `pending_release_record`，不替代真实 release owner 决策。
+- `scripts/test_validation_scripts.sh` 增加 blocker evidence 正例和 blocker evidence SHA
+  mismatch 负例。
+- `docs/release_checklist.md` 同步 release blocker decision evidence 必须绑定 SHA 的门禁要求。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_release_record.sh --report build/verification/release-record-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 approved blocker evidence 正例和 blocker
+  evidence SHA mismatch 负例。
+- 当前 `docs/release_record.json` 仍按预期未通过；真实剩余项仍是 release owner/reviewer、
+  release artifact、verification reports、blocker decision 和对应 blocker evidence。
+- 未执行模拟器：本轮只加固 release record 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Store policy review evidence hardening
 
 本轮覆盖项：

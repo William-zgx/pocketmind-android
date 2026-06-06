@@ -36,6 +36,8 @@
         "status": "open",
         "owner": "",
         "date": "",
+        "evidencePath": "",
+        "evidenceSha256": "",
         "riskNote": "docs/privacy_review.json is pending release/security/legal approval."
       },
       {
@@ -43,6 +45,8 @@
         "status": "open",
         "owner": "",
         "date": "",
+        "evidencePath": "",
+        "evidenceSha256": "",
         "riskNote": "docs/model_license_review.json is pending license, redistribution, and attribution approval."
       },
       {
@@ -50,6 +54,8 @@
         "status": "open",
         "owner": "",
         "date": "",
+        "evidencePath": "",
+        "evidenceSha256": "",
         "riskNote": "Production keystore and upload certificate SHA-256 are not recorded in this repository."
       }
     ]

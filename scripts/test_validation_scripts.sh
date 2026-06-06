@@ -393,13 +393,16 @@ RELEASE_RECORD_REPORT="$TMP_DIR/release-record-report.properties"
 RELEASE_RECORD_FAILED_REPORT="$TMP_DIR/release-record-failed-report.properties"
 RELEASE_RECORD_PENDING="$TMP_DIR/release-record-pending.json"
 RELEASE_RECORD_APPROVED="$TMP_DIR/release-record-approved.json"
+RELEASE_RECORD_BLOCKER_EVIDENCE="$TMP_DIR/release-record-privacy-review-blocker.properties"
 printf 'release artifact\n' > "$RELEASE_RECORD_ARTIFACT"
 printf 'status=passed\ntarget=local-verification\n' > "$RELEASE_RECORD_REPORT"
 printf 'status=failed\ntarget=local-verification\n' > "$RELEASE_RECORD_FAILED_REPORT"
+printf 'status=accepted\nblocker=privacy-review\nscope=internal-testing-risk\n' > "$RELEASE_RECORD_BLOCKER_EVIDENCE"
 RELEASE_RECORD_ARTIFACT_SHA="$(shasum -a 256 "$RELEASE_RECORD_ARTIFACT" | awk '{print $1}')"
 RELEASE_RECORD_ARTIFACT_SIZE="$(wc -c < "$RELEASE_RECORD_ARTIFACT" | tr -d ' ')"
 RELEASE_RECORD_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_REPORT" | awk '{print $1}')"
 RELEASE_RECORD_FAILED_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_FAILED_REPORT" | awk '{print $1}')"
+RELEASE_RECORD_BLOCKER_EVIDENCE_SHA="$(shasum -a 256 "$RELEASE_RECORD_BLOCKER_EVIDENCE" | awk '{print $1}')"
 RELEASE_RECORD_HEAD="$(git rev-parse HEAD)"
 RELEASE_RECORD_NON_HEAD="$(git rev-parse HEAD^)"
 RELEASE_RECORD_DATE="$(date +%F)"
@@ -455,6 +458,8 @@ cat > "$RELEASE_RECORD_APPROVED" <<RELEASE_RECORD_APPROVED_JSON
         "status": "accepted",
         "owner": "Release Owner",
         "date": "$RELEASE_RECORD_DATE",
+        "evidencePath": "$RELEASE_RECORD_BLOCKER_EVIDENCE",
+        "evidenceSha256": "$RELEASE_RECORD_BLOCKER_EVIDENCE_SHA",
         "riskNote": "Accepted for internal testing only."
       }
     ]
@@ -532,6 +537,12 @@ expect_failure \
   "release record verifier rejects artifact sha mismatch" \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_BAD_SHA" --report "$ARTIFACT_DIR/release-record-bad-sha.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-bad-sha.properties" "status=failed"
+RELEASE_RECORD_BAD_BLOCKER_EVIDENCE_SHA="$TMP_DIR/release-record-bad-blocker-evidence-sha.json"
+sed 's/"evidenceSha256": "'"$RELEASE_RECORD_BLOCKER_EVIDENCE_SHA"'"/"evidenceSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_BAD_BLOCKER_EVIDENCE_SHA"
+expect_failure \
+  "release record verifier rejects blocker evidence sha mismatch" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_BAD_BLOCKER_EVIDENCE_SHA" --report "$ARTIFACT_DIR/release-record-bad-blocker-evidence-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-record-bad-blocker-evidence-sha.properties" "privacy-review-evidence-sha-mismatch"
 RELEASE_RECORD_FAILED_REPORT_JSON="$TMP_DIR/release-record-failed-report.json"
 sed \
   -e 's#'"$RELEASE_RECORD_REPORT"'#'"$RELEASE_RECORD_FAILED_REPORT"'#' \

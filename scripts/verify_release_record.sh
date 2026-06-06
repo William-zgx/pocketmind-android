@@ -141,6 +141,21 @@ def properties_for(path):
         pass
     return values
 
+def non_empty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+def validate_file_sha(prefix, path, expected_sha):
+    if not non_empty_string(expected_sha):
+        failures.append(f"{prefix}-sha-missing")
+        return
+    try:
+        actual_sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        failures.append(f"{prefix}-sha-read-failed")
+        return
+    if actual_sha != expected_sha:
+        failures.append(f"{prefix}-sha-mismatch")
+
 failures = []
 if record.get("version") != 1:
     failures.append("version-invalid")
@@ -307,6 +322,17 @@ for index, blocker in enumerate(blockers):
         failures.append(f"{blocker_id}-risk-note-missing")
     if not blocker.get("owner"):
         failures.append(f"{blocker_id}-owner-missing")
+    evidence_path = blocker.get("evidencePath", "")
+    if not non_empty_string(evidence_path):
+        failures.append(f"{blocker_id}-evidence-path-missing")
+    elif not Path(evidence_path).is_file():
+        failures.append(f"{blocker_id}-evidence-file-missing")
+    else:
+        validate_file_sha(
+            f"{blocker_id}-evidence",
+            evidence_path,
+            blocker.get("evidenceSha256", ""),
+        )
     blocker_date = blocker.get("date", "")
     if not blocker_date:
         failures.append(f"{blocker_id}-date-missing")
