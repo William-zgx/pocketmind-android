@@ -55,14 +55,24 @@ class CapabilityMatrixDocumentationTest {
 
     @Test
     fun derivedToolDescriptorsHaveOwnersTestsAndStableToolCoverage() {
+        val json = JSONObject(readRepoFile("docs/capability_matrix.json"))
+        val documented = json.getJSONArray("toolCapabilities")
         val registry = ToolRegistry()
         val descriptors = CapabilityMatrix.toolDescriptors(registry)
+        val documentedToolNames = (0 until documented.length()).map { index ->
+            documented.getJSONObject(index).getString("toolName")
+        }
 
         assertEquals(registry.specs().map { it.name }.toSet(), descriptors.mapNotNull { it.toolName }.toSet())
+        assertEquals(registry.specs().map { it.name }, documentedToolNames)
         descriptors.forEach { descriptor ->
             assertTrue(descriptor.capabilityId.startsWith("tool_"))
             assertFalse(descriptor.requiredTests.isEmpty())
             assertTrue(descriptor.failureBehavior.isNotBlank())
+        }
+        descriptors.forEachIndexed { index, descriptor ->
+            val item = documented.getJSONObject(index)
+            assertDescriptorMatchesJson(descriptor, item)
         }
     }
 
@@ -84,6 +94,23 @@ class CapabilityMatrixDocumentationTest {
         File(repoRoot(), path).also { file ->
             assertTrue("missing ${file.path}", file.isFile)
         }.readText()
+
+    private fun assertDescriptorMatchesJson(
+        descriptor: com.bytedance.zgx.pocketmind.capability.CapabilityDescriptor,
+        item: JSONObject,
+    ) {
+        assertEquals(descriptor.capabilityId, item.getString("capabilityId"))
+        assertEquals(descriptor.entrypoint, item.getString("entrypoint"))
+        assertEquals(descriptor.toolName, item.nullableString("toolName"))
+        assertEquals(descriptor.modelCapability?.name, item.nullableString("modelCapability"))
+        assertEquals(descriptor.privacyLevel.name, item.getString("privacyLevel"))
+        assertEquals(descriptor.requiresLocalModel, item.getBoolean("requiresLocalModel"))
+        assertEquals(descriptor.remoteEligible, item.getBoolean("remoteEligible"))
+        assertEquals(descriptor.confirmationPolicy.name, item.getString("confirmationPolicy"))
+        assertEquals(descriptor.failureBehavior, item.getString("failureBehavior"))
+        assertEquals(descriptor.requiredTests, item.getStringList("requiredTests"))
+        assertEquals(descriptor.ownerAgent.name, item.getString("ownerAgent"))
+    }
 
     private fun JSONObject.nullableString(key: String): String? =
         if (isNull(key)) null else getString(key)

@@ -15,6 +15,31 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Tool capability matrix materialization
+
+本轮覆盖项：
+
+- `docs/capability_matrix.json` 新增 `toolCapabilities`，按 `ToolRegistry` 当前顺序
+  逐项记录 26 个工具能力的 capabilityId、entrypoint、toolName、model capability、
+  privacy level、local-model requirement、remote eligibility、confirmation policy、
+  failure behavior、required tests 和 owner Agent。
+- `CapabilityMatrixDocumentationTest` 校验 `toolCapabilities` 与
+  `CapabilityMatrix.toolDescriptors(ToolRegistry())` 逐字段一致，防止 ToolRegistry
+  和机器可读能力矩阵漂移。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest'
+```
+
+结果：
+
+- 通过：capability matrix contract JVM test。
+- 未执行模拟器：本轮只修改能力矩阵 JSON 和 JVM 文档测试，不改变 Android runtime
+  或 UI 行为。
+
 ## 2026-06-06 Product capability matrix mainline coverage
 
 本轮覆盖项：
