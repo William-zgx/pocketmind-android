@@ -144,16 +144,46 @@ def validate_api_matrix_evidence(api_level, evidence_path):
     props = properties_for(evidence_path)
     if props.get("status") != "passed":
         failures.append(f"{prefix}-status-not-passed")
+    if props.get("exit_code") != "0":
+        failures.append(f"{prefix}-exit-code-invalid")
     if props.get("target") != "regression-emulator":
         failures.append(f"{prefix}-target-invalid")
+    if props.get("failedTarget", ""):
+        failures.append(f"{prefix}-failed-target-not-empty")
+    if props.get("reason", ""):
+        failures.append(f"{prefix}-reason-not-empty")
+    if not non_empty_string(props.get("started_at_utc", "")):
+        failures.append(f"{prefix}-started-at-missing")
+    if not non_empty_string(props.get("finished_at_utc", "")):
+        failures.append(f"{prefix}-finished-at-missing")
     if props.get("clean_device") != "1":
         failures.append(f"{prefix}-clean-device-not-true")
+    try:
+        source_count = int(props.get("source_android_test_count", ""))
+    except ValueError:
+        failures.append(f"{prefix}-source-test-count-invalid")
+    else:
+        if source_count != source_android_test_count:
+            failures.append(f"{prefix}-source-test-count-mismatch")
+    try:
+        expected_count = int(props.get("expected_android_test_count", ""))
+    except ValueError:
+        failures.append(f"{prefix}-expected-test-count-invalid")
+    else:
+        if expected_count < source_android_test_count:
+            failures.append(f"{prefix}-expected-test-count-too-low")
     if props.get("api_level") != str(api_level):
         failures.append(f"{prefix}-api-mismatch")
-    if props.get("abi") != "arm64-v8a":
+    report_abi = props.get("abi", "")
+    report_abis = {item.strip() for item in report_abi.split(",") if item.strip()}
+    if "arm64-v8a" not in report_abis:
         failures.append(f"{prefix}-abi-mismatch")
+    report_serial = props.get("serial", "")
+    if not report_serial.startswith("emulator-"):
+        failures.append(f"{prefix}-serial-not-emulator")
     if not non_empty_string(props.get("avd", "")):
         failures.append(f"{prefix}-avd-missing")
+    instrumentation_output_count = validate_instrumentation_output(prefix, props.get("instrumentation_output_file", ""))
     try:
         actual_count = int(props.get("actual_android_test_count", ""))
     except ValueError:
@@ -161,6 +191,106 @@ def validate_api_matrix_evidence(api_level, evidence_path):
     else:
         if actual_count < source_android_test_count:
             failures.append(f"{prefix}-test-count-too-low")
+        if instrumentation_output_count is not None and instrumentation_output_count != actual_count:
+            failures.append(f"{prefix}-instrumentation-output-count-mismatch")
+    validate_api_nested_emulator_report(api_level, props)
+    validate_api_nested_device_report(api_level, props)
+
+def validate_api_nested_emulator_report(api_level, regression_props):
+    prefix = f"api-{api_level}-emulator-report"
+    emulator_report = regression_props.get("emulator_report_file", "")
+    if not non_empty_string(emulator_report):
+        failures.append(f"{prefix}-path-missing")
+        return
+    if not Path(emulator_report).is_file():
+        failures.append(f"{prefix}-missing")
+        return
+    props = properties_for(emulator_report)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-status-not-passed")
+    if props.get("exit_code") != "0":
+        failures.append(f"{prefix}-exit-code-invalid")
+    if props.get("target") != "emulator":
+        failures.append(f"{prefix}-target-invalid")
+    if props.get("failedTarget", ""):
+        failures.append(f"{prefix}-failed-target-not-empty")
+    if props.get("reason", ""):
+        failures.append(f"{prefix}-reason-not-empty")
+    if props.get("clean_device") != "1":
+        failures.append(f"{prefix}-clean-device-not-true")
+    if props.get("serial") != regression_props.get("serial", ""):
+        failures.append(f"{prefix}-serial-mismatch")
+    if props.get("api_level") != str(api_level):
+        failures.append(f"{prefix}-api-mismatch")
+    report_abis = {item.strip() for item in props.get("abi", "").split(",") if item.strip()}
+    if "arm64-v8a" not in report_abis:
+        failures.append(f"{prefix}-abi-mismatch")
+    if props.get("avd") != regression_props.get("avd", ""):
+        failures.append(f"{prefix}-avd-mismatch")
+    if props.get("device_report_file") != regression_props.get("device_report_file", ""):
+        failures.append(f"{prefix}-device-report-mismatch")
+    if not non_empty_string(props.get("started_at_utc", "")):
+        failures.append(f"{prefix}-started-at-missing")
+    if not non_empty_string(props.get("finished_at_utc", "")):
+        failures.append(f"{prefix}-finished-at-missing")
+
+def validate_api_nested_device_report(api_level, regression_props):
+    prefix = f"api-{api_level}-device-report"
+    device_report = regression_props.get("device_report_file", "")
+    if not non_empty_string(device_report):
+        failures.append(f"{prefix}-path-missing")
+        return
+    if not Path(device_report).is_file():
+        failures.append(f"{prefix}-missing")
+        return
+    props = properties_for(device_report)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-status-not-passed")
+    if props.get("exit_code") != "0":
+        failures.append(f"{prefix}-exit-code-invalid")
+    if props.get("target") != "device":
+        failures.append(f"{prefix}-target-invalid")
+    if props.get("failedTarget", ""):
+        failures.append(f"{prefix}-failed-target-not-empty")
+    if props.get("reason", ""):
+        failures.append(f"{prefix}-reason-not-empty")
+    if props.get("serial") != regression_props.get("serial", ""):
+        failures.append(f"{prefix}-serial-mismatch")
+    if props.get("api_level") != str(api_level):
+        failures.append(f"{prefix}-api-mismatch")
+    report_abis = {item.strip() for item in props.get("abi", "").split(",") if item.strip()}
+    if "arm64-v8a" not in report_abis:
+        failures.append(f"{prefix}-abi-mismatch")
+    if props.get("clean_device") != "1":
+        failures.append(f"{prefix}-clean-device-not-true")
+    if props.get("instrumentation") != "passed":
+        failures.append(f"{prefix}-instrumentation-not-passed")
+    if props.get("instrumentation_output_file") != regression_props.get("instrumentation_output_file", ""):
+        failures.append(f"{prefix}-instrumentation-output-mismatch")
+    instrumentation_output_count = validate_instrumentation_output(prefix, props.get("instrumentation_output_file", ""))
+    try:
+        device_count = int(props.get("instrumentation_test_count", ""))
+    except ValueError:
+        failures.append(f"{prefix}-test-count-invalid")
+    else:
+        try:
+            regression_count = int(regression_props.get("actual_android_test_count", ""))
+        except ValueError:
+            regression_count = None
+        if device_count < source_android_test_count:
+            failures.append(f"{prefix}-test-count-too-low")
+        if regression_count is not None and device_count != regression_count:
+            failures.append(f"{prefix}-test-count-mismatch")
+        if instrumentation_output_count is not None and instrumentation_output_count != device_count:
+            failures.append(f"{prefix}-instrumentation-output-count-mismatch")
+    if props.get("debug_apk") != "app/build/outputs/apk/debug/app-debug.apk":
+        failures.append(f"{prefix}-debug-apk-invalid")
+    if props.get("android_test_apk") != "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk":
+        failures.append(f"{prefix}-android-test-apk-invalid")
+    if not non_empty_string(props.get("started_at_utc", "")):
+        failures.append(f"{prefix}-started-at-missing")
+    if not non_empty_string(props.get("finished_at_utc", "")):
+        failures.append(f"{prefix}-finished-at-missing")
 
 def validate_performance_evidence(key, evidence_path):
     prefix = f"performance-{key}-evidence"

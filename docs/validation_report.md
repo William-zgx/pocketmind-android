@@ -18,10 +18,50 @@
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
 当前 release validation evidence contract 以最新 verifier 为准：API matrix
-必须链接 nested per-API regression report；manual acceptance 必须链接正式
-`manual-acceptance` 报告；flow matrix 必须链接正式 `release-flow` 报告；
-performance sanity 必须链接通过的 `perf-baseline` verifier report；screenshots
-必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
+必须链接 nested per-API regression report 及其 emulator/device/instrumentation
+证据；manual acceptance 必须链接正式 `manual-acceptance` 报告；flow matrix 必须链接正式
+`release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
+report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
+
+## 2026-06-06 Release validation API nested evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在要求每个 API matrix evidence
+  report 具备真实 `regression-emulator.properties` 的关键字段：`exit_code=0`、
+  空 `failedTarget`/`reason`、start/finish 时间、source/expected/actual test count、
+  emulator serial、API level、ABI、AVD 和 instrumentation output。
+- instrumentation output 必须可读，最终 `OK (N tests)` 的 N 必须和
+  `actual_android_test_count` 一致。
+- per-API regression report 必须链接 nested `emulator-verification.properties` 和
+  `device-verification.properties`；nested reports 的 serial/API/ABI/AVD、
+  device report path、instrumentation output 和 test count 必须和 parent report 匹配。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为每个 API
+  生成 parent regression report、nested emulator report、nested device report 和
+  instrumentation output。
+- 新增负例：形式上接近真实 regression report、但缺 nested reports 和
+  instrumentation output 的 API evidence 必须失败。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。现有 API 36 nested evidence 满足本轮新门禁。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档；
+  没有重新跑 API matrix。
 
 ## 2026-06-06 Release validation physical device report hardening
 

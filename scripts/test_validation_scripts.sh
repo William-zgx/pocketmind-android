@@ -1048,14 +1048,71 @@ PY
 } > "$VALIDATION_SCREENSHOT_REPORT"
 mkdir -p "$TMP_DIR/validation-api-evidence"
 for api_level in 28 32 33 34 36; do
-  cat > "$TMP_DIR/validation-api-evidence/api-$api_level.properties" <<VALIDATION_API_EVIDENCE_PROPERTIES
+  api_evidence_dir="$TMP_DIR/validation-api-evidence/api-$api_level"
+  mkdir -p "$api_evidence_dir"
+  api_instrumentation_output="$api_evidence_dir/instrumentation.txt"
+  api_device_report="$api_evidence_dir/device-verification.properties"
+  api_emulator_report="$api_evidence_dir/emulator-verification.properties"
+  api_regression_report="$TMP_DIR/validation-api-evidence/api-$api_level.properties"
+  printf 'OK (%s tests)\n' "$SOURCE_ANDROID_TEST_COUNT" > "$api_instrumentation_output"
+  cat > "$api_device_report" <<VALIDATION_API_DEVICE_EVIDENCE_PROPERTIES
 status=passed
-target=regression-emulator
+exit_code=0
+target=device
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+serial=emulator-$api_level
+api_level=$api_level
+abi=arm64-v8a
 clean_device=1
-actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+data_free_kb=4194304
+instrumentation=passed
+instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+instrumentation_output_file=$api_instrumentation_output
+debug_apk=app/build/outputs/apk/debug/app-debug.apk
+android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+VALIDATION_API_DEVICE_EVIDENCE_PROPERTIES
+  cat > "$api_emulator_report" <<VALIDATION_API_EMULATOR_EVIDENCE_PROPERTIES
+status=passed
+exit_code=0
+target=emulator
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+serial=emulator-$api_level
 api_level=$api_level
 abi=arm64-v8a
 avd=api${api_level}-avd
+clean_device=1
+evidence_dir=$api_evidence_dir
+screenshot_file=$api_evidence_dir/screenshot.png
+window_dump_file=$api_evidence_dir/window.xml
+logcat_file=$api_evidence_dir/logcat.txt
+emulator_log=$api_evidence_dir-emulator.log
+device_report_file=$api_device_report
+VALIDATION_API_EMULATOR_EVIDENCE_PROPERTIES
+  cat > "$api_regression_report" <<VALIDATION_API_EVIDENCE_PROPERTIES
+status=passed
+exit_code=0
+target=regression-emulator
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+clean_device=1
+source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+serial=emulator-$api_level
+api_level=$api_level
+abi=arm64-v8a
+avd=api${api_level}-avd
+instrumentation_output_file=$api_instrumentation_output
+emulator_report_file=$api_emulator_report
+device_report_file=$api_device_report
 VALIDATION_API_EVIDENCE_PROPERTIES
 done
 mkdir -p "$TMP_DIR/validation-manual-evidence" "$TMP_DIR/validation-flow-evidence" "$TMP_DIR/validation-performance-evidence"
@@ -1430,6 +1487,45 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_API_WEAK_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties" "api-28-evidence-target-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-weak-evidence.properties" "api-28-evidence-test-count-invalid"
+VALIDATION_API_MISSING_NESTED="$TMP_DIR/release-validation-api-missing-nested.json"
+VALIDATION_API_MISSING_NESTED_FILE="$TMP_DIR/validation-api-evidence/missing-nested-api-28.properties"
+cat > "$VALIDATION_API_MISSING_NESTED_FILE" <<VALIDATION_API_MISSING_NESTED_PROPERTIES
+status=passed
+exit_code=0
+target=regression-emulator
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+clean_device=1
+source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+serial=emulator-28
+api_level=28
+abi=arm64-v8a
+avd=api28-avd
+VALIDATION_API_MISSING_NESTED_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_API_MISSING_NESTED" "$VALIDATION_API_MISSING_NESTED_FILE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["apiMatrix"][0]["evidencePath"] = str(evidence)
+record["apiMatrix"][0]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects api matrix evidence without nested reports" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_MISSING_NESTED" --report "$ARTIFACT_DIR/release-validation-api-missing-nested.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-evidence-instrumentation-output-file-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-emulator-report-path-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-api-missing-nested.properties" "api-28-device-report-path-missing"
 VALIDATION_MANUAL_BAD_SHA="$TMP_DIR/release-validation-manual-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_MANUAL_BAD_SHA" <<'PY'
 import json

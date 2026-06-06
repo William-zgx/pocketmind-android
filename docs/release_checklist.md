@@ -227,8 +227,13 @@ release ticket or PR.
   Attach the top-level `regression-emulator-api-matrix.properties` plus each
   nested API `regression-emulator.properties` report and matching SHA-256.
   Each nested report must have `status=passed`, `target=regression-emulator`,
-  `clean_device=1`, matching API level, `abi=arm64-v8a`, a non-empty AVD name,
-  and an `actual_android_test_count` that covers the AndroidTest source count.
+  `exit_code=0`, empty `failedTarget`/`reason`, UTC start/finish fields,
+  `clean_device=1`, matching API level, an ABI list containing `arm64-v8a`, a
+  non-empty emulator serial and AVD name, source/expected/actual AndroidTest
+  counts, and a readable instrumentation output whose final `OK` count matches
+  `actual_android_test_count`. Each nested report must also link matching
+  `emulator-verification.properties` and `device-verification.properties`
+  reports from the same API run.
 - [ ] `scripts/install_and_test_device.sh` passes on at least one physical
   arm64 device before a broad release candidate.
 - [ ] Validation record includes device serial or AVD name, API level, ABI,
