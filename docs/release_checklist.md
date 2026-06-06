@@ -338,7 +338,10 @@ release ticket or PR.
 - [ ] Release candidate has a crash/ANR smoke window on internal or closed
   testing with no unresolved launch crash, install crash, crash loop, fatal
   native LiteRT-LM failure, or reproducible ANR. The smoke window evidence file
-  path and SHA-256 are recorded in `docs/release_operations_record.json`.
+  path and SHA-256 are recorded in `docs/release_operations_record.json`. Use
+  `scripts/collect_crash_anr_smoke_evidence.sh` with the device verification
+  report, instrumentation output, and captured `adb logcat` to generate this
+  evidence.
 - [ ] Manual validation captures `adb logcat`, tombstone/native crash evidence,
   and ANR traces for any failure; release notes link the issue or state that no
   crash/ANR was observed in the RC window.

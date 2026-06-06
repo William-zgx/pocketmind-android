@@ -88,9 +88,12 @@ items below.
   the record against the current privacy notice SHA and Android manifest.
 - Fill `docs/release_operations_record.json` with approved crash/ANR monitoring
   owner, signal sources, first-24-hour watcher, staged rollout thresholds,
-  crash/ANR smoke result, and rollback plan. `VERIFY_RELEASE_OPERATIONS=1`
-  verifies Android Vitals coverage, rollout thresholds, previous known-good
-  metadata or initial-release exemption, rollback criteria, and review date.
+  crash/ANR smoke result, and rollback plan. Generate the smoke evidence with
+  `scripts/collect_crash_anr_smoke_evidence.sh` from the device verification
+  report, instrumentation output, and captured `adb logcat`.
+  `VERIFY_RELEASE_OPERATIONS=1` verifies Android Vitals coverage, rollout
+  thresholds, previous known-good metadata or initial-release exemption,
+  rollback criteria, and review date.
 - Fill `docs/release_validation_record.json` with approved emulator regression,
   physical-device instrumentation, API matrix coverage, manual acceptance,
   flow matrix, sanitized screenshots, and performance sanity evidence.

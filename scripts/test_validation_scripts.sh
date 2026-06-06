@@ -465,6 +465,8 @@ grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include capture_release_screenshots.sh in shell syntax checks"
 grep -q 'scripts/collect_release_flow_matrix_evidence.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_release_flow_matrix_evidence.sh in shell syntax checks"
+grep -q 'scripts/collect_crash_anr_smoke_evidence.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include collect_crash_anr_smoke_evidence.sh in shell syntax checks"
 grep -q 'scripts/record_manual_acceptance_evidence.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include record_manual_acceptance_evidence.sh in shell syntax checks"
 grep -q 'scripts/record_release_flow_evidence.sh' scripts/verify_local.sh ||
@@ -978,9 +980,95 @@ OPERATIONS_APPROVED="$TMP_DIR/release-operations-approved.json"
 OPERATIONS_DATE="$(date +%F)"
 OPERATIONS_MONITORING_EVIDENCE="$TMP_DIR/release-operations-monitoring.properties"
 OPERATIONS_SMOKE_EVIDENCE="$TMP_DIR/release-operations-smoke.properties"
+OPERATIONS_SMOKE_DEVICE_REPORT="$TMP_DIR/release-operations-smoke-device.properties"
+OPERATIONS_SMOKE_INSTRUMENTATION="$TMP_DIR/release-operations-smoke-instrumentation.txt"
+OPERATIONS_SMOKE_LOGCAT="$TMP_DIR/release-operations-smoke-logcat.txt"
+OPERATIONS_SMOKE_ANR_LOGCAT="$TMP_DIR/release-operations-smoke-anr-logcat.txt"
+OPERATIONS_SMOKE_ANR_REPORT="$TMP_DIR/release-operations-smoke-anr.properties"
+OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT="$TMP_DIR/release-operations-smoke-java-crash-logcat.txt"
+OPERATIONS_SMOKE_JAVA_CRASH_REPORT="$TMP_DIR/release-operations-smoke-java-crash.properties"
+OPERATIONS_SMOKE_INSTRUMENTATION_CRASH="$TMP_DIR/release-operations-smoke-instrumentation-crash.txt"
+OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT="$TMP_DIR/release-operations-smoke-instrumentation-crash.properties"
 OPERATIONS_ROLLBACK_EVIDENCE="$TMP_DIR/release-operations-rollback.properties"
 printf 'status=passed\nsource=Android Vitals\nwatcher=Launch Watcher\n' > "$OPERATIONS_MONITORING_EVIDENCE"
-printf 'status=passed\nnoLaunchCrash=true\nnoReproducibleAnr=true\n' > "$OPERATIONS_SMOKE_EVIDENCE"
+cat > "$OPERATIONS_SMOKE_INSTRUMENTATION" <<'OPERATIONS_SMOKE_INSTRUMENTATION_TXT'
+INSTRUMENTATION_STATUS: numtests=3
+OK (3 tests)
+OPERATIONS_SMOKE_INSTRUMENTATION_TXT
+cat > "$OPERATIONS_SMOKE_DEVICE_REPORT" <<OPERATIONS_SMOKE_DEVICE_REPORT_TXT
+status=passed
+target=device
+serial=emulator-5554
+api_level=36
+abi=arm64-v8a
+instrumentation=passed
+instrumentation_test_count=3
+instrumentation_output_file=$OPERATIONS_SMOKE_INSTRUMENTATION
+OPERATIONS_SMOKE_DEVICE_REPORT_TXT
+cat > "$OPERATIONS_SMOKE_LOGCAT" <<'OPERATIONS_SMOKE_LOGCAT_TXT'
+06-06 20:00:00.000  1000  1000 I ActivityTaskManager: Displayed com.bytedance.zgx.pocketmind/.MainActivity
+06-06 20:00:01.000  1000  1000 I LiteRT: nativeCheckLoaded returned true
+OPERATIONS_SMOKE_LOGCAT_TXT
+expect_success \
+  "crash/ANR smoke collector accepts clean instrumentation and logcat" \
+  scripts/collect_crash_anr_smoke_evidence.sh \
+    --device-report "$OPERATIONS_SMOKE_DEVICE_REPORT" \
+    --instrumentation-output "$OPERATIONS_SMOKE_INSTRUMENTATION" \
+    --logcat "$OPERATIONS_SMOKE_LOGCAT" \
+    --report "$OPERATIONS_SMOKE_EVIDENCE" \
+    --window "2026-06-06 internal smoke" \
+    --track internal_testing
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "status=passed"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "operationsRecordField=crashAnrSmoke.evidence"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "logcatAnalyzed=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noLaunchCrash=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noInstallCrash=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noCrashLoop=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noFatalNativeLiteRtLmFailure=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noReproducibleAnr=true"
+cat > "$OPERATIONS_SMOKE_ANR_LOGCAT" <<'OPERATIONS_SMOKE_ANR_LOGCAT_TXT'
+06-06 20:00:02.000  1000  1000 E ActivityManager: ANR in com.bytedance.zgx.pocketmind
+OPERATIONS_SMOKE_ANR_LOGCAT_TXT
+expect_failure \
+  "crash/ANR smoke collector rejects ANR logcat signal" \
+  scripts/collect_crash_anr_smoke_evidence.sh \
+    --device-report "$OPERATIONS_SMOKE_DEVICE_REPORT" \
+    --instrumentation-output "$OPERATIONS_SMOKE_INSTRUMENTATION" \
+    --logcat "$OPERATIONS_SMOKE_ANR_LOGCAT" \
+    --report "$OPERATIONS_SMOKE_ANR_REPORT"
+assert_report_contains "$OPERATIONS_SMOKE_ANR_REPORT" "status=failed"
+assert_report_contains "$OPERATIONS_SMOKE_ANR_REPORT" "noReproducibleAnr=false"
+assert_report_contains_text "$OPERATIONS_SMOKE_ANR_REPORT" "anr-signal-detected"
+cat > "$OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT" <<'OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT_TXT'
+06-06 20:00:03.000  1000  1000 E AndroidRuntime: FATAL EXCEPTION: main
+06-06 20:00:03.001  1000  1000 E AndroidRuntime: Process: com.bytedance.zgx.pocketmind, PID: 12345
+OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT_TXT
+expect_failure \
+  "crash/ANR smoke collector treats one Java crash as one launch crash" \
+  scripts/collect_crash_anr_smoke_evidence.sh \
+    --device-report "$OPERATIONS_SMOKE_DEVICE_REPORT" \
+    --instrumentation-output "$OPERATIONS_SMOKE_INSTRUMENTATION" \
+    --logcat "$OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT" \
+    --report "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT"
+assert_report_contains "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT" "status=failed"
+assert_report_contains "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT" "crashSignalCount=1"
+assert_report_contains "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT" "noLaunchCrash=false"
+assert_report_contains "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT" "noCrashLoop=true"
+assert_report_contains_text "$OPERATIONS_SMOKE_JAVA_CRASH_REPORT" "crash-signal-detected"
+cat > "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH" <<'OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_TXT'
+INSTRUMENTATION_RESULT: shortMsg=Process crashed.
+INSTRUMENTATION_CODE: 0
+OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_TXT
+expect_failure \
+  "crash/ANR smoke collector rejects instrumentation process crash signal" \
+  scripts/collect_crash_anr_smoke_evidence.sh \
+    --device-report "$OPERATIONS_SMOKE_DEVICE_REPORT" \
+    --instrumentation-output "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH" \
+    --logcat "$OPERATIONS_SMOKE_LOGCAT" \
+    --report "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT"
+assert_report_contains "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT" "status=failed"
+assert_report_contains "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT" "noLaunchCrash=false"
+assert_report_contains_text "$OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT" "instrumentation-crash-signal-detected"
 printf 'status=passed\nrollback=initial-release\n' > "$OPERATIONS_ROLLBACK_EVIDENCE"
 OPERATIONS_MONITORING_SHA="$(shasum -a 256 "$OPERATIONS_MONITORING_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_SMOKE_SHA="$(shasum -a 256 "$OPERATIONS_SMOKE_EVIDENCE" | awk '{print $1}')"

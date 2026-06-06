@@ -9662,3 +9662,36 @@ scripts/verify_local.sh
   `verifyReleaseValidation=1`。
 - 通过：脚本单测覆盖 `VERIFY_RELEASE_VALIDATION=1` 时 release gate 对 pending
   record fail-closed。
+
+## 2026-06-07 Crash/ANR smoke evidence collector
+
+本轮覆盖项：
+
+- 新增 `scripts/collect_crash_anr_smoke_evidence.sh`，从 device verification
+  report、instrumentation 输出和 `adb logcat` 生成 `crashAnrSmoke.evidence`
+  可引用的 properties 证据。
+- 证据默认 fail-closed：缺 device report、缺 instrumentation 输出、缺 logcat、
+  device/instrumentation 未通过、logcat 有 crash/ANR/fatal LiteRT-LM 信号时都失败。
+- `scripts/test_validation_scripts.sh` 的 release operations 正例改为使用 collector
+  生成 smoke evidence，并覆盖 ANR、instrumentation process crash 和单次 Java crash
+  不误判 crash loop。
+- `docs/release_checklist.md` 和 `docs/release_readiness.md` 增加 collector 使用入口。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_crash_anr_smoke_evidence.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：collector 成功生成 clean instrumentation/logcat 的 smoke evidence。
+- 通过：collector 对 ANR logcat 信号 fail-closed。
+- 通过：collector 对 instrumentation process crash 信号 fail-closed。
+- 通过：collector 将单次 Java crash 计为一次 launch crash，不误判 crash loop。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。
+- 通过：DeepSeek 测试配置的 key、endpoint 和 model 字面量没有落入仓库源码。
