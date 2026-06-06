@@ -135,20 +135,10 @@ else
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then
-  if grep -q '"status": "pending_manual_review"\|"redistributionDecision": "not_approved"\|"licenseName": ""\|"reviewer": ""\|"reviewDate": ""' docs/model_license_review.json; then
-    {
-      printf 'status=failed\n'
-      printf 'target=model-license-review\n'
-      printf 'reason=incomplete-license-review\n'
-    } > "$ARTIFACT_DIR/model-license-review.properties"
-    echo "Model license review is incomplete." >&2
+  if ! scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-review.properties"; then
     write_gate_report failed
     exit 1
   fi
-  {
-    printf 'status=passed\n'
-    printf 'target=model-license-review\n'
-  } > "$ARTIFACT_DIR/model-license-review.properties"
 else
   {
     printf 'status=skipped\n'

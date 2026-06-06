@@ -64,7 +64,9 @@ items below.
   not establish license readiness. `scripts/collect_model_license_metadata.sh`
   can refresh Hugging Face model-card metadata in
   `docs/model_license_metadata.json`, but it does not replace legal/release
-  approval.
+  approval. `VERIFY_MODEL_LICENSES=1` runs
+  `scripts/verify_model_license_review.sh` and requires approved review records
+  aligned with the current license metadata.
 - Configure release signing outside source control.
 - Use `scripts/sign_release_artifacts.sh` from the private signing environment
   to produce signed APK/AAB artifacts and certificate reports once production

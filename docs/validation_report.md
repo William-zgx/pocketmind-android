@@ -6593,3 +6593,40 @@ scripts/sign_release_artifacts.sh
 
 - 需要 release owner 提供 production keystore 和 production upload certificate
   SHA-256。
+
+## 2026-06-06 Structured model license review gate
+
+本轮覆盖项：
+
+- 新增 `scripts/verify_model_license_review.sh`，结构化校验
+  `docs/model_license_review.json` 与 `docs/model_license_metadata.json`。
+- 校验项包括：metadata 对齐的模型 ID、`status=approved`、
+  `redistributionDecision=approved`、license 名称、HTTPS license URL 或本地 license
+  文件路径、attribution/notice、reviewer、`YYYY-MM-DD` review date。
+- `scripts/verify_release_gate.sh` 的 `VERIFY_MODEL_LICENSES=1` 不再使用 grep，
+  改为调用结构化 license review verifier。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+
+ARTIFACT_DIR=build/verification/release-gate-model-license-negative \
+VERIFY_MODEL_LICENSES=1 \
+PERF_BASELINE_FILE=build/verification/release-gate-model-license-negative/perf-baseline.properties \
+scripts/verify_release_gate.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 incomplete model license review 失败。
+- 通过：脚本单测覆盖 metadata-aligned approved review 成功。
+- 通过：release gate 集成负向验证；当前 pending
+  `docs/model_license_review.json` 会生成
+  `build/verification/release-gate-model-license-negative/model-license-review.properties`
+  `status=failed`，并列出每个模型缺失的批准字段。
+
+仍阻塞正式 RC：
+
+- 需要人工完成所有推荐模型的 license / redistribution / attribution review。

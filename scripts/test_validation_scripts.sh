@@ -263,6 +263,8 @@ grep -q 'scripts/verify_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_perf_baseline.sh in shell syntax checks"
 grep -q 'scripts/verify_privacy_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_privacy_review.sh in shell syntax checks"
+grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
 grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
@@ -384,6 +386,79 @@ expect_success \
   scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/privacy-review-approved.properties" "status=passed"
 
+MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
+MODEL_LICENSE_PENDING="$TMP_DIR/model-license-pending.json"
+MODEL_LICENSE_APPROVED="$TMP_DIR/model-license-approved.json"
+cat > "$MODEL_LICENSE_METADATA" <<'MODEL_LICENSE_METADATA_JSON'
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "chat-e2b",
+      "metadataOnly": true
+    },
+    {
+      "id": "memory-embedding-300m",
+      "metadataOnly": true
+    }
+  ]
+}
+MODEL_LICENSE_METADATA_JSON
+cat > "$MODEL_LICENSE_PENDING" <<'MODEL_LICENSE_PENDING_JSON'
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "chat-e2b",
+      "status": "pending_manual_review",
+      "licenseName": "",
+      "licenseUrl": "https://example.com/model",
+      "redistributionDecision": "not_approved",
+      "attributionNotice": "",
+      "reviewer": "",
+      "reviewDate": ""
+    }
+  ]
+}
+MODEL_LICENSE_PENDING_JSON
+expect_failure \
+  "model license verifier rejects incomplete review records" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_PENDING" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/model-license-pending.properties" "status=failed"
+cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "chat-e2b",
+      "status": "approved",
+      "licenseName": "Apache-2.0",
+      "licenseUrl": "https://example.com/chat-license",
+      "redistributionDecision": "approved",
+      "attributionNotice": "Include Apache-2.0 notice.",
+      "reviewer": "Model Reviewer",
+      "reviewDate": "2026-06-06"
+    },
+    {
+      "id": "memory-embedding-300m",
+      "status": "approved",
+      "licenseName": "Apache-2.0",
+      "licenseUrl": "https://example.com/memory-license",
+      "redistributionDecision": "approved",
+      "attributionNotice": "Include Apache-2.0 notice.",
+      "reviewer": "Model Reviewer",
+      "reviewDate": "2026-06-06"
+    }
+  ]
+}
+MODEL_LICENSE_APPROVED_JSON
+expect_success \
+  "model license verifier accepts approved metadata-aligned records" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_APPROVED" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/model-license-approved.properties" "status=passed"
+
 SAFE_APK="$TMP_DIR/safe.apk"
 SAFE_AAB="$TMP_DIR/safe.aab"
 UNSAFE_APK="$TMP_DIR/unsafe.apk"
@@ -488,6 +563,16 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-privacy-review/privacy-review.properties" "status=failed"
+expect_failure \
+  "release gate requires approved model license review when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-model-license" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_MODEL_LICENSES=1 \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-model-license/model-license-review.properties" "status=failed"
 expect_failure \
   "public release profile requires expected signing certificate" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/public-release-missing-cert" \
