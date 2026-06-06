@@ -15,6 +15,34 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Product capability matrix mainline coverage
+
+本轮覆盖项：
+
+- `CapabilityMatrix.productDescriptors` 从 3 个能力扩展为覆盖产品主线的 10 个能力：
+  离线聊天、显式记忆、分享/文件文本输入、远程视觉图片输入、语音转写输入、受确认端侧工具、
+  可审计 trace/audit、模型管理、Run Data Receipt 和 release gate。
+- 新增 `UserProvided` capability privacy level，区分用户主动提供的文本/图片/语音转写与
+  public evidence 工具结果。
+- `CapabilityMatrixDocumentationTest` 从只校验 capability ID 扩展为逐字段校验
+  `docs/capability_matrix.json` 与代码 descriptor 一致，并校验每个 product capability
+  的 required test class 确实存在。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest' \
+  --tests 'com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest' \
+  --tests 'com.bytedance.zgx.pocketmind.docs.ModelManifestDocumentationTest'
+```
+
+结果：
+
+- 通过：capability matrix / agent core / model manifest contract JVM tests。
+- 未执行模拟器：本轮只修改 capability contract、JSON 文档和 JVM 文档测试；不改变
+  Android runtime 或 UI 行为。
+
 ## 2026-06-06 Remote image input unsupported-vision boundary
 
 本轮覆盖项：
