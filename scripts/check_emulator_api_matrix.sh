@@ -24,6 +24,16 @@ join_csv() {
   printf '%s' "$*"
 }
 
+join_array_csv() {
+  local array_name="$1"
+  local count
+  eval "count=\${#${array_name}[@]}"
+  if [[ "$count" -eq 0 ]]; then
+    return 0
+  fi
+  eval "local IFS=,; printf '%s' \"\${${array_name}[*]}\""
+}
+
 write_report() {
   local status="$1"
   local reason="${2:-}"
@@ -39,10 +49,10 @@ write_report() {
     printf 'requiredApis=%s\n' "$(join_csv $REQUIRED_APIS)"
     printf 'tag=%s\n' "$EMULATOR_TAG"
     printf 'abi=%s\n' "$EMULATOR_ABI"
-    printf 'installedSystemImageApis=%s\n' "$(join_csv "${INSTALLED_SYSTEM_IMAGE_APIS[@]}")"
-    printf 'availableAvdApis=%s\n' "$(join_csv "${AVAILABLE_AVD_APIS[@]}")"
-    printf 'missingSystemImageApis=%s\n' "$(join_csv "${MISSING_SYSTEM_IMAGE_APIS[@]}")"
-    printf 'missingAvdApis=%s\n' "$(join_csv "${MISSING_AVD_APIS[@]}")"
+    printf 'installedSystemImageApis=%s\n' "$(join_array_csv INSTALLED_SYSTEM_IMAGE_APIS)"
+    printf 'availableAvdApis=%s\n' "$(join_array_csv AVAILABLE_AVD_APIS)"
+    printf 'missingSystemImageApis=%s\n' "$(join_array_csv MISSING_SYSTEM_IMAGE_APIS)"
+    printf 'missingAvdApis=%s\n' "$(join_array_csv MISSING_AVD_APIS)"
   } > "$REPORT_FILE"
 }
 

@@ -17,6 +17,43 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Emulator API matrix regression runner
+
+本轮覆盖项：
+
+- 新增 `scripts/regression_emulator_api_matrix.sh`，先执行
+  `scripts/check_emulator_api_matrix.sh`，readiness 通过后再按 API 顺序运行
+  `scripts/regression_emulator.sh`。
+- 每个 API 生成独立 `api-<level>/regression-emulator.properties`，顶层生成
+  `regression-emulator-api-matrix.properties`，记录 `passedApis`、`failedApis`、
+  per-API AVD、report path 和 SHA-256。
+- runner 默认不允许已有 emulator 混入矩阵；每个 API 跑完后尝试关闭本轮选中的
+  emulator，避免后续 API 选择歧义。
+- `scripts/test_validation_scripts.sh` 用 fake sdkmanager / fake AVD / fake regression
+  覆盖 matrix runner 全通过和单 API 回归失败两条路径。
+
+验证命令：
+
+```bash
+bash -n scripts/regression_emulator_api_matrix.sh scripts/check_emulator_api_matrix.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+ARTIFACT_DIR=build/verification/regression-emulator-api-matrix-current REPORT_FILE=build/verification/regression-emulator-api-matrix-current/regression-emulator-api-matrix.properties scripts/regression_emulator_api_matrix.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" REQUIRED_APIS=36 ARTIFACT_DIR=build/verification/regression-emulator-api36-current REPORT_FILE=build/verification/regression-emulator-api36-current/regression-emulator-api-matrix.properties EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator_api_matrix.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 matrix runner success 和 API failure report。
+- 预期失败：完整默认矩阵在 readiness 阶段失败；
+  `build/verification/regression-emulator-api-matrix-current/regression-emulator-api-matrix.properties`
+  记录 `failedTarget=readiness`，原因是 API 28/32/33/34 system image 和 AVD 缺失。
+- 通过：真实 API 36 matrix runner 回归；
+  `build/verification/regression-emulator-api36-current/regression-emulator-api-matrix.properties`
+  记录 `status=passed`、`passedApis=36`，嵌套
+  `api-36/regression-emulator.properties` 记录 28 个 AndroidTest 全部通过，SHA-256 为
+  `262297190ec94a7cd9e717693353f223818fb1415f694dbcdc407af2c9776e28`。
+- 通过：runner 结束后 `adb devices -l` 为空，没有遗留运行中的 emulator。
+
 ## 2026-06-06 Emulator API matrix readiness reporting
 
 本轮覆盖项：

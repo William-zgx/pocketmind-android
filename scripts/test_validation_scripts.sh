@@ -211,6 +211,41 @@ FAKE_GRADLE
   chmod +x "$path"
 }
 
+create_fake_matrix_regression() {
+  local path="$1"
+  cat > "$path" <<'FAKE_MATRIX_REGRESSION'
+#!/usr/bin/env bash
+set -euo pipefail
+api="${AVD_NAME#api}"
+api="${api%%_*}"
+report="${REGRESSION_REPORT_FILE:?}"
+mkdir -p "$(dirname "$report")"
+if [[ "$api" == "${FAKE_MATRIX_FAIL_API:-}" ]]; then
+  {
+    echo "status=failed"
+    echo "target=regression-emulator"
+    echo "reason=regression-failed"
+    echo "api_level=$api"
+    echo "abi=arm64-v8a"
+    echo "avd=$AVD_NAME"
+    echo "actual_android_test_count=${FAKE_MATRIX_TEST_COUNT:-1}"
+  } > "$report"
+  exit 1
+fi
+{
+  echo "status=passed"
+  echo "target=regression-emulator"
+  echo "reason="
+  echo "serial=emulator-$api"
+  echo "api_level=$api"
+  echo "abi=arm64-v8a"
+  echo "avd=$AVD_NAME"
+  echo "actual_android_test_count=${FAKE_MATRIX_TEST_COUNT:-1}"
+} > "$report"
+FAKE_MATRIX_REGRESSION
+  chmod +x "$path"
+}
+
 assert_no_gradle_call() {
   if [[ -s "$FAKE_GRADLE_LOG" ]]; then
     cat "$FAKE_GRADLE_LOG" >&2
@@ -293,6 +328,8 @@ grep -q 'scripts/regression_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator.sh in shell syntax checks"
 grep -q 'scripts/check_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include check_emulator_api_matrix.sh in shell syntax checks"
+grep -q 'scripts/regression_emulator_api_matrix.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include regression_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
@@ -1120,8 +1157,10 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-validation-unsanitized.properties" "status=failed"
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
+FAKE_MATRIX_REGRESSION="$TMP_DIR/fake-matrix-regression"
 FAKE_AVD_ROOT="$TMP_DIR/fake-avd-root"
 create_fake_sdkmanager "$FAKE_SDKMANAGER"
+create_fake_matrix_regression "$FAKE_MATRIX_REGRESSION"
 mkdir -p "$FAKE_AVD_ROOT/api28.avd" "$FAKE_AVD_ROOT/api36.avd"
 cat > "$FAKE_AVD_ROOT/api28.avd/config.ini" <<'API28_AVD_CONFIG'
 abi.type=arm64-v8a
@@ -1161,6 +1200,47 @@ assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.prop
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "reason=missing-system-image-api-28,missing-avd-api-28"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "missingSystemImageApis=28"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "missingAvdApis=28"
+mkdir -p "$FAKE_AVD_ROOT/api28.avd"
+cat > "$FAKE_AVD_ROOT/api28.avd/config.ini" <<'API28_AVD_CONFIG'
+abi.type=arm64-v8a
+image.sysdir.1=system-images/android-28/google_apis/arm64-v8a/
+tag.id=google_apis
+target=android-28
+API28_AVD_CONFIG
+FAKE_SDKMANAGER_INSTALLED=$'system-images;android-28;google_apis;arm64-v8a | 1 | Fake\nsystem-images;android-36;google_apis;arm64-v8a | 1 | Fake'
+expect_success \
+  "emulator api matrix regression accepts all api reports" \
+  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
+  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
+  CHECK_EMULATOR_API_MATRIX_SCRIPT="scripts/check_emulator_api_matrix.sh" \
+  REGRESSION_EMULATOR_SCRIPT="$FAKE_MATRIX_REGRESSION" \
+  STOP_EMULATOR_AFTER_EACH=0 \
+  REPORT_FILE="$ARTIFACT_DIR/regression-emulator-api-matrix.properties" \
+  ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix" \
+  scripts/regression_emulator_api_matrix.sh
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "target=regression-emulator-api-matrix"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "passedApis=28,36"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "api28Status=passed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "api36Status=passed"
+expect_failure \
+  "emulator api matrix regression reports api failure" \
+  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
+  FAKE_MATRIX_FAIL_API=28 \
+  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
+  CHECK_EMULATOR_API_MATRIX_SCRIPT="scripts/check_emulator_api_matrix.sh" \
+  REGRESSION_EMULATOR_SCRIPT="$FAKE_MATRIX_REGRESSION" \
+  STOP_EMULATOR_AFTER_EACH=0 \
+  REPORT_FILE="$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" \
+  ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix-failed" \
+  scripts/regression_emulator_api_matrix.sh
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "failedTarget=api-28-regression"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "reason=api-28-regression-regression-failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "failedApis=28"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "api28Status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"

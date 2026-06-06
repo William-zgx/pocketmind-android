@@ -213,6 +213,10 @@ release ticket or PR.
   regression. Attach `emulator-api-matrix-readiness.properties`; if it fails,
   the report must list missing system-image APIs and missing AVD APIs instead
   of silently skipping matrix coverage.
+- [ ] Once API matrix AVDs are prepared,
+  `scripts/regression_emulator_api_matrix.sh` passes for API 28/32/33/34/36.
+  Attach the top-level `regression-emulator-api-matrix.properties` plus each
+  nested API `regression-emulator.properties` report and matching SHA-256.
 - [ ] `scripts/install_and_test_device.sh` passes on at least one physical
   arm64 device before a broad release candidate.
 - [ ] Validation record includes device serial or AVD name, API level, ABI,
