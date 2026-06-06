@@ -269,6 +269,8 @@ grep -q 'scripts/verify_store_policy_record.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_store_policy_record.sh in shell syntax checks"
 grep -q 'scripts/verify_release_operations_record.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_operations_record.sh in shell syntax checks"
+grep -q 'scripts/verify_release_validation_record.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_release_validation_record.sh in shell syntax checks"
 grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_mapping.sh' scripts/verify_local.sh ||
@@ -623,6 +625,145 @@ expect_failure \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_FUTURE" --report "$ARTIFACT_DIR/release-operations-future.properties"
 assert_report_contains "$ARTIFACT_DIR/release-operations-future.properties" "status=failed"
 
+VALIDATION_PENDING="$TMP_DIR/release-validation-pending.json"
+VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"
+VALIDATION_EMULATOR_REPORT="$TMP_DIR/regression-emulator.properties"
+VALIDATION_DEVICE_REPORT="$TMP_DIR/device-verification.properties"
+VALIDATION_DATE="$(date +%F)"
+mkdir -p "$TMP_DIR/validation-screenshots"
+for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
+  printf 'fake screenshot %s\n' "$screenshot_name" > "$TMP_DIR/validation-screenshots/$screenshot_name.png"
+done
+cat > "$VALIDATION_PENDING" <<'VALIDATION_PENDING_JSON'
+{
+  "version": 1,
+  "status": "pending_validation"
+}
+VALIDATION_PENDING_JSON
+expect_failure \
+  "release validation verifier rejects pending records" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_PENDING" --report "$ARTIFACT_DIR/release-validation-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-pending.properties" "status=failed"
+cat > "$VALIDATION_EMULATOR_REPORT" <<VALIDATION_EMULATOR_REPORT_PROPERTIES
+status=passed
+target=regression-emulator
+clean_device=1
+actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+avd=test-avd
+api_level=36
+abi=arm64-v8a
+VALIDATION_EMULATOR_REPORT_PROPERTIES
+cat > "$VALIDATION_DEVICE_REPORT" <<VALIDATION_DEVICE_REPORT_PROPERTIES
+status=passed
+target=device
+serial=device-a
+api_level=36
+abi=arm64-v8a
+clean_device=1
+instrumentation=passed
+instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+VALIDATION_DEVICE_REPORT_PROPERTIES
+cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
+{
+  "version": 1,
+  "status": "approved",
+  "emulatorRegression": {
+    "status": "passed",
+    "reportPath": "$VALIDATION_EMULATOR_REPORT",
+    "avd": "test-avd",
+    "apiLevel": 36,
+    "abi": "arm64-v8a",
+    "cleanDevice": true
+  },
+  "physicalDevice": {
+    "status": "passed",
+    "reportPath": "$VALIDATION_DEVICE_REPORT",
+    "serial": "device-a",
+    "apiLevel": 36,
+    "abi": "arm64-v8a",
+    "cleanDevice": true
+  },
+  "apiMatrix": [
+    {"apiLevel": 28, "status": "passed", "evidence": "API 28 smoke passed."},
+    {"apiLevel": 32, "status": "passed", "evidence": "API 32 legacy storage path passed."},
+    {"apiLevel": 33, "status": "passed", "evidence": "API 33 media and notification path passed."},
+    {"apiLevel": 34, "status": "passed", "evidence": "API 34 selected visual media path passed."},
+    {"apiLevel": 36, "status": "passed", "evidence": "API 36 target behavior passed."}
+  ],
+  "manualAcceptance": {
+    "modelSetup": "passed",
+    "remoteModePrivacy": "passed",
+    "toolConfirmation": "passed",
+    "permissions": "passed",
+    "backgroundReminders": "passed",
+    "sharing": "passed",
+    "multimodalEntryPoints": "passed",
+    "voiceInput": "passed",
+    "filePicker": "passed",
+    "mediaProjection": "passed",
+    "remoteSinglePublicEvidence": "passed",
+    "remoteMultiEvidenceComparison": "passed",
+    "mixedPrivateActionBatchFailClosed": "passed"
+  },
+  "flowMatrix": {
+    "firstInstall": "passed",
+    "upgradeInstall": "passed",
+    "localModelDownloadVerification": "passed",
+    "customModelImportOrUrlRejection": "passed",
+    "remoteHttpsConfiguration": "passed",
+    "encryptedApiKeyClear": "passed",
+    "sessionPersistence": "passed",
+    "memoryControls": "passed",
+    "remindersAfterReboot": "passed",
+    "shareAndPickerInput": "passed",
+    "voiceInput": "passed",
+    "accessibilityText": "passed",
+    "recentMediaOcr": "passed",
+    "mediaProjectionCancellation": "passed"
+  },
+  "screenshots": [
+    {"name": "chat-home", "path": "$TMP_DIR/validation-screenshots/chat-home.png", "sanitized": true},
+    {"name": "model-manager", "path": "$TMP_DIR/validation-screenshots/model-manager.png", "sanitized": true},
+    {"name": "confirmation-sheet", "path": "$TMP_DIR/validation-screenshots/confirmation-sheet.png", "sanitized": true},
+    {"name": "background-tasks-or-audit", "path": "$TMP_DIR/validation-screenshots/background-tasks-or-audit.png", "sanitized": true}
+  ],
+  "performanceSanity": {
+    "firstLaunch": "passed",
+    "modelLoad": "passed",
+    "firstToken": "passed",
+    "streamingStopCancel": "passed",
+    "backgroundReminderDelivery": "passed",
+    "memoryPressure": "passed"
+  },
+  "review": {
+    "reviewer": "Validation Reviewer",
+    "reviewDate": "$VALIDATION_DATE"
+  }
+}
+VALIDATION_APPROVED_JSON
+expect_success \
+  "release validation verifier accepts approved evidence record" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-approved.properties" "status=passed"
+VALIDATION_MISSING_DEVICE="$TMP_DIR/release-validation-missing-device.json"
+sed 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$TMP_DIR/missing-device.properties"'"#' "$VALIDATION_APPROVED" > "$VALIDATION_MISSING_DEVICE"
+expect_failure \
+  "release validation verifier rejects missing physical report" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_MISSING_DEVICE" --report "$ARTIFACT_DIR/release-validation-missing-device.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-missing-device.properties" "status=failed"
+VALIDATION_API_GAP="$TMP_DIR/release-validation-api-gap.json"
+sed 's/"apiLevel": 34, "status": "passed"/"apiLevel": 34, "status": "pending"/' "$VALIDATION_APPROVED" > "$VALIDATION_API_GAP"
+expect_failure \
+  "release validation verifier rejects incomplete api matrix" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_GAP" --report "$ARTIFACT_DIR/release-validation-api-gap.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-api-gap.properties" "status=failed"
+VALIDATION_UNSANITIZED_SCREENSHOT="$TMP_DIR/release-validation-unsanitized-screenshot.json"
+sed 's/\("name": "chat-home", "path": "[^"]*", "sanitized": \)true/\1false/' "$VALIDATION_APPROVED" > "$VALIDATION_UNSANITIZED_SCREENSHOT"
+expect_failure \
+  "release validation verifier rejects unsanitized screenshots" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_UNSANITIZED_SCREENSHOT" --report "$ARTIFACT_DIR/release-validation-unsanitized.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-unsanitized.properties" "status=failed"
+
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
 printf 'hello pocketmind\n' > "$SAFE_PRIVACY_DIR/readme.txt"
@@ -906,6 +1047,7 @@ assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.p
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseRecord=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyStorePolicy=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseOperations=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseValidation=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyPrivacyReview=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
@@ -969,6 +1111,17 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-operations-gate/release-operations-record.properties" "status=failed"
+expect_failure \
+  "release gate requires approved validation record when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-validation-gate" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_RELEASE_VALIDATION=1 \
+  VALIDATION_RECORD_FILE="$VALIDATION_PENDING" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-validation-gate/release-validation-record.properties" "status=failed"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh

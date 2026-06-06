@@ -22,6 +22,8 @@ VERIFY_STORE_POLICY="${VERIFY_STORE_POLICY:-0}"
 STORE_POLICY_FILE="${STORE_POLICY_FILE:-docs/store_policy_record.json}"
 VERIFY_RELEASE_OPERATIONS="${VERIFY_RELEASE_OPERATIONS:-0}"
 OPERATIONS_RECORD_FILE="${OPERATIONS_RECORD_FILE:-docs/release_operations_record.json}"
+VERIFY_RELEASE_VALIDATION="${VERIFY_RELEASE_VALIDATION:-0}"
+VALIDATION_RECORD_FILE="${VALIDATION_RECORD_FILE:-docs/release_validation_record.json}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
@@ -36,6 +38,7 @@ if [[ "$PUBLIC_RELEASE" == "1" ]]; then
   VERIFY_RELEASE_RECORD=1
   VERIFY_STORE_POLICY=1
   VERIFY_RELEASE_OPERATIONS=1
+  VERIFY_RELEASE_VALIDATION=1
   VERIFY_MODEL_LICENSES=1
   VERIFY_PRIVACY_REVIEW=1
   REQUIRE_AAB=1
@@ -56,6 +59,8 @@ write_gate_report() {
     printf 'storePolicyFile=%s\n' "$STORE_POLICY_FILE"
     printf 'verifyReleaseOperations=%s\n' "$VERIFY_RELEASE_OPERATIONS"
     printf 'operationsRecordFile=%s\n' "$OPERATIONS_RECORD_FILE"
+    printf 'verifyReleaseValidation=%s\n' "$VERIFY_RELEASE_VALIDATION"
+    printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
@@ -208,6 +213,20 @@ else
     printf 'reason=VERIFY_RELEASE_OPERATIONS-not-enabled\n'
     printf 'operationsRecordFile=%s\n' "$OPERATIONS_RECORD_FILE"
   } > "$ARTIFACT_DIR/release-operations-record.properties"
+fi
+
+if [[ "$VERIFY_RELEASE_VALIDATION" == "1" ]]; then
+  if ! scripts/verify_release_validation_record.sh --file "$VALIDATION_RECORD_FILE" --report "$ARTIFACT_DIR/release-validation-record.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=release-validation-record\n'
+    printf 'reason=VERIFY_RELEASE_VALIDATION-not-enabled\n'
+    printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
+  } > "$ARTIFACT_DIR/release-validation-record.properties"
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then

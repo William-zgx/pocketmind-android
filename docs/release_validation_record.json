@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "policy": "Public release builds require VERIFY_RELEASE_VALIDATION=1 and an approved validation record covering emulator, physical device, manual acceptance, matrix coverage, and sanitized screenshots.",
+  "status": "pending_validation",
+  "emulatorRegression": {
+    "status": "pending",
+    "reportPath": "",
+    "avd": "",
+    "apiLevel": 0,
+    "abi": "",
+    "cleanDevice": true
+  },
+  "physicalDevice": {
+    "status": "pending",
+    "reportPath": "",
+    "serial": "",
+    "apiLevel": 0,
+    "abi": "",
+    "cleanDevice": true
+  },
+  "apiMatrix": [
+    {
+      "apiLevel": 28,
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "apiLevel": 32,
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "apiLevel": 33,
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "apiLevel": 34,
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "apiLevel": 36,
+      "status": "pending",
+      "evidence": ""
+    }
+  ],
+  "manualAcceptance": {
+    "modelSetup": "pending",
+    "remoteModePrivacy": "pending",
+    "toolConfirmation": "pending",
+    "permissions": "pending",
+    "backgroundReminders": "pending",
+    "sharing": "pending",
+    "multimodalEntryPoints": "pending",
+    "voiceInput": "pending",
+    "filePicker": "pending",
+    "mediaProjection": "pending",
+    "remoteSinglePublicEvidence": "pending",
+    "remoteMultiEvidenceComparison": "pending",
+    "mixedPrivateActionBatchFailClosed": "pending"
+  },
+  "flowMatrix": {
+    "firstInstall": "pending",
+    "upgradeInstall": "pending",
+    "localModelDownloadVerification": "pending",
+    "customModelImportOrUrlRejection": "pending",
+    "remoteHttpsConfiguration": "pending",
+    "encryptedApiKeyClear": "pending",
+    "sessionPersistence": "pending",
+    "memoryControls": "pending",
+    "remindersAfterReboot": "pending",
+    "shareAndPickerInput": "pending",
+    "voiceInput": "pending",
+    "accessibilityText": "pending",
+    "recentMediaOcr": "pending",
+    "mediaProjectionCancellation": "pending"
+  },
+  "screenshots": [
+    {
+      "name": "chat-home",
+      "path": "",
+      "sanitized": false
+    },
+    {
+      "name": "model-manager",
+      "path": "",
+      "sanitized": false
+    },
+    {
+      "name": "confirmation-sheet",
+      "path": "",
+      "sanitized": false
+    },
+    {
+      "name": "background-tasks-or-audit",
+      "path": "",
+      "sanitized": false
+    }
+  ],
+  "performanceSanity": {
+    "firstLaunch": "pending",
+    "modelLoad": "pending",
+    "firstToken": "pending",
+    "streamingStopCancel": "pending",
+    "backgroundReminderDelivery": "pending",
+    "memoryPressure": "pending"
+  },
+  "review": {
+    "reviewer": "",
+    "reviewDate": ""
+  }
+}

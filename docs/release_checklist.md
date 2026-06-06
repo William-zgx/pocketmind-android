@@ -197,6 +197,12 @@ release ticket or PR.
 - [ ] Performance sanity is recorded for first launch, model load, first token,
   streaming stop/cancel, background reminder delivery, and memory pressure on
   the largest recommended model expected for the channel.
+- [ ] `docs/release_validation_record.json` is updated and approved, then
+  `VERIFY_RELEASE_VALIDATION=1 scripts/verify_release_gate.sh` passes. The gate
+  checks emulator regression, physical-device instrumentation, API matrix
+  coverage, manual acceptance, system-mediated flows, remote public evidence
+  samples, mixed-batch rejection, sanitized screenshots, flow coverage, and
+  performance sanity evidence.
 
 ## Crash, ANR, And Monitoring
 

@@ -15,10 +15,11 @@ items below.
   privacy/license review, signing, test gates, and rollback planning.
 - Machine-readable release gates now cover capability matrix drift,
   release record completeness, store policy/data-safety disclosure, privacy
-  scanning, rollout monitoring/rollback readiness, privacy notice review
-  records, APK/AAB artifact scanning, model license review records, RC
-  perf-baseline verification, artifact SHA matching, and optional public release
-  enforcement for signed artifacts plus AAB presence and release mapping output.
+  scanning, rollout monitoring/rollback readiness, release validation matrix
+  evidence, privacy notice review records, APK/AAB artifact scanning, model
+  license review records, RC perf-baseline verification, artifact SHA matching,
+  and optional public release enforcement for signed artifacts plus AAB presence
+  and release mapping output.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -72,6 +73,12 @@ items below.
   crash/ANR smoke result, and rollback plan. `VERIFY_RELEASE_OPERATIONS=1`
   verifies Android Vitals coverage, rollout thresholds, previous known-good
   metadata or initial-release exemption, rollback criteria, and review date.
+- Fill `docs/release_validation_record.json` with approved emulator regression,
+  physical-device instrumentation, API matrix coverage, manual acceptance,
+  flow matrix, sanitized screenshots, and performance sanity evidence.
+  `VERIFY_RELEASE_VALIDATION=1` verifies linked emulator/device reports,
+  AndroidTest count coverage, required API levels, manual/system-mediated flows,
+  screenshot files, and review date.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in
@@ -103,5 +110,6 @@ items below.
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
   production signing and bundle generation are complete. `PUBLIC_RELEASE=1`
   enables release record, store policy, rollout monitoring/rollback readiness,
-  privacy review, model license, AAB, signed-artifact, and certificate
-  fingerprint checks, plus release mapping verification.
+  release validation matrix, privacy review, model license, AAB,
+  signed-artifact, and certificate fingerprint checks, plus release mapping
+  verification.

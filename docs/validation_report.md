@@ -6785,3 +6785,35 @@ scripts/verify_local.sh
   `verifyReleaseOperations=1`。
 - 通过：脚本单测覆盖 `VERIFY_RELEASE_OPERATIONS=1` 时 release gate 对 pending
   record fail-closed。
+
+## 2026-06-06 Release validation gate
+
+本轮覆盖项：
+
+- 新增 `docs/release_validation_record.json`，把 emulator regression、physical
+  device instrumentation、API matrix、manual acceptance、系统中介手工项、remote
+  public evidence 样例、mixed-batch fail-closed、sanitized screenshots、flow
+  matrix 和 performance sanity 证据收敛为机器可读记录。
+- 新增 `scripts/verify_release_validation_record.sh`，校验 validation record
+  已 approved，关联 emulator/device report 真实存在且通过，instrumentation test
+  count 不低于当前 AndroidTest 源码数量，API 28/32/33/34/36 都有通过证据，截图
+  文件存在且标记 sanitized。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_RELEASE_VALIDATION=1`；
+  `PUBLIC_RELEASE=1` profile 会自动开启 release validation gate。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 pending release validation 失败。
+- 通过：脚本单测覆盖 approved validation record 成功。
+- 通过：脚本单测覆盖缺失 physical report、API matrix 缺口和截图未 sanitized 失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用
+  `verifyReleaseValidation=1`。
+- 通过：脚本单测覆盖 `VERIFY_RELEASE_VALIDATION=1` 时 release gate 对 pending
+  record fail-closed。

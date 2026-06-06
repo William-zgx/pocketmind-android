@@ -55,16 +55,16 @@ Google AI Edge LiteRT-LM.
   context outputs.
 - Release-only gates use machine-readable artifacts for capability matrix
   drift, release record completeness, store policy/data-safety disclosure,
-  rollout monitoring/rollback readiness, privacy scanning, privacy notice
-  review, APK/AAB scanning, model license review, and physical-device perf
-  baselines; run
+  rollout monitoring/rollback readiness, release validation matrix evidence,
+  privacy scanning, privacy notice review, APK/AAB scanning, model license
+  review, and physical-device perf baselines; run
   `scripts/collect_perf_baseline.sh` from measured RC values, then run
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...` for release
   candidates. Public distribution should set `PUBLIC_RELEASE=1` plus
   `EXPECTED_SIGNING_CERT_SHA256=<production upload cert>`; that profile enables
   release record, store policy review, rollout monitoring/rollback readiness,
-  privacy review, structured model license review, AAB, signed-artifact,
-  certificate fingerprint, and release mapping checks.
+  release validation matrix, privacy review, structured model license review,
+  AAB, signed-artifact, certificate fingerprint, and release mapping checks.
 - Minimal device context snapshots plus confirmed clipboard, calendar, contact,
   current-app notification summary, foreground-app usage-stats estimates,
   recent-file metadata, and
