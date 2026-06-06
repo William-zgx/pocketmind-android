@@ -165,6 +165,21 @@ def validate_api_matrix_evidence(api_level, evidence_path):
         if actual_count < source_android_test_count:
             failures.append(f"{prefix}-test-count-too-low")
 
+def validate_performance_evidence(key, evidence_path):
+    prefix = f"performance-{key}-evidence"
+    props = properties_for(evidence_path)
+    if props.get("status") != "passed":
+        failures.append(f"{prefix}-status-not-passed")
+    if props.get("target") != "perf-baseline":
+        failures.append(f"{prefix}-target-invalid")
+    if props.get("missingFieldCount") != "0":
+        failures.append(f"{prefix}-missing-fields")
+    baseline_file = props.get("baselineFile", "")
+    if not non_empty_string(baseline_file):
+        failures.append(f"{prefix}-baseline-file-missing")
+    elif not Path(baseline_file).is_file():
+        failures.append(f"{prefix}-baseline-file-read-failed")
+
 def count_android_tests():
     count = 0
     if not android_test_source_dir.is_dir():
@@ -379,7 +394,12 @@ if not isinstance(performance, dict):
     failures.append("performance-sanity-missing")
     performance = {}
 for key in sorted(required_performance):
-    validate_evidence_record("performance", key, performance.get(key))
+    value = performance.get(key)
+    validate_evidence_record("performance", key, value)
+    if isinstance(value, dict):
+        evidence_path = value.get("evidencePath", "")
+        if non_empty_string(evidence_path) and Path(evidence_path).is_file():
+            validate_performance_evidence(key, evidence_path)
 
 review = record.get("review")
 if not isinstance(review, dict):

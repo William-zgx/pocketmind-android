@@ -198,6 +198,11 @@ release ticket or PR.
   report without guessing.
 - [ ] `perf-baseline-verification.properties` records a machine-readable
   `reason` list whenever the perf baseline gate fails.
+- [ ] Every `performanceSanity` item in `docs/release_validation_record.json`
+  references a passed `perf-baseline-verification.properties` report generated
+  by `scripts/verify_perf_baseline.sh`, with `target=perf-baseline`,
+  `missingFieldCount=0`, and a readable `baselineFile`; lightweight status-only
+  performance evidence files are not accepted.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the
@@ -268,7 +273,8 @@ release ticket or PR.
   `docs/release_validation_record.json`.
 - [ ] Performance sanity is recorded for first launch, model load, first token,
   streaming stop/cancel, background reminder delivery, and memory pressure on
-  the largest recommended model expected for the channel.
+  the largest recommended model expected for the channel. Each record must point
+  to the perf baseline verifier report, not a hand-written summary.
 - [ ] `docs/release_validation_record.json` is updated and approved, then
   `VERIFY_RELEASE_VALIDATION=1 scripts/verify_release_gate.sh` passes. The gate
   checks emulator regression, rejects `emulator-*` serials as physical-device

@@ -1041,8 +1041,39 @@ for flow_key in \
   mediaProjectionCancellation; do
   printf 'status=passed\nflow=%s\n' "$flow_key" > "$TMP_DIR/validation-flow-evidence/$flow_key.properties"
 done
+VALIDATION_PERF_BASELINE="$TMP_DIR/validation-performance-evidence/perf-baseline.properties"
+cat > "$VALIDATION_PERF_BASELINE" <<VALIDATION_PERF_BASELINE_PROPERTIES
+status=passed
+deviceSerial=device-a
+deviceModel=Pixel Test
+androidApi=36
+abi=arm64-v8a
+appVersion=0.1.0
+releaseArtifactSha256=$VALID_PERF_SHA
+modelId=chat-e2b
+backend=GPU
+firstLaunchInteractiveMs=1200
+modelLoadMs=3500
+firstTokenMs=900
+tokensPerSecond=12.5
+stopGenerationRecoveryMs=200
+gpuFallbackStatus=not-needed
+visionInputMs=500
+memorySearch5kMs=25
+memoryPeakMb=512
+oomOrAnrObserved=false
+recordedAt=$PERF_RECORDED_AT
+VALIDATION_PERF_BASELINE_PROPERTIES
 for perf_key in firstLaunch modelLoad firstToken streamingStopCancel backgroundReminderDelivery memoryPressure; do
-  printf 'status=passed\nperformance=%s\n' "$perf_key" > "$TMP_DIR/validation-performance-evidence/$perf_key.properties"
+  cat > "$TMP_DIR/validation-performance-evidence/$perf_key.properties" <<VALIDATION_PERFORMANCE_EVIDENCE_PROPERTIES
+status=passed
+target=perf-baseline
+baselineFile=$VALIDATION_PERF_BASELINE
+missingFieldCount=0
+expectedArtifactSha256=
+expectedAppVersion=
+maxRecordAgeDays=30
+VALIDATION_PERFORMANCE_EVIDENCE_PROPERTIES
 done
 cat > "$VALIDATION_PENDING" <<'VALIDATION_PENDING_JSON'
 {
@@ -1300,6 +1331,31 @@ expect_failure \
   "release validation verifier rejects manual evidence sha mismatch" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_MANUAL_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-manual-bad-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-manual-bad-sha.properties" "manual-modelSetup-evidence-sha-mismatch"
+VALIDATION_PERF_WEAK_EVIDENCE="$TMP_DIR/release-validation-perf-weak-evidence.json"
+VALIDATION_PERF_WEAK_EVIDENCE_FILE="$TMP_DIR/validation-performance-evidence/weak-firstLaunch.properties"
+cat > "$VALIDATION_PERF_WEAK_EVIDENCE_FILE" <<'VALIDATION_PERF_WEAK_EVIDENCE_PROPERTIES'
+status=passed
+performance=firstLaunch
+VALIDATION_PERF_WEAK_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_PERF_WEAK_EVIDENCE" "$VALIDATION_PERF_WEAK_EVIDENCE_FILE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["performanceSanity"]["firstLaunch"]["evidencePath"] = str(evidence)
+record["performanceSanity"]["firstLaunch"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak performance sanity evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_PERF_WEAK_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-perf-weak-evidence.properties" "performance-firstLaunch-evidence-baseline-file-missing"
 VALIDATION_SCREENSHOT_BAD_SHA="$TMP_DIR/release-validation-screenshot-bad-sha.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_BAD_SHA" <<'PY'
 import json
