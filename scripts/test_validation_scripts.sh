@@ -665,6 +665,15 @@ assert_report_contains_text "$ARTIFACT_DIR/store-policy-placeholder-contact.prop
 OPERATIONS_PENDING="$TMP_DIR/release-operations-pending.json"
 OPERATIONS_APPROVED="$TMP_DIR/release-operations-approved.json"
 OPERATIONS_DATE="$(date +%F)"
+OPERATIONS_MONITORING_EVIDENCE="$TMP_DIR/release-operations-monitoring.properties"
+OPERATIONS_SMOKE_EVIDENCE="$TMP_DIR/release-operations-smoke.properties"
+OPERATIONS_ROLLBACK_EVIDENCE="$TMP_DIR/release-operations-rollback.properties"
+printf 'status=passed\nsource=Android Vitals\nwatcher=Launch Watcher\n' > "$OPERATIONS_MONITORING_EVIDENCE"
+printf 'status=passed\nnoLaunchCrash=true\nnoReproducibleAnr=true\n' > "$OPERATIONS_SMOKE_EVIDENCE"
+printf 'status=passed\nrollback=initial-release\n' > "$OPERATIONS_ROLLBACK_EVIDENCE"
+OPERATIONS_MONITORING_SHA="$(shasum -a 256 "$OPERATIONS_MONITORING_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_SMOKE_SHA="$(shasum -a 256 "$OPERATIONS_SMOKE_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_ROLLBACK_SHA="$(shasum -a 256 "$OPERATIONS_ROLLBACK_EVIDENCE" | awk '{print $1}')"
 cat > "$OPERATIONS_PENDING" <<'OPERATIONS_PENDING_JSON'
 {
   "version": 1,
@@ -685,7 +694,11 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
     "first24HoursWatcher": "Launch Watcher",
     "crashFreeRateThresholdPercent": 99.5,
     "anrRateThresholdPercent": 1.0,
-    "privacyReviewedForCrashSdk": true
+    "privacyReviewedForCrashSdk": true,
+    "evidence": {
+      "path": "$OPERATIONS_MONITORING_EVIDENCE",
+      "sha256": "$OPERATIONS_MONITORING_SHA"
+    }
   },
   "crashAnrSmoke": {
     "window": "2026-06-06 internal smoke",
@@ -695,7 +708,11 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
     "noCrashLoop": true,
     "noFatalNativeLiteRtLmFailure": true,
     "noReproducibleAnr": true,
-    "failureEvidencePolicy": "Attach logcat, tombstones, and ANR traces for any failure; state no crash or ANR when none were observed."
+    "failureEvidencePolicy": "Attach logcat, tombstones, and ANR traces for any failure; state no crash or ANR when none were observed.",
+    "evidence": {
+      "path": "$OPERATIONS_SMOKE_EVIDENCE",
+      "sha256": "$OPERATIONS_SMOKE_SHA"
+    }
   },
   "rollback": {
     "owner": "Release Owner",
@@ -711,6 +728,10 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
     "playVersionCodePolicy": "Any replacement artifact must use a higher versionCode; Play cannot ordinary-update users to a lower versionCode.",
     "modelManifestRollbackPath": "Revert model download metadata when supported; otherwise ship a fixed APK with a higher versionCode.",
     "userDataCompatibility": "Room migrations are forward-only, so downgrade is unsupported unless explicitly tested.",
+    "evidence": {
+      "path": "$OPERATIONS_ROLLBACK_EVIDENCE",
+      "sha256": "$OPERATIONS_ROLLBACK_SHA"
+    },
     "previousKnownGood": {
       "status": "not_applicable_initial_release",
       "versionCode": 0,
@@ -743,6 +764,12 @@ expect_failure \
   "release operations verifier rejects future review dates" \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_FUTURE" --report "$ARTIFACT_DIR/release-operations-future.properties"
 assert_report_contains "$ARTIFACT_DIR/release-operations-future.properties" "status=failed"
+OPERATIONS_SMOKE_BAD_SHA="$TMP_DIR/release-operations-smoke-bad-sha.json"
+sed 's/"sha256": "'"$OPERATIONS_SMOKE_SHA"'"/"sha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$OPERATIONS_APPROVED" > "$OPERATIONS_SMOKE_BAD_SHA"
+expect_failure \
+  "release operations verifier rejects crash smoke evidence sha mismatch" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_SMOKE_BAD_SHA" --report "$ARTIFACT_DIR/release-operations-smoke-bad-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-bad-sha.properties" "crash-anr-smoke-evidence-sha-mismatch"
 
 VALIDATION_PENDING="$TMP_DIR/release-validation-pending.json"
 VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"

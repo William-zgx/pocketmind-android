@@ -234,19 +234,22 @@ release ticket or PR.
   before release.
 - [ ] Release candidate has a crash/ANR smoke window on internal or closed
   testing with no unresolved launch crash, install crash, crash loop, fatal
-  native LiteRT-LM failure, or reproducible ANR.
+  native LiteRT-LM failure, or reproducible ANR. The smoke window evidence file
+  path and SHA-256 are recorded in `docs/release_operations_record.json`.
 - [ ] Manual validation captures `adb logcat`, tombstone/native crash evidence,
   and ANR traces for any failure; release notes link the issue or state that no
   crash/ANR was observed in the RC window.
 - [ ] Crash-free and ANR thresholds for staged rollout are written in the
   release record, with a named person watching the first 24 hours after each
-  rollout step.
+  rollout step. Monitoring setup and rollback plan evidence files are recorded
+  with SHA-256 values so release operations approval cannot rely only on prose.
 - [ ] `docs/release_operations_record.json` is updated and approved, then
   `VERIFY_RELEASE_OPERATIONS=1 scripts/verify_release_gate.sh` passes. The gate
   checks Android Vitals coverage, crash/ANR smoke status, rollout watcher,
-  rollout thresholds, previous known-good metadata or initial-release
-  exemption, rollback criteria, Play version-code policy, model manifest
-  rollback path, and data compatibility notes.
+  rollout thresholds, monitoring evidence, crash/ANR smoke evidence, rollback
+  evidence, previous known-good metadata or initial-release exemption,
+  rollback criteria, Play version-code policy, model manifest rollback path,
+  and data compatibility notes.
 
 ## Rollback
 

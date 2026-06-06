@@ -8,7 +8,11 @@
     "first24HoursWatcher": "",
     "crashFreeRateThresholdPercent": 0,
     "anrRateThresholdPercent": 0,
-    "privacyReviewedForCrashSdk": true
+    "privacyReviewedForCrashSdk": true,
+    "evidence": {
+      "path": "",
+      "sha256": ""
+    }
   },
   "crashAnrSmoke": {
     "window": "",
@@ -18,7 +22,11 @@
     "noCrashLoop": false,
     "noFatalNativeLiteRtLmFailure": false,
     "noReproducibleAnr": false,
-    "failureEvidencePolicy": ""
+    "failureEvidencePolicy": "",
+    "evidence": {
+      "path": "",
+      "sha256": ""
+    }
   },
   "rollback": {
     "owner": "",
@@ -34,6 +42,10 @@
     "playVersionCodePolicy": "",
     "modelManifestRollbackPath": "",
     "userDataCompatibility": "",
+    "evidence": {
+      "path": "",
+      "sha256": ""
+    },
     "previousKnownGood": {
       "status": "unknown",
       "versionCode": 0,

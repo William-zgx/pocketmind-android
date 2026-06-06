@@ -78,6 +78,25 @@ def non_empty_string(value):
 def number_between(value, minimum, maximum):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and minimum <= value <= maximum
 
+def validate_evidence_file(section, entry):
+    if not isinstance(entry, dict):
+        failures.append(f"{section}-evidence-missing")
+        return
+    evidence_path = entry.get("path", "")
+    expected_sha = entry.get("sha256", "")
+    if not non_empty_string(evidence_path):
+        failures.append(f"{section}-evidence-path-missing")
+        return
+    path = Path(evidence_path)
+    if not path.is_file():
+        failures.append(f"{section}-evidence-file-missing")
+        return
+    actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    if not non_empty_string(expected_sha):
+        failures.append(f"{section}-evidence-sha-missing")
+    elif expected_sha != actual_sha:
+        failures.append(f"{section}-evidence-sha-mismatch")
+
 failures = []
 if record.get("version") != 1:
     failures.append("version-invalid")
@@ -104,6 +123,7 @@ if not number_between(monitoring.get("anrRateThresholdPercent"), 0, 10):
     failures.append("anr-threshold-invalid")
 if monitoring.get("privacyReviewedForCrashSdk") is not True:
     failures.append("crash-sdk-privacy-review-not-confirmed")
+validate_evidence_file("monitoring", monitoring.get("evidence"))
 
 smoke = record.get("crashAnrSmoke")
 if not isinstance(smoke, dict):
@@ -121,6 +141,7 @@ for field in (
 ):
     if smoke.get(field) is not True:
         failures.append(f"{field}-not-true")
+validate_evidence_file("crash-anr-smoke", smoke.get("evidence"))
 
 rollback = record.get("rollback")
 if not isinstance(rollback, dict):
@@ -151,6 +172,7 @@ if not isinstance(criteria, list):
 criteria_set = {criterion for criterion in criteria if isinstance(criterion, str)}
 for criterion in sorted(required_criteria - criteria_set):
     failures.append("rollback-criterion-missing-" + re.sub(r"[^a-z0-9]+", "-", criterion.lower()).strip("-"))
+validate_evidence_file("rollback", rollback.get("evidence"))
 
 previous = rollback.get("previousKnownGood")
 if not isinstance(previous, dict):

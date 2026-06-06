@@ -15,6 +15,35 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release operations evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_operations_record.sh` 要求 monitoring setup、crash/ANR smoke
+  和 rollback plan 都提供存在的 evidence file，并匹配 SHA-256。
+- `docs/release_operations_record.json` 模板新增三处 evidence path / sha256 字段，状态仍保持
+  `pending_operations_review`。
+- `scripts/test_validation_scripts.sh` 增加 operations evidence 正例和 crash/ANR smoke SHA
+  mismatch 负例。
+- `docs/release_checklist.md` 同步该门禁要求。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_operations_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_release_operations_record.sh --report build/verification/release-operations-current.properties
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 operations evidence 文件正例和 SHA mismatch 负例。
+- 当前 `docs/release_operations_record.json` 仍按预期未通过；失败原因包含
+  monitoring/crash-anr-smoke/rollback evidence path 缺失，以及真实待补的 owner、watcher、
+  crash/ANR smoke、rollback、previous known-good 和 reviewer/date。
+- 未执行模拟器：本轮只加固 release operations 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Model license source specificity hardening
 
 本轮覆盖项：
