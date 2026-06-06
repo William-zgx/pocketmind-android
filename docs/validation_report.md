@@ -23,6 +23,44 @@
 performance sanity 必须链接通过的 `perf-baseline` verifier report；screenshots
 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-06 Release validation physical device report hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在要求 physical device report
+  具备 `exit_code=0`、空 `failedTarget`/`reason`、非空 start/finish 时间字段、
+  `data_free_kb` 不低于 3GB、`instrumentation=passed` 和足够的
+  `instrumentation_test_count`。
+- physical device report 必须链接可读的 `instrumentation_output_file`；该文件不得为空、
+  不得包含 instrumentation failure marker，并且必须包含最终 `OK` 成功标记。
+- `OK` 中的测试数必须和 `instrumentation_test_count` 一致；physical ABI report
+  必须包含 `arm64-v8a` 和 validation record 中声明的 ABI。
+- `debug_apk` / `android_test_apk` 必须匹配项目认可的 debug APK 路径。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为更接近
+  `scripts/install_and_test_device.sh` 的 report 形态，并新增弱 physical report 和
+  instrumentation output count mismatch 负例。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。
+- 未执行真机：本轮只加固 release validation 门禁脚本、测试 fixture 和文档；
+  仍按当前约束不连接真机。
+
 ## 2026-06-06 Release validation screenshot report binding
 
 本轮覆盖项：

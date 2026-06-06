@@ -238,6 +238,37 @@ def validate_screenshot_report(name, entry, path):
     if props.get(f"screenshot.{name}.sanitized", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{name}-screenshot-report-not-sanitized")
 
+def validate_instrumentation_output(prefix, output_file):
+    if not non_empty_string(output_file):
+        failures.append(f"{prefix}-instrumentation-output-file-missing")
+        return None
+    output_path = Path(output_file)
+    if not output_path.is_file():
+        failures.append(f"{prefix}-instrumentation-output-file-missing")
+        return None
+    try:
+        output = output_path.read_text(errors="ignore")
+    except OSError:
+        failures.append(f"{prefix}-instrumentation-output-read-failed")
+        return None
+    if not output.strip():
+        failures.append(f"{prefix}-instrumentation-output-empty")
+    if re.search(r"^(FAILURES!!!|INSTRUMENTATION_STATUS_CODE: -2|INSTRUMENTATION_RESULT: shortMsg=|INSTRUMENTATION_STATUS: stack=|Error in )", output, re.MULTILINE):
+        failures.append(f"{prefix}-instrumentation-output-failure-marker")
+    ok_matches = re.findall(r"^OK(?: \(([0-9]+) tests?\))?$", output, re.MULTILINE)
+    if not ok_matches:
+        failures.append(f"{prefix}-instrumentation-output-success-marker-missing")
+        return None
+    count = ok_matches[-1]
+    if not count:
+        failures.append(f"{prefix}-instrumentation-output-count-missing")
+        return None
+    try:
+        return int(count)
+    except ValueError:
+        failures.append(f"{prefix}-instrumentation-output-count-invalid")
+        return None
+
 def count_android_tests():
     count = 0
     if not android_test_source_dir.is_dir():
@@ -318,21 +349,44 @@ else:
     report_serial = props.get("serial", "")
     if props.get("status") != "passed":
         failures.append("physical-device-report-status-not-passed")
+    if props.get("exit_code") != "0":
+        failures.append("physical-device-report-exit-code-invalid")
     if props.get("target") != "device":
         failures.append("physical-device-report-target-invalid")
+    if props.get("failedTarget", ""):
+        failures.append("physical-device-report-failed-target-not-empty")
+    if props.get("reason", ""):
+        failures.append("physical-device-report-reason-not-empty")
+    if not non_empty_string(props.get("started_at_utc", "")):
+        failures.append("physical-device-report-started-at-missing")
+    if not non_empty_string(props.get("finished_at_utc", "")):
+        failures.append("physical-device-report-finished-at-missing")
     if report_serial.startswith("emulator-"):
         failures.append("physical-device-report-serial-is-emulator")
     if report_serial != physical_serial:
         failures.append("physical-device-report-serial-mismatch")
     if props.get("api_level") != str(physical.get("apiLevel")):
         failures.append("physical-device-report-api-mismatch")
-    if props.get("abi") != physical.get("abi"):
+    report_abi = props.get("abi", "")
+    expected_abi = physical.get("abi", "")
+    report_abis = {item.strip() for item in report_abi.split(",") if item.strip()}
+    if "arm64-v8a" not in report_abis:
+        failures.append("physical-device-report-abi-not-arm64")
+    if non_empty_string(expected_abi) and expected_abi not in report_abis:
         failures.append("physical-device-report-abi-mismatch")
     expected_clean = "1" if physical.get("cleanDevice") is True else "0"
     if props.get("clean_device") != expected_clean:
         failures.append("physical-device-report-clean-device-mismatch")
+    try:
+        data_free_kb = int(props.get("data_free_kb", ""))
+    except ValueError:
+        failures.append("physical-device-report-data-free-invalid")
+    else:
+        if data_free_kb < 3 * 1024 * 1024:
+            failures.append("physical-device-report-data-free-too-low")
     if props.get("instrumentation") != "passed":
         failures.append("physical-device-report-instrumentation-not-passed")
+    instrumentation_output_count = validate_instrumentation_output("physical-device-report", props.get("instrumentation_output_file", ""))
     try:
         actual_count = int(props.get("instrumentation_test_count", ""))
     except ValueError:
@@ -340,6 +394,12 @@ else:
     else:
         if actual_count < source_android_test_count:
             failures.append("physical-device-report-test-count-too-low")
+        if instrumentation_output_count is not None and instrumentation_output_count != actual_count:
+            failures.append("physical-device-report-instrumentation-output-count-mismatch")
+    if props.get("debug_apk") != "app/build/outputs/apk/debug/app-debug.apk":
+        failures.append("physical-device-report-debug-apk-invalid")
+    if props.get("android_test_apk") != "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk":
+        failures.append("physical-device-report-android-test-apk-invalid")
 
 api_matrix = record.get("apiMatrix")
 required_apis = {28, 32, 33, 34, 36}

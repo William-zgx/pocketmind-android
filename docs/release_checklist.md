@@ -233,8 +233,13 @@ release ticket or PR.
   arm64 device before a broad release candidate.
 - [ ] Validation record includes device serial or AVD name, API level, ABI,
   `CLEAN_DEVICE` value, executed command, instrumentation result, and
-  `instrumentation_test_count` from the verification report. Emulator release
-  records should link `regression-emulator.properties` plus the nested
+  `instrumentation_test_count` from the verification report. Physical device
+  reports must also include `exit_code=0`, empty `failedTarget`/`reason`, UTC
+  start/finish fields, sufficient `data_free_kb`, and a readable
+  `instrumentation_output_file` containing the final `OK` marker. The `OK`
+  count must match `instrumentation_test_count`, and `debug_apk` /
+  `android_test_apk` must match the project-approved debug APK paths. Emulator
+  release records should link `regression-emulator.properties` plus the nested
   emulator/device reports, and each linked report must include a matching
   SHA-256 in `docs/release_validation_record.json`.
 - [ ] Failed device, emulator, or regression reports include machine-readable

@@ -1011,7 +1011,9 @@ VALIDATION_EMULATOR_REPORT="$TMP_DIR/regression-emulator.properties"
 VALIDATION_DEVICE_REPORT="$TMP_DIR/device-verification.properties"
 VALIDATION_EMULATOR_DEVICE_REPORT="$TMP_DIR/emulator-device-verification.properties"
 VALIDATION_SCREENSHOT_REPORT="$TMP_DIR/release-screenshots.properties"
+VALIDATION_INSTRUMENTATION_OUTPUT="$TMP_DIR/instrumentation.txt"
 VALIDATION_DATE="$(date +%F)"
+printf 'OK (%s tests)\n' "$SOURCE_ANDROID_TEST_COUNT" > "$VALIDATION_INSTRUMENTATION_OUTPUT"
 mkdir -p "$TMP_DIR/validation-screenshots"
 python3 - "$TMP_DIR/validation-screenshots" <<'PY'
 import base64
@@ -1136,23 +1138,41 @@ abi=arm64-v8a
 VALIDATION_EMULATOR_REPORT_PROPERTIES
 cat > "$VALIDATION_DEVICE_REPORT" <<VALIDATION_DEVICE_REPORT_PROPERTIES
 status=passed
+exit_code=0
 target=device
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
 serial=device-a
 api_level=36
 abi=arm64-v8a
 clean_device=1
+data_free_kb=4194304
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+instrumentation_output_file=$VALIDATION_INSTRUMENTATION_OUTPUT
+debug_apk=app/build/outputs/apk/debug/app-debug.apk
+android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 VALIDATION_DEVICE_REPORT_PROPERTIES
 cat > "$VALIDATION_EMULATOR_DEVICE_REPORT" <<VALIDATION_EMULATOR_DEVICE_REPORT_PROPERTIES
 status=passed
+exit_code=0
 target=device
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
 serial=emulator-5554
 api_level=36
 abi=arm64-v8a
 clean_device=1
+data_free_kb=4194304
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+instrumentation_output_file=$VALIDATION_INSTRUMENTATION_OUTPUT
+debug_apk=app/build/outputs/apk/debug/app-debug.apk
+android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 VALIDATION_EMULATOR_DEVICE_REPORT_PROPERTIES
 cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
 {
@@ -1531,6 +1551,80 @@ expect_failure \
   "release validation verifier rejects missing physical report" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_MISSING_DEVICE" --report "$ARTIFACT_DIR/release-validation-missing-device.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-missing-device.properties" "status=failed"
+VALIDATION_WEAK_DEVICE_REPORT_RECORD="$TMP_DIR/release-validation-weak-device-report.json"
+VALIDATION_WEAK_DEVICE_REPORT="$TMP_DIR/weak-device-verification.properties"
+cat > "$VALIDATION_WEAK_DEVICE_REPORT" <<VALIDATION_WEAK_DEVICE_REPORT_PROPERTIES
+status=passed
+target=device
+serial=device-a
+api_level=36
+abi=arm64-v8a
+clean_device=1
+instrumentation=passed
+instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+VALIDATION_WEAK_DEVICE_REPORT_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_DEVICE_REPORT_RECORD" "$VALIDATION_WEAK_DEVICE_REPORT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+report = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["physicalDevice"]["reportPath"] = str(report)
+record["physicalDevice"]["reportSha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak physical device report" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_DEVICE_REPORT_RECORD" --report "$ARTIFACT_DIR/release-validation-weak-device-report.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-exit-code-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-started-at-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-data-free-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-instrumentation-output-file-missing"
+VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH="$TMP_DIR/release-validation-device-output-count-mismatch.json"
+VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_REPORT="$TMP_DIR/device-output-count-mismatch.properties"
+VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_OUTPUT="$TMP_DIR/instrumentation-count-mismatch.txt"
+printf 'OK (1 test)\n' > "$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_OUTPUT"
+cat > "$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_REPORT" <<VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_PROPERTIES
+status=passed
+exit_code=0
+target=device
+failedTarget=
+reason=
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+serial=device-a
+api_level=36
+abi=arm64-v8a
+clean_device=1
+data_free_kb=4194304
+instrumentation=passed
+instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+instrumentation_output_file=$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_OUTPUT
+debug_apk=app/build/outputs/apk/debug/app-debug.apk
+android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH" "$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_REPORT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+report = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["physicalDevice"]["reportPath"] = str(report)
+record["physicalDevice"]["reportSha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects physical report output count mismatch" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH" --report "$ARTIFACT_DIR/release-validation-device-output-count-mismatch.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-device-output-count-mismatch.properties" "physical-device-report-instrumentation-output-count-mismatch"
 VALIDATION_EMULATOR_AS_PHYSICAL="$TMP_DIR/release-validation-emulator-as-physical.json"
 sed \
   -e 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$VALIDATION_EMULATOR_DEVICE_REPORT"'"#' \
