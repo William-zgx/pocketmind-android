@@ -546,8 +546,11 @@ STORE_POLICY_NOTICE="$TMP_DIR/store-privacy-notice.md"
 STORE_POLICY_MANIFEST="$TMP_DIR/AndroidManifest.xml"
 STORE_POLICY_PENDING="$TMP_DIR/store-policy-pending.json"
 STORE_POLICY_APPROVED="$TMP_DIR/store-policy-approved.json"
+STORE_POLICY_REVIEW_EVIDENCE="$TMP_DIR/store-policy-review.properties"
 printf 'PocketMind store privacy notice\n' > "$STORE_POLICY_NOTICE"
+printf 'status=approved\nscope=store-policy\nreviewer=Store Reviewer\n' > "$STORE_POLICY_REVIEW_EVIDENCE"
 STORE_POLICY_NOTICE_SHA="$(shasum -a 256 "$STORE_POLICY_NOTICE" | awk '{print $1}')"
+STORE_POLICY_REVIEW_EVIDENCE_SHA="$(shasum -a 256 "$STORE_POLICY_REVIEW_EVIDENCE" | awk '{print $1}')"
 cat > "$STORE_POLICY_MANIFEST" <<'STORE_POLICY_MANIFEST_XML'
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -627,7 +630,9 @@ cat > "$STORE_POLICY_APPROVED" <<STORE_POLICY_APPROVED_JSON
   ],
   "review": {
     "reviewer": "Store Reviewer",
-    "reviewDate": "$(date +%F)"
+    "reviewDate": "$(date +%F)",
+    "evidencePath": "$STORE_POLICY_REVIEW_EVIDENCE",
+    "evidenceSha256": "$STORE_POLICY_REVIEW_EVIDENCE_SHA"
   }
 }
 STORE_POLICY_APPROVED_JSON
@@ -643,6 +648,13 @@ expect_failure \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_SHA" --report "$ARTIFACT_DIR/store-policy-bad-sha.properties"
 assert_report_contains "$ARTIFACT_DIR/store-policy-bad-sha.properties" "status=failed"
+STORE_POLICY_BAD_REVIEW_EVIDENCE_SHA="$TMP_DIR/store-policy-bad-review-evidence-sha.json"
+sed 's/"evidenceSha256": "'"$STORE_POLICY_REVIEW_EVIDENCE_SHA"'"/"evidenceSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_BAD_REVIEW_EVIDENCE_SHA"
+expect_failure \
+  "store policy verifier rejects review evidence sha mismatch" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_REVIEW_EVIDENCE_SHA" --report "$ARTIFACT_DIR/store-policy-bad-review-evidence-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-review-evidence-sha.properties" "review-evidence-sha-mismatch"
 STORE_POLICY_EXTRA_PERMISSION="$TMP_DIR/store-policy-extra-permission.json"
 sed 's/"name": "android.permission.RECORD_AUDIO"/"name": "android.permission.READ_CONTACTS"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_EXTRA_PERMISSION"
 expect_failure \

@@ -99,6 +99,8 @@
   ],
   "review": {
     "reviewer": "",
-    "reviewDate": ""
+    "reviewDate": "",
+    "evidencePath": "",
+    "evidenceSha256": ""
   }
 }

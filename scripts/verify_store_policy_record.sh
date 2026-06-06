@@ -90,6 +90,21 @@ if record.get("version") != 1:
 if record.get("status") != "approved":
     failures.append("status-not-approved")
 
+def non_empty_string(value):
+    return isinstance(value, str) and bool(value.strip())
+
+def validate_file_sha(prefix, path, expected_sha):
+    if not non_empty_string(expected_sha):
+        failures.append(f"{prefix}-sha-missing")
+        return
+    try:
+        actual_sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        failures.append(f"{prefix}-sha-read-failed")
+        return
+    if actual_sha != expected_sha:
+        failures.append(f"{prefix}-sha-mismatch")
+
 notice_sha = hashlib.sha256(notice_path.read_bytes()).hexdigest()
 if record.get("privacyNoticePath") != str(notice_path):
     failures.append("privacy-notice-path-mismatch")
@@ -222,6 +237,17 @@ if not isinstance(review, dict):
     review = {}
 if not review.get("reviewer"):
     failures.append("reviewer-missing")
+review_evidence_path = review.get("evidencePath", "")
+if not non_empty_string(review_evidence_path):
+    failures.append("review-evidence-path-missing")
+elif not Path(review_evidence_path).is_file():
+    failures.append("review-evidence-file-missing")
+else:
+    validate_file_sha(
+        "review-evidence",
+        review_evidence_path,
+        review.get("evidenceSha256", ""),
+    )
 review_date = review.get("reviewDate", "")
 date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 if not review_date:

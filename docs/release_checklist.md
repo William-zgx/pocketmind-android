@@ -117,7 +117,8 @@ release ticket or PR.
   `VERIFY_STORE_POLICY=1 scripts/verify_release_gate.sh` passes. The gate
   checks store listing fields, privacy policy URL, Data safety answers, model
   download disclosure, manifest permission purposes, special-access
-  disclosures, and the current privacy notice SHA.
+  disclosures, the current privacy notice SHA, and a review evidence file with
+  matching SHA-256.
 
 ## Screenshots
 
