@@ -64,7 +64,9 @@ release ticket or PR.
   `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`, and
   `EXPECTED_SIGNING_CERT_SHA256`; attach
   `build/verification/signing/signing.properties` and the certificate reports.
-  `ALLOW_DEBUG_KEYSTORE` must be unset for production signing.
+  Failed signing attempts must record `failedTarget` and `reason` without
+  persisting keystore passwords or private key material. `ALLOW_DEBUG_KEYSTORE`
+  must be unset for production signing.
 - [ ] For Google Play, Play App Signing is enabled or its status is explicitly
   recorded. The app signing certificate fingerprint and upload certificate
   fingerprint are both captured because they are different trust anchors.

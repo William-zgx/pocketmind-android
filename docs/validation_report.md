@@ -17,6 +17,36 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release signing failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/sign_release_artifacts.sh` 现在通过统一 report trap 为成功和失败都生成
+  `release-signing` report。
+- signing report 新增 `exit_code`、`failedTarget`、`reason`、`allowDebugKeystore`、
+  unsigned/signed artifact path、artifact scan report/status/reason，以及已生成产物 SHA。
+- 缺少签名环境变量、debug keystore、缺少 production cert pin、缺少 unsigned AAB、
+  工具缺失、签名/验证失败、artifact scan 失败都会写机器可读失败原因。
+- report 不记录 keystore password、key password 或私钥材料。
+- `scripts/test_validation_scripts.sh` 覆盖 signing 早失败路径的 failedTarget/reason。
+- `docs/release_checklist.md` 同步 signing failed report 字段要求。
+
+验证命令：
+
+```bash
+bash -n scripts/sign_release_artifacts.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 release signing missing env、debug
+  keystore、missing production cert pin、missing unsigned AAB 的失败报告。
+- 通过：`scripts/verify_local.sh`。
+- 未执行 production signing：当前没有外部 production keystore 和
+  `EXPECTED_SIGNING_CERT_SHA256`。
+
 ## 2026-06-06 Live remote emulator failure reason hardening
 
 本轮覆盖项：

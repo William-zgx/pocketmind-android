@@ -1662,7 +1662,12 @@ assert_report_contains "$ARTIFACT_DIR/release-validation-gate/release-validation
 assert_report_contains "$ARTIFACT_DIR/release-validation-gate/release-gate.properties" "failedTarget=release-validation-record"
 expect_failure \
   "signing helper requires private keystore environment" \
+  env REPORT_FILE="$ARTIFACT_DIR/signing-missing-env.properties" \
   scripts/sign_release_artifacts.sh
+assert_report_contains "$ARTIFACT_DIR/signing-missing-env.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-env.properties" "target=release-signing"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-env.properties" "failedTarget=environment"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-env.properties" "reason=missing-release-keystore"
 DEBUG_KEYSTORE="$TMP_DIR/debug.keystore"
 printf 'not-a-real-keystore\n' > "$DEBUG_KEYSTORE"
 expect_failure \
@@ -1671,7 +1676,11 @@ expect_failure \
   RELEASE_KEY_ALIAS=androiddebugkey \
   RELEASE_KEYSTORE_PASSWORD=android \
   RELEASE_KEY_PASSWORD=android \
+  REPORT_FILE="$ARTIFACT_DIR/signing-debug-keystore.properties" \
   scripts/sign_release_artifacts.sh
+assert_report_contains "$ARTIFACT_DIR/signing-debug-keystore.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/signing-debug-keystore.properties" "failedTarget=keystore"
+assert_report_contains "$ARTIFACT_DIR/signing-debug-keystore.properties" "reason=debug-keystore-not-allowed"
 grep -q 'Refusing Android debug keystore' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to refuse debug keystore before signing"
 PRODUCTION_KEYSTORE="$TMP_DIR/production-upload.keystore"
@@ -1682,7 +1691,11 @@ expect_failure \
   RELEASE_KEY_ALIAS=upload \
   RELEASE_KEYSTORE_PASSWORD=secret \
   RELEASE_KEY_PASSWORD=secret \
+  REPORT_FILE="$ARTIFACT_DIR/signing-missing-cert.properties" \
   scripts/sign_release_artifacts.sh
+assert_report_contains "$ARTIFACT_DIR/signing-missing-cert.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-cert.properties" "failedTarget=signing-policy"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-cert.properties" "reason=expected-signing-cert-sha256-missing"
 grep -q 'Production release signing requires EXPECTED_SIGNING_CERT_SHA256' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to require expected production certificate before signing"
 expect_failure \
@@ -1694,7 +1707,11 @@ expect_failure \
   EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
   UNSIGNED_APK="$SAFE_APK" \
   UNSIGNED_AAB="$TMP_DIR/missing-release.aab" \
+  REPORT_FILE="$ARTIFACT_DIR/signing-missing-aab.properties" \
   scripts/sign_release_artifacts.sh
+assert_report_contains "$ARTIFACT_DIR/signing-missing-aab.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-aab.properties" "failedTarget=input-artifact"
+assert_report_contains "$ARTIFACT_DIR/signing-missing-aab.properties" "reason=unsigned-aab-missing"
 grep -q 'Release signing requires unsigned AAB' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to require unsigned AAB before production signing"
 
