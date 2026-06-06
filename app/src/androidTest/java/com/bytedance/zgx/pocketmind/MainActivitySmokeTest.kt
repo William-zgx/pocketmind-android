@@ -53,6 +53,28 @@ class MainActivitySmokeTest {
     }
 
     @Test
+    fun quickRemoteConfigEntryOpensRemoteModelForm() {
+        dismissFirstRunSetupIfPresent()
+
+        composeRule.onNodeWithTag("quick_remote_config_button").performClick()
+        composeRule.waitForTag("model_manager_sheet")
+
+        composeRule.onNodeWithText("远程模型").assertIsDisplayed()
+        composeRule.waitForTag("remote_base_url_input")
+    }
+
+    @Test
+    fun privacyButtonOpensAppPrivacyNotice() {
+        dismissFirstRunSetupIfPresent()
+
+        composeRule.onNodeWithTag("top_privacy_button").performClick()
+        composeRule.waitForTag("model_manager_sheet")
+
+        composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
+        composeRule.waitForText("用户控制")
+    }
+
+    @Test
     fun sessionManagerShowsSessionControls() {
         dismissFirstRunSetupIfPresent()
 

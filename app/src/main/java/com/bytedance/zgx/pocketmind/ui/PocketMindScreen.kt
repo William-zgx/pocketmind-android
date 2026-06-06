@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
@@ -154,6 +155,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private const val MODEL_MANAGER_CURRENT_TAB_INDEX = 0
+private const val MODEL_MANAGER_REMOTE_TAB_INDEX = 2
+private const val MODEL_MANAGER_PRIVACY_TAB_INDEX = 4
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun PocketMindScreen(
@@ -210,6 +215,7 @@ fun PocketMindScreen(
     var input by rememberSaveable { mutableStateOf("") }
     var customModelUrl by rememberSaveable { mutableStateOf("") }
     var showModelManager by rememberSaveable { mutableStateOf(false) }
+    var modelManagerInitialTab by rememberSaveable { mutableStateOf(MODEL_MANAGER_CURRENT_TAB_INDEX) }
     var showSessions by rememberSaveable { mutableStateOf(false) }
     var showBackgroundTasks by rememberSaveable { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -242,7 +248,14 @@ fun PocketMindScreen(
             ) {
                 ChatTopBar(
                     state = state,
-                    onOpenModelManager = { showModelManager = true },
+                    onOpenModelManager = {
+                        modelManagerInitialTab = MODEL_MANAGER_CURRENT_TAB_INDEX
+                        showModelManager = true
+                    },
+                    onOpenPrivacyNotice = {
+                        modelManagerInitialTab = MODEL_MANAGER_PRIVACY_TAB_INDEX
+                        showModelManager = true
+                    },
                     onOpenSessions = { showSessions = true },
                     onOpenBackgroundTasks = {
                         onRefreshBackgroundTasks()
@@ -260,7 +273,14 @@ fun PocketMindScreen(
                     if (state.messages.isEmpty()) {
                         ChatEmptyState(
                             state = state,
-                            onOpenModelManager = { showModelManager = true },
+                            onOpenModelManager = {
+                                modelManagerInitialTab = MODEL_MANAGER_CURRENT_TAB_INDEX
+                                showModelManager = true
+                            },
+                            onOpenRemoteModelConfig = {
+                                modelManagerInitialTab = MODEL_MANAGER_REMOTE_TAB_INDEX
+                                showModelManager = true
+                            },
                             onPickModel = { pickModel.launch(arrayOf("*/*")) },
                             onDownloadModel = onDownloadModel,
                             onCancelDownload = onCancelDownload,
@@ -318,7 +338,10 @@ fun PocketMindScreen(
                     state = state,
                     input = input,
                     onInputChanged = { input = it },
-                    onOpenModelManager = { showModelManager = true },
+                    onOpenModelManager = {
+                        modelManagerInitialTab = MODEL_MANAGER_CURRENT_TAB_INDEX
+                        showModelManager = true
+                    },
                     onStartVoiceInput = onStartVoiceInput,
                     onCancelVoiceInput = onCancelVoiceInput,
                     onFinishVoiceInput = onFinishVoiceInput,
@@ -344,6 +367,7 @@ fun PocketMindScreen(
                 ) {
                     ModelManagerSheet(
                         state = state,
+                        initialSelectedTab = modelManagerInitialTab,
                         customModelUrl = customModelUrl,
                         onCustomModelUrlChanged = { customModelUrl = it },
                         onPickModel = { pickModel.launch(arrayOf("*/*")) },
@@ -508,6 +532,7 @@ private fun Modifier.pocketMindTechBackdrop(): Modifier {
 private fun ChatTopBar(
     state: ChatUiState,
     onOpenModelManager: () -> Unit,
+    onOpenPrivacyNotice: () -> Unit,
     onOpenSessions: () -> Unit,
     onOpenBackgroundTasks: () -> Unit,
     onCreateSession: () -> Unit,
@@ -588,6 +613,12 @@ private fun ChatTopBar(
                     icon = Icons.Filled.Tune,
                     label = "模型管理",
                     onClick = onOpenModelManager,
+                )
+                TopActionButton(
+                    modifier = Modifier.testTag("top_privacy_button"),
+                    icon = Icons.Filled.Security,
+                    label = "隐私说明",
+                    onClick = onOpenPrivacyNotice,
                 )
                 TopActionButton(
                     modifier = Modifier.testTag("top_background_tasks_button"),
@@ -711,6 +742,7 @@ private fun RuntimeStatusBadge(state: ChatUiState) {
 private fun ChatEmptyState(
     state: ChatUiState,
     onOpenModelManager: () -> Unit,
+    onOpenRemoteModelConfig: () -> Unit,
     onPickModel: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -779,6 +811,7 @@ private fun ChatEmptyState(
                     QuickModelSetup(
                         state = state,
                         onOpenModelManager = onOpenModelManager,
+                        onOpenRemoteModelConfig = onOpenRemoteModelConfig,
                         onPickModel = onPickModel,
                         onDownloadModel = onDownloadModel,
                         onCancelDownload = onCancelDownload,
@@ -924,6 +957,7 @@ private fun StatusSummaryRow(state: ChatUiState) {
 private fun QuickModelSetup(
     state: ChatUiState,
     onOpenModelManager: () -> Unit,
+    onOpenRemoteModelConfig: () -> Unit,
     onPickModel: () -> Unit,
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -957,6 +991,19 @@ private fun QuickModelSetup(
         )
         if (state.isDownloading || state.downloadProgressPercent != null || state.totalBytes > 0L) {
             ProgressBlock(state)
+        }
+        FilledTonalButton(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("quick_remote_config_button"),
+            onClick = onOpenRemoteModelConfig,
+            enabled = !state.isBusy,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Cloud,
+                contentDescription = null,
+            )
+            Text(" 配置远程模型")
         }
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -1420,6 +1467,7 @@ private fun PromptSuggestionList(
 @Composable
 private fun ModelManagerSheet(
     state: ChatUiState,
+    initialSelectedTab: Int,
     customModelUrl: String,
     onCustomModelUrlChanged: (String) -> Unit,
     onPickModel: () -> Unit,
@@ -1441,7 +1489,7 @@ private fun ModelManagerSheet(
     onOpenModelPage: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var selectedTab by rememberSaveable(initialSelectedTab) { mutableStateOf(initialSelectedTab) }
     val tabs = listOf("当前", "模型", "远程", "高级", "隐私")
     Column(
         modifier = Modifier
@@ -1553,7 +1601,7 @@ private fun labelToTabTag(label: String): String =
         "模型" -> "models"
         "远程" -> "remote"
         "高级" -> "advanced"
-        else -> "trust"
+        else -> "privacy"
     }
 
 @Composable
@@ -1749,10 +1797,13 @@ private fun ModelPathGuidance(
     }
 }
 
-internal data class ModelPathGuidanceRow(
-    val label: String,
-    val body: String,
-)
+internal class ModelPathGuidanceRow(
+    label: String,
+    body: String,
+) {
+    val label: String = label
+    val body: String = body
+}
 
 internal fun modelPathGuidanceRows(selectedModel: RecommendedModel): List<ModelPathGuidanceRow> =
     listOf(

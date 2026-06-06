@@ -33,6 +33,7 @@ report；screenshots 必须链接通过的 `release-screenshots` report，并且
 - 空间不足提示补充远程模型和可信 `.litertlm` 导入作为恢复路径。
 - 远程发送预览明确图片字节会发往当前远程地址；确认前仍不发送。
 - 输入区展示可见的语音隐私说明：系统语音转写只进入输入框，不自动发送，不读取本地音频文件。
+- 顶栏新增“隐私说明”入口，直接打开 App 内隐私说明页，提高隐私政策入口可发现性。
 - 复核 README、`docs/privacy_notice.md`、store policy / privacy review pending evidence 已同步模型下载口径，
   且当前 privacy notice SHA 与记录一致。
 
@@ -48,7 +49,9 @@ shasum -a 256 docs/privacy_notice.md docs/store_policy_review_evidence/pending.p
 ARTIFACT_DIR=build/verification/model-path-guidance-adaptive-ui-final \
   ANDROID_SERIAL=emulator-5554 \
   INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityAdaptiveUiTest' \
-  scripts/verify_emulator.sh
+  scripts/install_and_test_device.sh
+ANDROID_SERIAL=emulator-5554 ARTIFACT_DIR=build/verification/privacy-entry-smoke INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest#privacyButtonOpensAppPrivacyNotice' scripts/install_and_test_device.sh
+scripts/verify_local.sh
 ```
 
 结果：
@@ -58,11 +61,14 @@ ARTIFACT_DIR=build/verification/model-path-guidance-adaptive-ui-final \
 - 通过：privacy notice 当前 SHA 为
   `672d8aa10462659c079c3cb467bbe694b32938e562cc1f8a07f5899df0620430`；store policy /
   privacy review pending evidence SHA 已同步到对应 JSON 记录。
-- 通过：API 36 arm64 自适应 UI emulator smoke，
-  `build/verification/model-path-guidance-adaptive-ui-final/emulator-verification.properties`
-  包含 `status=passed`，嵌套
+- 通过：API 36 arm64 自适应 UI targeted instrumentation，
   `build/verification/model-path-guidance-adaptive-ui-final/device-verification.properties`
-  包含 `instrumentation_test_count=2`。
+  包含 `status=passed`、`instrumentation_test_count=2`。
+- 通过：API 36 arm64 隐私入口 smoke，
+  `build/verification/privacy-entry-smoke/device-verification.properties` 包含
+  `status=passed`、`instrumentation_test_count=1`。
+- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
 - 未执行：完整 API 矩阵、真机矩阵和人工 Play policy review；这些仍按 release gate 保持
   pending，不作为本轮完成项。
 

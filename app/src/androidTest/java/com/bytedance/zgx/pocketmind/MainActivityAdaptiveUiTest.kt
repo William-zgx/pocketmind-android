@@ -68,6 +68,7 @@ class MainActivityAdaptiveUiTest {
 
             composeRule.assertLabeledAction("top_create_session_button", "新建会话")
             composeRule.assertLabeledAction("top_model_button", "模型管理")
+            composeRule.assertLabeledAction("top_privacy_button", "隐私说明")
             composeRule.assertLabeledAction("top_background_tasks_button", "后台任务")
             composeRule.assertLabeledAction("top_session_button", "会话")
             composeRule.assertLabeledAction(
