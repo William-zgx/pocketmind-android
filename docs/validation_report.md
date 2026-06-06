@@ -15,6 +15,44 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Chat message privacy DB default hardening
+
+本轮覆盖项：
+
+- `chat_messages.privacy` 的 Room schema 默认值从 `RemoteEligible` 收紧为
+  `LocalOnly`，让省略 privacy 的持久化写入在数据库边界 fail-closed。
+- 新增 `MIGRATION_11_12` 重建 `chat_messages` 表，仅修改默认值，不改变已有行显式
+  privacy；新增 instrumentation 回归覆盖 11→12 默认值变更和省略字段插入。
+
+验证命令：
+
+```bash
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.docs.AgentCoreDocumentationTest' \
+  --tests 'com.bytedance.zgx.pocketmind.memory.MemoryRepositoryTest' \
+  --tests 'com.bytedance.zgx.pocketmind.tool.ToolRegistryTest'
+AVD_NAME=focus_agent_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=90 BOOT_TIMEOUT_SECONDS=300 \
+  EMULATOR_ARGS="-no-window -no-audio -no-boot-anim -no-snapshot-save" \
+  ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  scripts/regression_emulator.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+scripts/verify_privacy_review.sh --report build/verification/privacy-review-current.properties
+```
+
+结果：
+
+- 通过：debug Kotlin / AndroidTest Kotlin 编译。
+- 通过：targeted JVM 文档、记忆和工具隐私契约回归。
+- 通过：emulator regression，`focus_agent_api36_arm64` / API 36 / arm64-v8a / clean device。
+- 通过：28 个 AndroidTest，artifact:
+  `build/verification/regression-emulator-20260606-160247/regression-emulator.properties`。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+- 隐私 notice SHA 已同步到 `docs/privacy_review.json`；public privacy review 仍保持
+  `pending_manual_review`，`scripts/verify_privacy_review.sh` 未通过的原因仅为
+  release/security/legal 决策、reviewer 和日期缺失，需要人工审批后才能通过公开发布门禁。
+
 ## 2026-06-06 Legacy title LocalOnly migration boundary
 
 本轮覆盖项：

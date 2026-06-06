@@ -17,6 +17,8 @@ Privacy-sensitive generated or tool-derived content is marked `LocalOnly` where
 the code can identify it. Examples include clipboard-derived messages,
 shared-input excerpts, OCR excerpts, current-screen Accessibility text
 continuations, local memory-control status turns, and local action turns.
+If a chat-message row is inserted without an explicit privacy value, the local
+database defaults that row to `LocalOnly`.
 
 Remote API keys are stored separately through Android Keystore-backed encrypted
 preferences. Clearing the API key field removes the stored secret.

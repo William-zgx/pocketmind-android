@@ -972,6 +972,9 @@ Current status:
 - Chat history now carries `MessagePrivacy`; messages marked `LocalOnly` are
   persisted for the local conversation but are filtered from remote history, and
   a `LocalOnly` current prompt is rejected before any remote request is made.
+- The Room `chat_messages.privacy` column now defaults to `LocalOnly`, so rows
+  inserted without an explicit privacy value fail closed at the persistence
+  boundary as well as at the remote-history boundary.
 - Remote current prompts also pass a conservative outbound safety gate before
   runtime calls. Inputs containing personal identifiers, contact details, or
   token/API-key-like content are recorded as `LocalOnly` with a local notice
