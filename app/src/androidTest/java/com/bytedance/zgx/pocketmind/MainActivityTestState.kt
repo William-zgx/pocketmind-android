@@ -35,6 +35,15 @@ internal fun mainActivitySkipStartupIntent(context: Context): Intent =
         putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)
     }
 
+internal fun mainActivitySkipStartupIntent(
+    context: Context,
+    debugRemoteModelConfig: RemoteModelConfig,
+): Intent =
+    mainActivitySkipStartupIntent(context).apply {
+        putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL, debugRemoteModelConfig.baseUrl)
+        putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME, debugRemoteModelConfig.modelName)
+    }
+
 internal fun <A : Activity> activityFromScenarioRule(rule: ActivityScenarioRule<A>): A {
     val activityRef = AtomicReference<A>()
     rule.scenario.onActivity { activity -> activityRef.set(activity) }

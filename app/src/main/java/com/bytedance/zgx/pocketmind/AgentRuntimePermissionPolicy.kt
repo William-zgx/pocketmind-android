@@ -298,7 +298,7 @@ private fun String.friendlyPermissionTitle(): String =
 private fun String.friendlyPermissionRationale(): String =
     when (this) {
         Manifest.permission.POST_NOTIFICATIONS -> "用于到点发送本地提醒通知。"
-        Manifest.permission.READ_CALENDAR -> "用于只读查询忙闲时间段。"
+        Manifest.permission.READ_CALENDAR -> "用于只读查询忙闲时间段，不读取标题、地点或参与人。"
         Manifest.permission.READ_CONTACTS -> "用于只读查询联系人摘要。"
         Manifest.permission.READ_EXTERNAL_STORAGE -> "用于读取最近文件的最小元数据。"
         Manifest.permission.READ_MEDIA_IMAGES -> "用于读取最近图片或截图的最小元数据。"
@@ -311,7 +311,7 @@ private fun String.friendlyPermissionRationale(): String =
 private val USAGE_ACCESS_REQUIREMENT = SpecialAccessRequirement(
     id = SPECIAL_ACCESS_USAGE_STATS,
     title = "使用情况访问权限",
-    rationale = "用于只读识别当前前台应用；需要在系统设置中手动开启。",
+    rationale = "用于通过 UsageStats 估计当前前台应用名和包名；不是窗口真值，不读取使用历史或屏幕内容，需要在系统设置中手动开启。",
     settingsAction = Settings.ACTION_USAGE_ACCESS_SETTINGS,
 )
 

@@ -23,6 +23,75 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Permission disclosure and adaptive UI smoke
+
+本轮覆盖项：
+
+- 前台应用查询确认页明确说明 UsageStats 只是估计当前前台应用包名/应用名，不读取屏幕内容
+  或使用历史，并展示系统“使用情况访问权限”入口。
+- 日历忙闲权限 contract 明确只读忙闲时间段，不读取日历标题、地点或参与人。
+- 权限 UI instrumentation 改为每个测试先写入远程调试配置再启动 Activity，避免停在
+  “先准备模型”的不可输入状态。
+- 自适应 UI smoke 覆盖 1.3x 字体下聊天主控件/模型管理可达，以及核心按钮的可访问标签。
+- 手动冷启动复核覆盖最新 debug APK 在无本地模型、无远程配置的干净状态下进入主界面待准备态，
+  而不是停在旧的启动接入页或系统桌面。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.AgentRuntimePermissionPolicyTest' \
+  --tests 'com.bytedance.zgx.pocketmind.action.ActionPlannerTest.foregroundAppActionParserCreatesUsageStatsReadDraft' \
+  --tests 'com.bytedance.zgx.pocketmind.action.ActionPlannerTest.calendarAvailabilityParserCreatesReadOnlyDraft'
+./gradlew --no-daemon -Pkotlin.incremental=false assembleDebug assembleDebugAndroidTest
+ARTIFACT_DIR=build/verification/permission-ui-stable \
+  AVD_NAME=pocketmind_api36_arm64 \
+  EMULATOR_SELECT_TIMEOUT_SECONDS=180 \
+  BOOT_TIMEOUT_SECONDS=360 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest,com.bytedance.zgx.pocketmind.MainActivitySpecialAccessUiTest' \
+  scripts/verify_emulator.sh
+ARTIFACT_DIR=build/verification/adaptive-ui-stable-final3 \
+  ANDROID_SERIAL=emulator-5554 \
+  GRADLE_CMD=/usr/bin/true \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityAdaptiveUiTest' \
+  scripts/verify_emulator.sh
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell pm clear com.bytedance.zgx.pocketmind
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity
+```
+
+结果：
+
+- 通过：目标 JVM contract 测试覆盖日历/联系人 runtime permission、UsageStats special
+  access、前台应用动作草稿和日历忙闲动作草稿。
+- 通过：`assembleDebug assembleDebugAndroidTest` 生成新的 debug 和 androidTest APK。
+- 通过：API 36 arm64 权限 UI emulator smoke，
+  `build/verification/permission-ui-stable/emulator-verification.properties` 包含
+  `status=passed`，嵌套
+  `build/verification/permission-ui-stable/device-verification.properties` 包含
+  `instrumentation_test_count=3`。
+- 通过：API 36 arm64 自适应 UI emulator smoke，
+  `build/verification/adaptive-ui-stable-final3/emulator-verification.properties` 包含
+  `status=passed`，嵌套
+  `build/verification/adaptive-ui-stable-final3/device-verification.properties` 包含
+  `instrumentation_test_count=2`。
+- 通过：API 36 arm64 模拟器手动冷启动，`am start -W` 返回 `LaunchState: COLD`、
+  `TotalTime: 1645`，Window 焦点为 `com.bytedance.zgx.pocketmind/.MainActivity`；UI dump
+  显示 `PocketMind`、`主界面已就绪` 和
+  `未找到可用模型，请下载、导入或配置远程模型`。证据：
+  `build/verification/manual-cold-start-check/cold-start-screen.png`、
+  `build/verification/manual-cold-start-check/cold-start-ui.xml`。
+- 未执行：真机安装/页面复核。当前 ADB 只发现 `emulator-5554`，没有物理设备序列号，因此不能把
+  用户手上真机的“默认页”现象记录为已验证或已修复。
+- 未作为通过证据：日历忙闲 Activity UI 单测在 API 36 模拟器上稳定触发 instrumentation
+  process crash，`build/verification/calendar-permission-ui/device-verification.properties`
+  记录 `failedTarget=instrumentation`、`reason=instrumentation-failed`；该覆盖已下沉到
+  JVM contract 测试。
+- 未作为通过证据：横屏远程发送确认 Activity UI 用例在 API 36 模拟器上不稳定，
+  `build/verification/adaptive-ui-stable/device-verification.properties` 记录
+  `failedTarget=instrumentation`、`reason=instrumentation-failed`；本轮只保留稳定的大字体
+  和可访问标签 smoke。
+
 ## 2026-06-07 Remote send disclosure gate
 
 本轮覆盖项：

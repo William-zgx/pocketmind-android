@@ -88,6 +88,10 @@ class AgentRuntimePermissionPolicyTest {
             listOf(Manifest.permission.READ_CALENDAR),
             confirmation.runtimePermissionsFor(),
         )
+        assertEquals(
+            "用于只读查询忙闲时间段，不读取标题、地点或参与人。",
+            confirmation.runtimePermissionRequirementsFor().single().rationale,
+        )
         assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
     }
 
@@ -374,6 +378,10 @@ class AgentRuntimePermissionPolicyTest {
         assertEquals(1, requirements.size)
         assertEquals(SPECIAL_ACCESS_USAGE_STATS, requirements.single().id)
         assertEquals("使用情况访问权限", requirements.single().title)
+        assertEquals(
+            "用于通过 UsageStats 估计当前前台应用名和包名；不是窗口真值，不读取使用历史或屏幕内容，需要在系统设置中手动开启。",
+            requirements.single().rationale,
+        )
         assertEquals(Settings.ACTION_USAGE_ACCESS_SETTINGS, requirements.single().settingsAction)
     }
 
