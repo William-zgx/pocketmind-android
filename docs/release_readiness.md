@@ -71,7 +71,8 @@ items below.
   keystore material is available. The script rejects Android debug keystores by
   default; `ALLOW_DEBUG_KEYSTORE=1` is only for local smoke validation.
   Public release gates also reject Android Debug certificates in signed APK/AAB
-  artifacts.
+  artifacts and can pin `EXPECTED_SIGNING_CERT_SHA256` to the production upload
+  certificate.
 - Run a final release-candidate validation pass on target physical hardware
   before broad distribution; emulator validation does not cover all LiteRT-LM
   GPU/performance behavior.
@@ -80,6 +81,7 @@ items below.
   `docs/perf_baseline_template.properties`, then pass it to
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...`.
 - For public distribution, run the release gate with
-  `VERIFY_PRIVACY_REVIEW=1 VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1
-  REQUIRE_SIGNED_ARTIFACT=1` after production signing and bundle generation are
-  complete.
+  `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
+  production signing and bundle generation are complete. `PUBLIC_RELEASE=1`
+  enables privacy review, model license, AAB, signed-artifact, and certificate
+  fingerprint checks.

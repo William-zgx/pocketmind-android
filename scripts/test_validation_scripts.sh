@@ -431,6 +431,10 @@ jarsigner \
   -keypass android \
   "$DEBUG_SIGNED_AAB" \
   androiddebugkey >/dev/null
+DEBUG_SIGNED_AAB_CERT_SHA="$(
+  keytool -printcert -jarfile "$DEBUG_SIGNED_AAB" 2>/dev/null |
+    awk -F': ' '/SHA256:/ {gsub(":", "", $2); print tolower($2); exit}'
+)"
 expect_failure \
   "artifact scan require-signed rejects debug certificate" \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-debug-cert.properties"
@@ -440,6 +444,15 @@ expect_success \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --report "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties" "allowDebugCertificate=1"
+expect_failure \
+  "artifact scan rejects unexpected signing certificate" \
+  scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --expected-certificate-sha256 0000000000000000000000000000000000000000000000000000000000000000 --report "$ARTIFACT_DIR/artifact-cert-mismatch.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-cert-mismatch.properties" "status=failed"
+expect_success \
+  "artifact scan accepts expected signing certificate" \
+  scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --expected-certificate-sha256 "$DEBUG_SIGNED_AAB_CERT_SHA" --report "$ARTIFACT_DIR/artifact-cert-match.properties"
+assert_report_contains "$ARTIFACT_DIR/artifact-cert-match.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/artifact-cert-match.properties" "expectedCertificateSha256=$DEBUG_SIGNED_AAB_CERT_SHA"
 
 VALID_GATE_PERF="$TMP_DIR/perf-baseline-safe-apk.properties"
 SAFE_APK_SHA="$(shasum -a 256 "$SAFE_APK" | awk '{print $1}')"
@@ -475,6 +488,21 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-privacy-review/privacy-review.properties" "status=failed"
+expect_failure \
+  "public release profile requires expected signing certificate" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/public-release-missing-cert" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  PUBLIC_RELEASE=1 \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "publicRelease=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyPrivacyReview=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireSignedArtifact=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/signing-cert.properties" "status=failed"
 
 expect_failure \
   "release gate requires aab when public gate requests it" \

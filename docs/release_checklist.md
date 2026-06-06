@@ -51,7 +51,8 @@ release ticket or PR.
   certificate SHA-256 fingerprint, and recovery contact.
 - [ ] `scripts/sign_release_artifacts.sh` is run from the private signing
   environment with `RELEASE_KEYSTORE`, `RELEASE_KEY_ALIAS`,
-  `RELEASE_KEYSTORE_PASSWORD`, and `RELEASE_KEY_PASSWORD`; attach
+  `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_PASSWORD`, and
+  `EXPECTED_SIGNING_CERT_SHA256`; attach
   `build/verification/signing/signing.properties` and the certificate reports.
   `ALLOW_DEBUG_KEYSTORE` must be unset for production signing.
 - [ ] For Google Play, Play App Signing is enabled or its status is explicitly
@@ -141,8 +142,8 @@ release ticket or PR.
   reviewed manually.
 - [ ] `PERF_BASELINE_FILE=<rc perf-baseline.properties>
   scripts/verify_release_gate.sh` passes before release sign-off. Set
-  `VERIFY_PRIVACY_REVIEW=1 VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1
-  REQUIRE_SIGNED_ARTIFACT=1` when checking the public-distribution gate.
+  `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` when
+  checking the public-distribution gate.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the

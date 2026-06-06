@@ -58,9 +58,10 @@ Google AI Edge LiteRT-LM.
   license review, and physical-device perf baselines; run
   `scripts/collect_perf_baseline.sh` from measured RC values, then run
   `scripts/verify_release_gate.sh` with `PERF_BASELINE_FILE=...` for release
-  candidates. Public distribution should additionally set
-  `VERIFY_PRIVACY_REVIEW=1 VERIFY_MODEL_LICENSES=1 REQUIRE_AAB=1
-  REQUIRE_SIGNED_ARTIFACT=1`.
+  candidates. Public distribution should set `PUBLIC_RELEASE=1` plus
+  `EXPECTED_SIGNING_CERT_SHA256=<production upload cert>`; that profile enables
+  privacy review, model license, AAB, signed-artifact, and certificate
+  fingerprint checks.
 - Minimal device context snapshots plus confirmed clipboard, calendar, contact,
   current-app notification summary, foreground-app usage-stats estimates,
   recent-file metadata, and

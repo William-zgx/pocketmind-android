@@ -6511,3 +6511,43 @@ scripts/verify_release_gate.sh
 
 - 需要 release/security/legal owner 在 `docs/privacy_review.json` 中批准当前
   privacy notice SHA。
+
+## 2026-06-06 Public release profile and signing certificate pin
+
+本轮覆盖项：
+
+- `scan_android_artifacts.sh` 新增 `--expected-certificate-sha256`，signed APK/AAB
+  可以绑定 production upload certificate SHA-256；证书指纹支持大小写和冒号格式规范化。
+- `sign_release_artifacts.sh` 支持 `EXPECTED_SIGNING_CERT_SHA256`，生产签名后立即
+  校验产物证书是否匹配预期。
+- `verify_release_gate.sh` 新增 `PUBLIC_RELEASE=1` profile，自动启用
+  `VERIFY_PRIVACY_REVIEW=1`、`VERIFY_MODEL_LICENSES=1`、`REQUIRE_AAB=1`、
+  `REQUIRE_SIGNED_ARTIFACT=1`，并要求 `EXPECTED_SIGNING_CERT_SHA256`。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+
+ARTIFACT_DIR=build/verification/release-gate-public-profile-negative \
+PUBLIC_RELEASE=1 \
+PERF_BASELINE_FILE=build/verification/release-gate-public-profile-negative/perf-baseline.properties \
+scripts/verify_release_gate.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 signed artifact 证书指纹匹配成功与不匹配失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 缺少
+  `EXPECTED_SIGNING_CERT_SHA256` 时失败，并确认 public profile 自动打开 privacy
+  review、model license、AAB 和 signed-artifact gate。
+- 通过：真实 release gate 负向验证；
+  `build/verification/release-gate-public-profile-negative/release-gate.properties`
+  记录 `publicRelease=1`、`verifyPrivacyReview=1`、`verifyModelLicenses=1`、
+  `requireAab=1`、`requireSignedArtifact=1`，并因缺少
+  `EXPECTED_SIGNING_CERT_SHA256` 生成 failed `signing-cert.properties`。
+
+仍阻塞正式 RC：
+
+- 需要 release owner 提供 production upload certificate SHA-256，并用
+  `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=...` 运行最终 gate。

@@ -4,7 +4,12 @@ set -euo pipefail
 REPORT_FILE=""
 REQUIRE_SIGNED=0
 ALLOW_DEBUG_CERTIFICATE=0
+EXPECTED_CERTIFICATE_SHA256=""
 ARTIFACTS=()
+
+normalize_sha256() {
+  tr '[:upper:]' '[:lower:]' <<<"$1" | tr -d ':'
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -23,6 +28,10 @@ while [[ $# -gt 0 ]]; do
     --allow-debug-certificate)
       ALLOW_DEBUG_CERTIFICATE=1
       shift
+      ;;
+    --expected-certificate-sha256)
+      EXPECTED_CERTIFICATE_SHA256="${2:?missing certificate SHA-256}"
+      shift 2
       ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -43,6 +52,7 @@ write_report() {
       printf 'findingCount=%s\n' "$finding_count"
       printf 'requireSigned=%s\n' "$REQUIRE_SIGNED"
       printf 'allowDebugCertificate=%s\n' "$ALLOW_DEBUG_CERTIFICATE"
+      printf 'expectedCertificateSha256=%s\n' "$(normalize_sha256 "$EXPECTED_CERTIFICATE_SHA256")"
       local index=0
       for artifact in "${ARTIFACTS[@]}"; do
         index=$((index + 1))
@@ -188,9 +198,18 @@ for artifact in "${ARTIFACTS[@]}"; do
     if [[ "$signing_status" != "verified" ]]; then
       printf '%s: signing status is %s\n' "$artifact" "$signing_status" >> "$TMP_FINDINGS"
     fi
+    certificate_sha256="$(normalize_sha256 "$(artifact_certificate_sha256 "$artifact")")"
     certificate_subject="$(artifact_certificate_subject "$artifact")"
     if [[ "$ALLOW_DEBUG_CERTIFICATE" != "1" ]] && grep -qi 'CN=Android Debug' <<<"$certificate_subject"; then
       printf '%s: signed with Android debug certificate\n' "$artifact" >> "$TMP_FINDINGS"
+    fi
+    if [[ -n "$EXPECTED_CERTIFICATE_SHA256" ]]; then
+      expected_sha256="$(normalize_sha256 "$EXPECTED_CERTIFICATE_SHA256")"
+      if [[ -z "$certificate_sha256" ]]; then
+        printf '%s: signed certificate SHA-256 is missing\n' "$artifact" >> "$TMP_FINDINGS"
+      elif [[ "$certificate_sha256" != "$expected_sha256" ]]; then
+        printf '%s: signed certificate SHA-256 %s does not match expected %s\n' "$artifact" "$certificate_sha256" "$expected_sha256" >> "$TMP_FINDINGS"
+      fi
     fi
   fi
 done

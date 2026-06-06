@@ -16,6 +16,7 @@ SIGNED_AAB="${SIGNED_AAB:-app/build/outputs/bundle/release/app-release-signed.aa
 ALIGNED_APK="${ALIGNED_APK:-${SIGNED_APK%.apk}-aligned.apk}"
 REPORT_FILE="${REPORT_FILE:-build/verification/signing/signing.properties}"
 ALLOW_DEBUG_KEYSTORE="${ALLOW_DEBUG_KEYSTORE:-0}"
+EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 
 require_env() {
   local name="$1"
@@ -111,6 +112,9 @@ scan_extra_args=()
 if [[ "$ALLOW_DEBUG_KEYSTORE" == "1" ]]; then
   scan_extra_args+=(--allow-debug-certificate)
 fi
+if [[ -n "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
+  scan_extra_args+=(--expected-certificate-sha256 "$EXPECTED_SIGNING_CERT_SHA256")
+fi
 scripts/scan_android_artifacts.sh \
   "${scan_args[@]}" \
   --require-signed \
@@ -125,6 +129,7 @@ scripts/scan_android_artifacts.sh \
   else
     printf 'signingMode=production\n'
   fi
+  printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
   printf 'signedApk=%s\n' "$SIGNED_APK"
   printf 'signedAab=%s\n' "$SIGNED_AAB"
   if [[ -f "$SIGNED_APK" ]]; then

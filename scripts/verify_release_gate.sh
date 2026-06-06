@@ -13,14 +13,23 @@ if [[ -n "${RELEASE_APK+x}" ]]; then
 fi
 RELEASE_APK="${RELEASE_APK:-$DEFAULT_RELEASE_APK}"
 RELEASE_AAB="${RELEASE_AAB:-app/build/outputs/bundle/release/app-release.aab}"
+PUBLIC_RELEASE="${PUBLIC_RELEASE:-0}"
 VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
+EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
 
 mkdir -p "$ARTIFACT_DIR"
+
+if [[ "$PUBLIC_RELEASE" == "1" ]]; then
+  VERIFY_MODEL_LICENSES=1
+  VERIFY_PRIVACY_REVIEW=1
+  REQUIRE_AAB=1
+  REQUIRE_SIGNED_ARTIFACT=1
+fi
 
 write_gate_report() {
   local status="$1"
@@ -28,13 +37,26 @@ write_gate_report() {
     printf 'status=%s\n' "$status"
     printf 'target=release-gate\n'
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
+    printf 'publicRelease=%s\n' "$PUBLIC_RELEASE"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
     printf 'requireSignedArtifact=%s\n' "$REQUIRE_SIGNED_ARTIFACT"
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
+    printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
   } > "$ARTIFACT_DIR/release-gate.properties"
 }
+
+if [[ "$PUBLIC_RELEASE" == "1" && -z "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
+  {
+    printf 'status=failed\n'
+    printf 'target=signing-cert\n'
+    printf 'reason=PUBLIC_RELEASE-EXPECTED_SIGNING_CERT_SHA256-not-set\n'
+  } > "$ARTIFACT_DIR/signing-cert.properties"
+  echo "PUBLIC_RELEASE=1 requires EXPECTED_SIGNING_CERT_SHA256." >&2
+  write_gate_report failed
+  exit 1
+fi
 
 scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-scan.properties" app/src/main docs scripts
 
@@ -77,6 +99,9 @@ if [[ "${#artifact_args[@]}" -gt 0 ]]; then
   scan_args=("${artifact_args[@]}" --report "$ARTIFACT_DIR/android-artifact-scan.properties")
   if [[ "$REQUIRE_SIGNED_ARTIFACT" == "1" ]]; then
     scan_args+=(--require-signed)
+  fi
+  if [[ -n "$EXPECTED_SIGNING_CERT_SHA256" ]]; then
+    scan_args+=(--expected-certificate-sha256 "$EXPECTED_SIGNING_CERT_SHA256")
   fi
   scripts/scan_android_artifacts.sh "${scan_args[@]}"
 else
