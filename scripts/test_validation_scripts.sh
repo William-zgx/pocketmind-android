@@ -1457,11 +1457,13 @@ API36_AVD_CONFIG
 FAKE_SDKMANAGER_INSTALLED=$'system-images;android-28;google_apis;arm64-v8a | 1 | Fake\nsystem-images;android-36;google_apis;arm64-v8a | 1 | Fake'
 expect_success \
   "emulator api matrix readiness accepts installed images and avds" \
-  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  env ANDROID_HOME="$FAKE_SDK" \
   FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
-  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
-  REPORT_FILE="$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" \
-  scripts/check_emulator_api_matrix.sh
+  scripts/check_emulator_api_matrix.sh \
+    --sdkmanager "$FAKE_SDKMANAGER" \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "28 36" \
+    --report "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "target=emulator-api-matrix-readiness"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness.properties" "installedSystemImageApis=28,36"
@@ -1470,11 +1472,13 @@ rm -rf "$FAKE_AVD_ROOT/api28.avd"
 FAKE_SDKMANAGER_INSTALLED=$'system-images;android-36;google_apis;arm64-v8a | 1 | Fake'
 expect_failure \
   "emulator api matrix readiness reports missing image and avd" \
-  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  env ANDROID_HOME="$FAKE_SDK" \
   FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
-  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
-  REPORT_FILE="$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" \
-  scripts/check_emulator_api_matrix.sh
+  scripts/check_emulator_api_matrix.sh \
+    --sdkmanager "$FAKE_SDKMANAGER" \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "28 36" \
+    --report "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "failedTarget=api-matrix-readiness"
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-readiness-missing.properties" "reason=missing-system-image-api-28,missing-avd-api-28"
@@ -1488,34 +1492,55 @@ tag.id=google_apis
 target=android-28
 API28_AVD_CONFIG
 FAKE_SDKMANAGER_INSTALLED=$'system-images;android-28;google_apis;arm64-v8a | 1 | Fake\nsystem-images;android-36;google_apis;arm64-v8a | 1 | Fake'
+MATRIX_ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix"
+MATRIX_REPORT="$ARTIFACT_DIR/regression-emulator-api-matrix.properties"
 expect_success \
   "emulator api matrix regression accepts all api reports" \
   env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
   FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
-  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
-  CHECK_EMULATOR_API_MATRIX_SCRIPT="scripts/check_emulator_api_matrix.sh" \
-  REGRESSION_EMULATOR_SCRIPT="$FAKE_MATRIX_REGRESSION" \
-  STOP_EMULATOR_AFTER_EACH=0 \
-  REPORT_FILE="$ARTIFACT_DIR/regression-emulator-api-matrix.properties" \
-  ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix" \
-  scripts/regression_emulator_api_matrix.sh
-assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "status=passed"
-assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "target=regression-emulator-api-matrix"
-assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "passedApis=28,36"
-assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "api28Status=passed"
-assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix.properties" "api36Status=passed"
+  scripts/regression_emulator_api_matrix.sh \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "28 36" \
+    --check-script scripts/check_emulator_api_matrix.sh \
+    --regression-script "$FAKE_MATRIX_REGRESSION" \
+    --keep-emulators \
+    --artifact-dir "$MATRIX_ARTIFACT_DIR" \
+    --report "$MATRIX_REPORT"
+assert_report_contains "$MATRIX_REPORT" "status=passed"
+assert_report_contains "$MATRIX_REPORT" "target=regression-emulator-api-matrix"
+assert_report_contains "$MATRIX_REPORT" "artifactDir=$MATRIX_ARTIFACT_DIR"
+assert_report_contains "$MATRIX_REPORT" "passedApis=28,36"
+assert_report_contains "$MATRIX_REPORT" "api28Status=passed"
+assert_report_contains "$MATRIX_REPORT" "api36Status=passed"
+MATRIX_EXPLICIT_ENV_REPORT="$ARTIFACT_DIR/regression-emulator-api-matrix-explicit-env.properties"
+MATRIX_EXPLICIT_ENV_ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix-explicit-env"
+expect_success \
+  "emulator api matrix artifact-dir keeps explicit env report" \
+  env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
+  FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
+  REPORT_FILE="$MATRIX_EXPLICIT_ENV_REPORT" \
+  scripts/regression_emulator_api_matrix.sh \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "28 36" \
+    --check-script scripts/check_emulator_api_matrix.sh \
+    --regression-script "$FAKE_MATRIX_REGRESSION" \
+    --keep-emulators \
+    --artifact-dir "$MATRIX_EXPLICIT_ENV_ARTIFACT_DIR"
+assert_report_contains "$MATRIX_EXPLICIT_ENV_REPORT" "status=passed"
+assert_report_contains "$MATRIX_EXPLICIT_ENV_REPORT" "artifactDir=$MATRIX_EXPLICIT_ENV_ARTIFACT_DIR"
 expect_failure \
   "emulator api matrix regression reports api failure" \
   env ANDROID_HOME="$FAKE_SDK" SDKMANAGER_CMD="$FAKE_SDKMANAGER" \
   FAKE_SDKMANAGER_INSTALLED="$FAKE_SDKMANAGER_INSTALLED" \
   FAKE_MATRIX_FAIL_API=28 \
-  AVD_ROOT="$FAKE_AVD_ROOT" REQUIRED_APIS="28 36" \
-  CHECK_EMULATOR_API_MATRIX_SCRIPT="scripts/check_emulator_api_matrix.sh" \
-  REGRESSION_EMULATOR_SCRIPT="$FAKE_MATRIX_REGRESSION" \
-  STOP_EMULATOR_AFTER_EACH=0 \
-  REPORT_FILE="$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" \
-  ARTIFACT_DIR="$ARTIFACT_DIR/emulator-api-matrix-failed" \
-  scripts/regression_emulator_api_matrix.sh
+  scripts/regression_emulator_api_matrix.sh \
+    --avd-root "$FAKE_AVD_ROOT" \
+    --required-apis "28 36" \
+    --check-script scripts/check_emulator_api_matrix.sh \
+    --regression-script "$FAKE_MATRIX_REGRESSION" \
+    --keep-emulators \
+    --artifact-dir "$ARTIFACT_DIR/emulator-api-matrix-failed" \
+    --report "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "failedTarget=api-28-regression"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.properties" "reason=api-28-regression-regression-failed"

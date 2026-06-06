@@ -19,6 +19,59 @@ AVAILABLE_AVD_APIS=()
 MISSING_SYSTEM_IMAGE_APIS=()
 MISSING_AVD_APIS=()
 
+usage() {
+  cat >&2 <<'EOF'
+Usage: scripts/check_emulator_api_matrix.sh [options]
+
+Options:
+  --report <path>         Write the readiness report to this path.
+  --required-apis <list>  Space-separated API levels, for example "28 32 33 34 36".
+  --avd-root <path>       Directory containing *.avd folders.
+  --tag <id>              Emulator system image tag, default google_apis.
+  --abi <abi>             Emulator ABI, default arm64-v8a.
+  --sdkmanager <path>     sdkmanager executable path.
+  -h, --help              Show this help text.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --report)
+      REPORT_FILE="${2:?missing report path}"
+      shift 2
+      ;;
+    --required-apis)
+      REQUIRED_APIS="${2:?missing required API list}"
+      shift 2
+      ;;
+    --avd-root)
+      AVD_ROOT="${2:?missing AVD root}"
+      shift 2
+      ;;
+    --tag)
+      EMULATOR_TAG="${2:?missing emulator tag}"
+      shift 2
+      ;;
+    --abi)
+      EMULATOR_ABI="${2:?missing emulator ABI}"
+      shift 2
+      ;;
+    --sdkmanager)
+      SDKMANAGER_CMD="${2:?missing sdkmanager path}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
 join_csv() {
   local IFS=,
   printf '%s' "$*"

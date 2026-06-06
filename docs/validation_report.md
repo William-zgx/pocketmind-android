@@ -155,8 +155,11 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
   per-API AVD、report path 和 SHA-256。
 - runner 默认不允许已有 emulator 混入矩阵；每个 API 跑完后尝试关闭本轮选中的
   emulator，避免后续 API 选择歧义。
+- runner 支持 `--artifact-dir`、`--report`、`--readiness-report`、`--required-apis`、
+  `--avd-root`、`--check-script`、`--regression-script`、`--allow-existing-emulators`
+  和 `--keep-emulators`；显式 `REPORT_FILE` 环境变量不会被 `--artifact-dir` 覆盖。
 - `scripts/test_validation_scripts.sh` 用 fake sdkmanager / fake AVD / fake regression
-  覆盖 matrix runner 全通过和单 API 回归失败两条路径。
+  覆盖 matrix runner 全通过、显式 env report path 和单 API 回归失败路径。
 
 验证命令：
 
@@ -165,6 +168,7 @@ bash -n scripts/regression_emulator_api_matrix.sh scripts/check_emulator_api_mat
 scripts/test_validation_scripts.sh
 ARTIFACT_DIR=build/verification/regression-emulator-api-matrix-current REPORT_FILE=build/verification/regression-emulator-api-matrix-current/regression-emulator-api-matrix.properties scripts/regression_emulator_api_matrix.sh
 ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" REQUIRED_APIS=36 ARTIFACT_DIR=build/verification/regression-emulator-api36-current REPORT_FILE=build/verification/regression-emulator-api36-current/regression-emulator-api-matrix.properties EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator_api_matrix.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator_api_matrix.sh --required-apis 36 --artifact-dir build/verification/regression-emulator-api36-cli-current --report build/verification/regression-emulator-api36-cli-current/regression-emulator-api-matrix.properties --readiness-report build/verification/regression-emulator-api36-cli-current/emulator-api-matrix-readiness.properties
 ```
 
 结果：
@@ -173,11 +177,11 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 - 预期失败：完整默认矩阵在 readiness 阶段失败；
   `build/verification/regression-emulator-api-matrix-current/regression-emulator-api-matrix.properties`
   记录 `failedTarget=readiness`，原因是 API 28/32/33/34 system image 和 AVD 缺失。
-- 通过：真实 API 36 matrix runner 回归；
-  `build/verification/regression-emulator-api36-current/regression-emulator-api-matrix.properties`
+- 通过：真实 API 36 matrix runner CLI 回归；
+  `build/verification/regression-emulator-api36-cli-current/regression-emulator-api-matrix.properties`
   记录 `status=passed`、`passedApis=36`，嵌套
   `api-36/regression-emulator.properties` 记录 28 个 AndroidTest 全部通过，SHA-256 为
-  `262297190ec94a7cd9e717693353f223818fb1415f694dbcdc407af2c9776e28`。
+  `ffeeed7942cf4fd13a1cd9a9ef1d1577ff96360a262cea7f6629896fd7151373`。
 - 通过：runner 结束后 `adb devices -l` 为空，没有遗留运行中的 emulator。
 
 ## 2026-06-06 Emulator API matrix readiness reporting
@@ -189,8 +193,10 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 - 脚本不安装 SDK 包、不创建 AVD、不启动 emulator；失败时写
   `emulator-api-matrix-readiness.properties`，包含 `failedTarget`、`reason`、
   installed/available/missing API 列表。
+- readiness 脚本支持 `--report`、`--required-apis`、`--avd-root`、`--tag`、
+  `--abi` 和 `--sdkmanager` CLI 参数。
 - `scripts/test_validation_scripts.sh` 用 fake sdkmanager 和 fake AVD 覆盖 matrix
-  readiness passed，以及缺少 system image / AVD 的 failed report。
+  readiness passed、CLI report path，以及缺少 system image / AVD 的 failed report。
 - `scripts/verify_local.sh` 将新脚本纳入 shell syntax check。
 
 验证命令：
@@ -199,6 +205,7 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 bash -n scripts/check_emulator_api_matrix.sh scripts/verify_local.sh scripts/test_validation_scripts.sh
 scripts/test_validation_scripts.sh
 REPORT_FILE=build/verification/emulator-api-matrix-readiness.properties scripts/check_emulator_api_matrix.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/check_emulator_api_matrix.sh --report build/verification/emulator-api-matrix-readiness-current.properties
 ```
 
 结果：

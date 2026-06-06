@@ -12,6 +12,10 @@ AVD_ROOT="${AVD_ROOT:-$HOME/.android/avd}"
 REQUIRED_APIS="${REQUIRED_APIS:-28 32 33 34 36}"
 EMULATOR_TAG="${EMULATOR_API_MATRIX_TAG:-google_apis}"
 EMULATOR_ABI="${EMULATOR_API_MATRIX_ABI:-arm64-v8a}"
+REPORT_FILE_WAS_DEFAULT=0
+READINESS_REPORT_FILE_WAS_DEFAULT=0
+[[ -z "${REPORT_FILE+x}" ]] && REPORT_FILE_WAS_DEFAULT=1
+[[ -z "${READINESS_REPORT_FILE+x}" ]] && READINESS_REPORT_FILE_WAS_DEFAULT=1
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/regression-emulator-api-matrix-$(date +%Y%m%d-%H%M%S)}"
 REPORT_FILE="${REPORT_FILE:-${ARTIFACT_DIR}/regression-emulator-api-matrix.properties}"
 READINESS_REPORT_FILE="${READINESS_REPORT_FILE:-${ARTIFACT_DIR}/emulator-api-matrix-readiness.properties}"
@@ -27,6 +31,90 @@ FAILURE_REASON=""
 PASSED_APIS=()
 FAILED_APIS=()
 API_STATUS_LINES=()
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: scripts/regression_emulator_api_matrix.sh [options]
+
+Options:
+  --artifact-dir <path>              Directory for matrix and per-API reports.
+  --report <path>                    Write the top-level matrix report to this path.
+  --readiness-report <path>          Write the readiness report to this path.
+  --required-apis <list>             Space-separated API levels, for example "28 32 33 34 36".
+  --avd-root <path>                  Directory containing *.avd folders.
+  --tag <id>                         Emulator system image tag, default google_apis.
+  --abi <abi>                        Emulator ABI, default arm64-v8a.
+  --check-script <path>              Readiness checker script.
+  --regression-script <path>         Per-API regression script.
+  --allow-existing-emulators         Do not fail if an emulator is already running.
+  --keep-emulators                   Do not stop each emulator after its API run.
+  -h, --help                         Show this help text.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --artifact-dir)
+      ARTIFACT_DIR="${2:?missing artifact directory}"
+      if [[ "$REPORT_FILE_WAS_DEFAULT" == "1" ]]; then
+        REPORT_FILE="$ARTIFACT_DIR/regression-emulator-api-matrix.properties"
+      fi
+      if [[ "$READINESS_REPORT_FILE_WAS_DEFAULT" == "1" ]]; then
+        READINESS_REPORT_FILE="$ARTIFACT_DIR/emulator-api-matrix-readiness.properties"
+      fi
+      shift 2
+      ;;
+    --report)
+      REPORT_FILE="${2:?missing report path}"
+      shift 2
+      ;;
+    --readiness-report)
+      READINESS_REPORT_FILE="${2:?missing readiness report path}"
+      shift 2
+      ;;
+    --required-apis)
+      REQUIRED_APIS="${2:?missing required API list}"
+      shift 2
+      ;;
+    --avd-root)
+      AVD_ROOT="${2:?missing AVD root}"
+      shift 2
+      ;;
+    --tag)
+      EMULATOR_TAG="${2:?missing emulator tag}"
+      shift 2
+      ;;
+    --abi)
+      EMULATOR_ABI="${2:?missing emulator ABI}"
+      shift 2
+      ;;
+    --check-script)
+      CHECK_EMULATOR_API_MATRIX_SCRIPT="${2:?missing check script path}"
+      shift 2
+      ;;
+    --regression-script)
+      REGRESSION_EMULATOR_SCRIPT="${2:?missing regression script path}"
+      shift 2
+      ;;
+    --allow-existing-emulators)
+      ALLOW_EXISTING_EMULATORS=1
+      shift
+      ;;
+    --keep-emulators)
+      STOP_EMULATOR_AFTER_EACH=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
 
 join_csv() {
   local IFS=,
