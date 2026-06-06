@@ -131,6 +131,13 @@ def validate_evidence_record(section, key, value):
         failures.append(f"{prefix}-evidence-file-missing")
     else:
         validate_file_sha(f"{prefix}-evidence", evidence_path, value.get("evidenceSha256", ""))
+        if section == "flow":
+            props = properties_for(evidence_path)
+            if props.get("target") == "release-flow-matrix-candidate-evidence" or \
+                    props.get("candidateOnly", "").lower() in {"true", "1", "yes"}:
+                failures.append(f"{prefix}-candidate-evidence-not-approved")
+            if props.get("releaseFlowPassed", "").lower() in {"false", "0", "no"}:
+                failures.append(f"{prefix}-release-flow-not-passed")
     if not non_empty_string(value.get("owner")):
         failures.append(f"{prefix}-owner-missing")
     validate_date_field(value.get("date", ""), prefix)

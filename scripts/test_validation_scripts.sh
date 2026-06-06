@@ -1181,6 +1181,34 @@ expect_success \
   "release validation verifier accepts approved evidence record" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-approved.properties" "status=passed"
+VALIDATION_CANDIDATE_FLOW="$TMP_DIR/release-validation-candidate-flow.json"
+VALIDATION_CANDIDATE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/candidate-firstInstall.properties"
+cat > "$VALIDATION_CANDIDATE_FLOW_EVIDENCE" <<'VALIDATION_CANDIDATE_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow-matrix-candidate-evidence
+flow=firstInstall
+candidateOnly=true
+releaseFlowPassed=false
+VALIDATION_CANDIDATE_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_CANDIDATE_FLOW" "$VALIDATION_CANDIDATE_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+candidate = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["firstInstall"]["evidencePath"] = str(candidate)
+record["flowMatrix"]["firstInstall"]["evidenceSha256"] = hashlib.sha256(candidate.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects candidate-only flow evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_CANDIDATE_FLOW" --report "$ARTIFACT_DIR/release-validation-candidate-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-candidate-flow.properties" "flow-firstInstall-candidate-evidence-not-approved"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-candidate-flow.properties" "flow-firstInstall-release-flow-not-passed"
 VALIDATION_BARE_MANUAL="$TMP_DIR/release-validation-bare-manual.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_BARE_MANUAL" <<'PY'
 import json

@@ -258,6 +258,10 @@ release ticket or PR.
   HTTPS configuration, encrypted API key clear, session persistence, memory
   controls, reminders after reboot, share/picker input, voice input,
   Accessibility text, recent media OCR, and MediaProjection cancellation.
+  Candidate evidence files marked `candidateOnly=true`,
+  `releaseFlowPassed=false`, or `target=release-flow-matrix-candidate-evidence`
+  are reviewer input only and must not be referenced as passed flow evidence in
+  `docs/release_validation_record.json`.
 - [ ] Performance sanity is recorded for first launch, model load, first token,
   streaming stop/cancel, background reminder delivery, and memory pressure on
   the largest recommended model expected for the channel.

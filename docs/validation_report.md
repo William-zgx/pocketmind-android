@@ -17,6 +17,40 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release flow candidate evidence rejection
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在会拒绝把 flow candidate evidence
+  当成正式 passed flow evidence。
+- 若 flow evidence 文件包含 `target=release-flow-matrix-candidate-evidence`、
+  `candidateOnly=true` 或 `releaseFlowPassed=false`，release validation record 会失败；
+  这些文件只能作为 reviewer input，不能替代真实 release flow。
+- `scripts/test_validation_scripts.sh` 新增负例：approved validation fixture 中的
+  `firstInstall` 被替换成 candidate evidence 后，验证器必须报告
+  `flow-firstInstall-candidate-evidence-not-approved` 和
+  `flow-firstInstall-release-flow-not-passed`。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check` 和 validation script self-tests。
+- 预期失败：当前 `docs/release_validation_record.json` 仍未 approved；
+  `build/verification/release-validation-current.properties` 记录
+  `status=failed`，失败原因仍是未完成的真机、API 28/32/33/34、
+  manual acceptance、flow matrix、performance sanity 和 reviewer 字段。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档，
+  不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Shared image no implicit OCR boundary
 
 本轮覆盖项：
