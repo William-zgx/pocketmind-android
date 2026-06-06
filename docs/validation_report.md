@@ -23,6 +23,44 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 API 36 default emulator startup validation
+
+本轮覆盖项：
+
+- `scripts/verify_emulator.sh` 指定 `AVD_NAME` 且未显式传入 `EMULATOR_ARGS` 时，默认
+  使用 headless、wipe-data、no-snapshot 的确定性启动参数。
+- fresh API 36 AVD 上的首装准备区 smoke helper 滚动到按钮后再断言和跳过。
+- `docs/release_validation_record.json` 的 emulator regression 和 API 36 matrix evidence
+  绑定到当前默认启动参数路径下的新完整回归 artifact。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest ARTIFACT_DIR=build/verification/emulator-api36-default-args-smoke-current scripts/verify_emulator.sh
+scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/regression-emulator-api36-default-args-current scripts/regression_emulator.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：`scripts/test_validation_scripts.sh`，覆盖默认 emulator args 和显式
+  `EMULATOR_ARGS` 覆盖路径。
+- 通过：API 36 smoke，`build/verification/emulator-api36-default-args-smoke-current`
+  记录 `MainActivitySmokeTest` 4 条全部通过。
+- 通过：`scripts/verify_local.sh`，包含 JVM tests、lint、debug/androidTest APK assembly、
+  release APK/AAB assembly 和 Android artifact scan。
+- 通过：完整 API 36 regression，
+  `build/verification/regression-emulator-api36-default-args-current/regression-emulator.properties`
+  记录 `status=passed`、`actual_android_test_count=28`、`api_level=36`、
+  `abi=arm64-v8a`、`avd=pocketmind_api36_arm64`，SHA-256 为
+  `d2fc72b000b39ad20e77741ba43b1abeb2646fca580108ebeafcf582c215ee4f`。
+- 预期失败：release validation record 仍未 approved，当前失败原因继续是未完成的
+  physical device full evidence、API 28/32/33/34 matrix、manual acceptance、flow
+  matrix、performance sanity 和 reviewer/date。API 36 evidence 已绑定到本轮通过的
+ 完整回归报告。
+
 ## 2026-06-06 Physical install and live remote device validation
 
 本轮覆盖项：

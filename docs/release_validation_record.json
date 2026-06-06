@@ -4,9 +4,9 @@
   "status": "pending_validation",
   "emulatorRegression": {
     "status": "passed",
-    "reportPath": "build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties",
-    "reportSha256": "4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b",
-    "avd": "focus_agent_api36_arm64",
+    "reportPath": "build/verification/regression-emulator-api36-default-args-current/regression-emulator.properties",
+    "reportSha256": "d2fc72b000b39ad20e77741ba43b1abeb2646fca580108ebeafcf582c215ee4f",
+    "avd": "pocketmind_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
     "cleanDevice": true
@@ -52,9 +52,9 @@
     {
       "apiLevel": 36,
       "status": "passed",
-      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64 after the shared image no-implicit-OCR boundary change.",
-      "evidencePath": "build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties",
-      "evidenceSha256": "4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b"
+      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on pocketmind_api36_arm64 using verify_emulator.sh default headless wipe-data startup arguments.",
+      "evidencePath": "build/verification/regression-emulator-api36-default-args-current/regression-emulator.properties",
+      "evidenceSha256": "d2fc72b000b39ad20e77741ba43b1abeb2646fca580108ebeafcf582c215ee4f"
     }
   ],
   "manualAcceptance": {
