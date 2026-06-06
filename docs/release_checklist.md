@@ -194,6 +194,11 @@ release ticket or PR.
   and MediaProjection consent separately from scripted regression; these
   system-mediated flows are not marked passed solely from scripts, mocked
   intents, or direct reader/ViewModel calls.
+- [ ] Every manual acceptance, flow matrix, and performance sanity item in
+  `docs/release_validation_record.json` records a structured evidence object
+  with `status=passed`, a summary, an evidence file path that exists in the RC
+  artifact bundle, owner, and non-future date; a bare string `passed` is not
+  acceptable evidence.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.

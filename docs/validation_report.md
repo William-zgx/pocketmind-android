@@ -15,6 +15,33 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation manual evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 不再接受 manual acceptance、flow matrix
+  或 performance sanity 中的裸字符串 `passed`。
+- 这些项目现在必须是结构化 evidence record：`status=passed`、非空 evidence、
+  存在的 `evidencePath`、owner、非未来日期。
+- `scripts/test_validation_scripts.sh` 升级 approved fixture，并增加裸 `passed` 失败用例。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 structured evidence 正例和裸 `passed` 负例。
+- 当前 `docs/release_validation_record.json` 仍按预期未通过；真实剩余项仍是未完成的
+  physical device、API 28/32/33/34、manual/flow/perf、截图和 review。
+- 未执行模拟器：本轮只加固 release validation 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation emulator evidence refresh
 
 本轮覆盖项：

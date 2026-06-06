@@ -758,6 +758,23 @@ mkdir -p "$TMP_DIR/validation-api-evidence"
 for api_level in 28 32 33 34 36; do
   printf 'status=passed\napi_level=%s\n' "$api_level" > "$TMP_DIR/validation-api-evidence/api-$api_level.properties"
 done
+mkdir -p "$TMP_DIR/validation-manual-evidence" "$TMP_DIR/validation-flow-evidence" "$TMP_DIR/validation-performance-evidence"
+for manual_key in \
+  modelSetup remoteModePrivacy toolConfirmation permissions backgroundReminders sharing \
+  multimodalEntryPoints voiceInput filePicker mediaProjection remoteSinglePublicEvidence \
+  remoteMultiEvidenceComparison mixedPrivateActionBatchFailClosed; do
+  printf 'status=passed\nmanual=%s\n' "$manual_key" > "$TMP_DIR/validation-manual-evidence/$manual_key.properties"
+done
+for flow_key in \
+  firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
+  remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
+  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
+  mediaProjectionCancellation; do
+  printf 'status=passed\nflow=%s\n' "$flow_key" > "$TMP_DIR/validation-flow-evidence/$flow_key.properties"
+done
+for perf_key in firstLaunch modelLoad firstToken streamingStopCancel backgroundReminderDelivery memoryPressure; do
+  printf 'status=passed\nperformance=%s\n' "$perf_key" > "$TMP_DIR/validation-performance-evidence/$perf_key.properties"
+done
 cat > "$VALIDATION_PENDING" <<'VALIDATION_PENDING_JSON'
 {
   "version": 1,
@@ -825,35 +842,35 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
     {"apiLevel": 36, "status": "passed", "evidence": "API 36 target behavior passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-36.properties"}
   ],
   "manualAcceptance": {
-    "modelSetup": "passed",
-    "remoteModePrivacy": "passed",
-    "toolConfirmation": "passed",
-    "permissions": "passed",
-    "backgroundReminders": "passed",
-    "sharing": "passed",
-    "multimodalEntryPoints": "passed",
-    "voiceInput": "passed",
-    "filePicker": "passed",
-    "mediaProjection": "passed",
-    "remoteSinglePublicEvidence": "passed",
-    "remoteMultiEvidenceComparison": "passed",
-    "mixedPrivateActionBatchFailClosed": "passed"
+    "modelSetup": {"status": "passed", "evidence": "Model setup manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/modelSetup.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "remoteModePrivacy": {"status": "passed", "evidence": "Remote mode privacy manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/remoteModePrivacy.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "toolConfirmation": {"status": "passed", "evidence": "Tool confirmation manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/toolConfirmation.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "permissions": {"status": "passed", "evidence": "Permission prompt manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/permissions.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "backgroundReminders": {"status": "passed", "evidence": "Background reminders manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/backgroundReminders.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "sharing": {"status": "passed", "evidence": "Sharing manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/sharing.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "multimodalEntryPoints": {"status": "passed", "evidence": "Multimodal entry points manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/multimodalEntryPoints.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "voiceInput": {"status": "passed", "evidence": "Voice input manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/voiceInput.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "filePicker": {"status": "passed", "evidence": "File picker manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/filePicker.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "mediaProjection": {"status": "passed", "evidence": "MediaProjection manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/mediaProjection.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "remoteSinglePublicEvidence": {"status": "passed", "evidence": "Remote single public evidence manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/remoteSinglePublicEvidence.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "remoteMultiEvidenceComparison": {"status": "passed", "evidence": "Remote multi evidence comparison manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/remoteMultiEvidenceComparison.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "mixedPrivateActionBatchFailClosed": {"status": "passed", "evidence": "Mixed private/action batch fail-closed manual acceptance passed.", "evidencePath": "$TMP_DIR/validation-manual-evidence/mixedPrivateActionBatchFailClosed.properties", "owner": "QA", "date": "$VALIDATION_DATE"}
   },
   "flowMatrix": {
-    "firstInstall": "passed",
-    "upgradeInstall": "passed",
-    "localModelDownloadVerification": "passed",
-    "customModelImportOrUrlRejection": "passed",
-    "remoteHttpsConfiguration": "passed",
-    "encryptedApiKeyClear": "passed",
-    "sessionPersistence": "passed",
-    "memoryControls": "passed",
-    "remindersAfterReboot": "passed",
-    "shareAndPickerInput": "passed",
-    "voiceInput": "passed",
-    "accessibilityText": "passed",
-    "recentMediaOcr": "passed",
-    "mediaProjectionCancellation": "passed"
+    "firstInstall": {"status": "passed", "evidence": "First install flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/firstInstall.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "upgradeInstall": {"status": "passed", "evidence": "Upgrade install flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/upgradeInstall.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "localModelDownloadVerification": {"status": "passed", "evidence": "Local model download verification flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/localModelDownloadVerification.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "customModelImportOrUrlRejection": {"status": "passed", "evidence": "Custom model import or URL rejection flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/customModelImportOrUrlRejection.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "remoteHttpsConfiguration": {"status": "passed", "evidence": "Remote HTTPS configuration flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/remoteHttpsConfiguration.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "encryptedApiKeyClear": {"status": "passed", "evidence": "Encrypted API key clear flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/encryptedApiKeyClear.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "sessionPersistence": {"status": "passed", "evidence": "Session persistence flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/sessionPersistence.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "memoryControls": {"status": "passed", "evidence": "Memory controls flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/memoryControls.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "remindersAfterReboot": {"status": "passed", "evidence": "Reminders after reboot flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/remindersAfterReboot.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "shareAndPickerInput": {"status": "passed", "evidence": "Share and picker input flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/shareAndPickerInput.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "voiceInput": {"status": "passed", "evidence": "Voice input flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/voiceInput.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "accessibilityText": {"status": "passed", "evidence": "Accessibility text flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/accessibilityText.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "recentMediaOcr": {"status": "passed", "evidence": "Recent media OCR flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/recentMediaOcr.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "mediaProjectionCancellation": {"status": "passed", "evidence": "MediaProjection cancellation flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/mediaProjectionCancellation.properties", "owner": "QA", "date": "$VALIDATION_DATE"}
   },
   "screenshots": [
     {"name": "chat-home", "path": "$TMP_DIR/validation-screenshots/chat-home.png", "sanitized": true},
@@ -862,12 +879,12 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
     {"name": "background-tasks-or-audit", "path": "$TMP_DIR/validation-screenshots/background-tasks-or-audit.png", "sanitized": true}
   ],
   "performanceSanity": {
-    "firstLaunch": "passed",
-    "modelLoad": "passed",
-    "firstToken": "passed",
-    "streamingStopCancel": "passed",
-    "backgroundReminderDelivery": "passed",
-    "memoryPressure": "passed"
+    "firstLaunch": {"status": "passed", "evidence": "First launch performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/firstLaunch.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "modelLoad": {"status": "passed", "evidence": "Model load performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/modelLoad.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "firstToken": {"status": "passed", "evidence": "First token performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/firstToken.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "streamingStopCancel": {"status": "passed", "evidence": "Streaming stop/cancel performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/streamingStopCancel.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "backgroundReminderDelivery": {"status": "passed", "evidence": "Background reminder delivery performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/backgroundReminderDelivery.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "memoryPressure": {"status": "passed", "evidence": "Memory pressure performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/memoryPressure.properties", "owner": "QA", "date": "$VALIDATION_DATE"}
   },
   "review": {
     "reviewer": "Validation Reviewer",
@@ -879,6 +896,22 @@ expect_success \
   "release validation verifier accepts approved evidence record" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-approved.properties" "status=passed"
+VALIDATION_BARE_MANUAL="$TMP_DIR/release-validation-bare-manual.json"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_BARE_MANUAL" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+record = json.loads(source.read_text())
+record["manualAcceptance"]["modelSetup"] = "passed"
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects bare passed manual acceptance" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_BARE_MANUAL" --report "$ARTIFACT_DIR/release-validation-bare-manual.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-bare-manual.properties" "manual-modelSetup-evidence-record-invalid"
 VALIDATION_MISSING_DEVICE="$TMP_DIR/release-validation-missing-device.json"
 sed 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$TMP_DIR/missing-device.properties"'"#' "$VALIDATION_APPROVED" > "$VALIDATION_MISSING_DEVICE"
 expect_failure \

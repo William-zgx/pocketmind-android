@@ -80,6 +80,46 @@ def properties_for(path):
             values[key] = value
     return values
 
+def validate_date_field(value, prefix):
+    if not non_empty_string(value):
+        failures.append(f"{prefix}-date-missing")
+        return
+    date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    if not date_pattern.match(value):
+        failures.append(f"{prefix}-date-invalid")
+        return
+    try:
+        parsed_date = date.fromisoformat(value)
+    except ValueError:
+        failures.append(f"{prefix}-date-invalid")
+    else:
+        if parsed_date > date.today():
+            failures.append(f"{prefix}-date-in-future")
+
+def validate_evidence_record(section, key, value):
+    prefix = f"{section}-{key}"
+    if isinstance(value, str):
+        if value == "passed":
+            failures.append(f"{prefix}-evidence-record-invalid")
+        else:
+            failures.append(f"{prefix}-not-passed")
+        return
+    if not isinstance(value, dict):
+        failures.append(f"{prefix}-evidence-record-invalid")
+        return
+    if value.get("status") != "passed":
+        failures.append(f"{prefix}-not-passed")
+    if not non_empty_string(value.get("evidence")):
+        failures.append(f"{prefix}-evidence-missing")
+    evidence_path = value.get("evidencePath", "")
+    if not non_empty_string(evidence_path):
+        failures.append(f"{prefix}-evidence-path-missing")
+    elif not Path(evidence_path).is_file():
+        failures.append(f"{prefix}-evidence-file-missing")
+    if not non_empty_string(value.get("owner")):
+        failures.append(f"{prefix}-owner-missing")
+    validate_date_field(value.get("date", ""), prefix)
+
 def count_android_tests():
     count = 0
     if not android_test_source_dir.is_dir():
@@ -225,8 +265,7 @@ if not isinstance(manual, dict):
     failures.append("manual-acceptance-missing")
     manual = {}
 for key in sorted(required_manual):
-    if manual.get(key) != "passed":
-        failures.append(f"manual-{key}-not-passed")
+    validate_evidence_record("manual", key, manual.get(key))
 
 required_flows = {
     "firstInstall",
@@ -249,8 +288,7 @@ if not isinstance(flows, dict):
     failures.append("flow-matrix-missing")
     flows = {}
 for key in sorted(required_flows):
-    if flows.get(key) != "passed":
-        failures.append(f"flow-{key}-not-passed")
+    validate_evidence_record("flow", key, flows.get(key))
 
 screenshots = record.get("screenshots")
 required_screenshots = {"chat-home", "model-manager", "confirmation-sheet", "background-tasks-or-audit"}
@@ -289,8 +327,7 @@ if not isinstance(performance, dict):
     failures.append("performance-sanity-missing")
     performance = {}
 for key in sorted(required_performance):
-    if performance.get(key) != "passed":
-        failures.append(f"performance-{key}-not-passed")
+    validate_evidence_record("performance", key, performance.get(key))
 
 review = record.get("review")
 if not isinstance(review, dict):
@@ -299,19 +336,7 @@ if not isinstance(review, dict):
 if not non_empty_string(review.get("reviewer")):
     failures.append("reviewer-missing")
 review_date = review.get("reviewDate", "")
-date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-if not review_date:
-    failures.append("review-date-missing")
-elif not date_pattern.match(review_date):
-    failures.append("review-date-invalid")
-else:
-    try:
-        parsed_date = date.fromisoformat(review_date)
-    except ValueError:
-        failures.append("review-date-invalid")
-    else:
-        if parsed_date > date.today():
-            failures.append("review-date-in-future")
+validate_date_field(review_date, "review")
 
 if failures:
     print(",".join(failures))
