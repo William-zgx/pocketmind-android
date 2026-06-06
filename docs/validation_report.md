@@ -17,6 +17,52 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release flow matrix candidate evidence
+
+本轮覆盖项：
+
+- 新增 `scripts/collect_release_flow_matrix_evidence.sh`，基于已通过且
+  `clean_device=1` 的 API 36 `regression-emulator.properties` 生成 flow matrix
+  候选 evidence。
+- 候选 evidence 明确写入 `candidateOnly=true` 和 `releaseFlowPassed=false`；它只说明
+  当前自动化回归覆盖到哪些行为，不会把脚本、mock 或 UI 文案冒充成 release flow 通过。
+- collector 仍要求 `docs/release_validation_record.json` 里的 flowMatrix 项提供正式
+  `status=passed`、evidence path、SHA、owner 和日期；缺项时报告
+  `failedTarget=flow-matrix`。
+- `docs/release_validation_record.json` 的 flowMatrix 保持 pending，等待真实 release
+  flow、系统 picker、语音、MediaProjection 前台同意、重启提醒、升级安装和模型下载校验
+  证据补齐。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+ARTIFACT_DIR=build/verification/release-flow-matrix-current REPORT_FILE=build/verification/release-flow-matrix-current/release-flow-matrix-candidate-evidence.properties scripts/collect_release_flow_matrix_evidence.sh
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=focus_agent_api36_arm64 ARTIFACT_DIR=build/verification/regression-emulator-flow-candidate-current REGRESSION_REPORT_FILE=build/verification/regression-emulator-flow-candidate-current/regression-emulator.properties EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator.sh
+```
+
+结果：
+
+- 预期失败：当前 release validation record 的 flowMatrix 全部仍为 pending；
+  `build/verification/release-flow-matrix-current/release-flow-matrix-candidate-evidence.properties`
+  记录 `status=failed`、`failedTarget=flow-matrix` 和
+  `reason=missing-approved-release-evidence-...`。
+- 通过：collector 生成 8 个候选 evidence 文件，覆盖 first install、custom model URL、
+  remote config contract、encrypted API key clear、session persistence、memory controls、
+  Accessibility confirmation 和 MediaProjection cancellation confirmation 的自动化证据映射。
+- 通过：validation script self-tests，覆盖 collector pending 失败、完整 flowMatrix fixture
+  通过和 source regression SHA 不匹配失败。
+- 通过：`scripts/verify_local.sh`，覆盖 shell syntax、validation script self-tests、JVM
+  tests、lint、debug/release assemble、release bundle 和 Android artifact scan。
+- 通过：真实 API 36 emulator 回归；
+  `build/verification/regression-emulator-flow-candidate-current/regression-emulator.properties`
+  记录 `status=passed`、`actual_android_test_count=28`、`serial=emulator-5554`、
+  `api_level=36`、`avd=focus_agent_api36_arm64`。
+- 未更新 release validation record 为 passed；这些候选文件不能替代系统介入型流程和人工验收。
+
 ## 2026-06-06 Release screenshot evidence capture
 
 本轮覆盖项：

@@ -372,6 +372,8 @@ grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
 grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include capture_release_screenshots.sh in shell syntax checks"
+grep -q 'scripts/collect_release_flow_matrix_evidence.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include collect_release_flow_matrix_evidence.sh in shell syntax checks"
 grep -q 'scripts/privacy_scan.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include privacy_scan.sh in shell syntax checks"
 grep -q 'scripts/scan_android_artifacts.sh' scripts/verify_local.sh ||
@@ -1195,6 +1197,135 @@ expect_failure \
   "release validation verifier rejects unsanitized screenshots" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_UNSANITIZED_SCREENSHOT" --report "$ARTIFACT_DIR/release-validation-unsanitized.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-unsanitized.properties" "status=failed"
+
+FLOW_CANDIDATE_EMULATOR_REPORT="$TMP_DIR/flow-candidate-regression-emulator.properties"
+FLOW_CANDIDATE_RECORD_PENDING="$TMP_DIR/flow-candidate-pending.json"
+FLOW_CANDIDATE_RECORD_APPROVED="$TMP_DIR/flow-candidate-approved.json"
+FLOW_CANDIDATE_RECORD_BAD_SHA="$TMP_DIR/flow-candidate-bad-sha.json"
+FLOW_CANDIDATE_EVIDENCE_DIR="$TMP_DIR/flow-candidate-approved-evidence"
+mkdir -p "$FLOW_CANDIDATE_EVIDENCE_DIR"
+cat > "$FLOW_CANDIDATE_EMULATOR_REPORT" <<FLOW_CANDIDATE_EMULATOR_REPORT_PROPERTIES
+status=passed
+target=regression-emulator
+clean_device=1
+actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+avd=test-avd
+api_level=36
+abi=arm64-v8a
+FLOW_CANDIDATE_EMULATOR_REPORT_PROPERTIES
+FLOW_CANDIDATE_EMULATOR_SHA="$(shasum -a 256 "$FLOW_CANDIDATE_EMULATOR_REPORT" | awk '{print $1}')"
+cat > "$FLOW_CANDIDATE_RECORD_PENDING" <<FLOW_CANDIDATE_RECORD_PENDING_JSON
+{
+  "version": 1,
+  "status": "pending_validation",
+  "emulatorRegression": {
+    "status": "passed",
+    "reportPath": "$FLOW_CANDIDATE_EMULATOR_REPORT",
+    "reportSha256": "$FLOW_CANDIDATE_EMULATOR_SHA"
+  },
+  "flowMatrix": {
+    "firstInstall": "pending"
+  }
+}
+FLOW_CANDIDATE_RECORD_PENDING_JSON
+expect_failure \
+  "release flow matrix collector writes candidate evidence while approved record is incomplete" \
+  scripts/collect_release_flow_matrix_evidence.sh \
+    --file "$FLOW_CANDIDATE_RECORD_PENDING" \
+    --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-pending" \
+    --report "$ARTIFACT_DIR/release-flow-candidate-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "target=release-flow-matrix-candidate-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "failedTarget=flow-matrix"
+assert_report_contains_text "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "missing-approved-release-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "candidateOnly=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "releaseFlowPassed=false"
+for flow_key in \
+  firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
+  remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
+  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
+  mediaProjectionCancellation; do
+  printf 'status=passed\nflow=%s\n' "$flow_key" > "$FLOW_CANDIDATE_EVIDENCE_DIR/$flow_key.properties"
+done
+python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_EMULATOR_REPORT" "$FLOW_CANDIDATE_EMULATOR_SHA" "$FLOW_CANDIDATE_EVIDENCE_DIR" "$VALIDATION_DATE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+target = Path(sys.argv[1])
+emulator_report = sys.argv[2]
+emulator_sha = sys.argv[3]
+evidence_dir = Path(sys.argv[4])
+validation_date = sys.argv[5]
+flows = [
+    "firstInstall",
+    "upgradeInstall",
+    "localModelDownloadVerification",
+    "customModelImportOrUrlRejection",
+    "remoteHttpsConfiguration",
+    "encryptedApiKeyClear",
+    "sessionPersistence",
+    "memoryControls",
+    "remindersAfterReboot",
+    "shareAndPickerInput",
+    "voiceInput",
+    "accessibilityText",
+    "recentMediaOcr",
+    "mediaProjectionCancellation",
+]
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+record = {
+    "version": 1,
+    "status": "approved",
+    "emulatorRegression": {
+        "status": "passed",
+        "reportPath": emulator_report,
+        "reportSha256": emulator_sha,
+    },
+    "flowMatrix": {},
+}
+for flow in flows:
+    evidence_path = evidence_dir / f"{flow}.properties"
+    record["flowMatrix"][flow] = {
+        "status": "passed",
+        "evidence": f"{flow} approved flow evidence.",
+        "evidencePath": str(evidence_path),
+        "evidenceSha256": sha(evidence_path),
+        "owner": "QA",
+        "date": validation_date,
+    }
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_success \
+  "release flow matrix collector accepts approved structured flow records" \
+  scripts/collect_release_flow_matrix_evidence.sh \
+    --file "$FLOW_CANDIDATE_RECORD_APPROVED" \
+    --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-approved" \
+    --report "$ARTIFACT_DIR/release-flow-candidate-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "passedRecordFlows=firstInstall,upgradeInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
+python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_RECORD_BAD_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["emulatorRegression"]["reportSha256"] = "0" * 64
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release flow matrix collector rejects mismatched source regression sha" \
+  scripts/collect_release_flow_matrix_evidence.sh \
+    --file "$FLOW_CANDIDATE_RECORD_BAD_SHA" \
+    --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-bad-sha" \
+    --report "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "failedTarget=source-regression"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "reason=emulator-regression-report-sha-mismatch"
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
 FAKE_MATRIX_REGRESSION="$TMP_DIR/fake-matrix-regression"
