@@ -12,7 +12,9 @@
       "redistributionDecision": "not_approved",
       "attributionNotice": "",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "reviewEvidencePath": "",
+      "reviewEvidenceSha256": ""
     },
     {
       "id": "memory-embedding-300m",
@@ -24,7 +26,9 @@
       "redistributionDecision": "not_approved",
       "attributionNotice": "",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "reviewEvidencePath": "",
+      "reviewEvidenceSha256": ""
     },
     {
       "id": "mobile-action-270m",
@@ -36,7 +40,9 @@
       "redistributionDecision": "not_approved",
       "attributionNotice": "",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "reviewEvidencePath": "",
+      "reviewEvidenceSha256": ""
     },
     {
       "id": "chat-e4b",
@@ -48,7 +54,9 @@
       "redistributionDecision": "not_approved",
       "attributionNotice": "",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "reviewEvidencePath": "",
+      "reviewEvidenceSha256": ""
     }
   ]
 }

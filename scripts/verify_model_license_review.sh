@@ -61,6 +61,7 @@ trap 'rm -f "$TMP_FAILURES"' EXIT
 
 set +e
 python3 - "$REVIEW_FILE" "$METADATA_FILE" "$MANIFEST_FILE" <<'PY' > "$TMP_FAILURES"
+import hashlib
 import json
 import re
 import sys
@@ -83,6 +84,18 @@ failures = []
 
 def non_empty_string(value):
     return isinstance(value, str) and bool(value.strip())
+
+def validate_file_sha(prefix, path, expected_sha):
+    if not non_empty_string(expected_sha):
+        failures.append(f"{prefix}-sha-missing")
+        return
+    try:
+        actual_sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        failures.append(f"{prefix}-sha-read-failed")
+        return
+    if actual_sha != expected_sha:
+        failures.append(f"{prefix}-sha-mismatch")
 
 def normalize_license(value):
     normalized = re.sub(r"[^a-z0-9]+", "", value.lower())
@@ -274,6 +287,17 @@ for entry in review_models:
         failures.append(f"{model_id or 'unknown'}-attribution-notice-missing")
     if not entry.get("reviewer"):
         failures.append(f"{model_id or 'unknown'}-reviewer-missing")
+    review_evidence_path = entry.get("reviewEvidencePath", "")
+    if not non_empty_string(review_evidence_path):
+        failures.append(f"{model_id or 'unknown'}-review-evidence-path-missing")
+    elif not Path(review_evidence_path).is_file():
+        failures.append(f"{model_id or 'unknown'}-review-evidence-file-missing")
+    else:
+        validate_file_sha(
+            f"{model_id or 'unknown'}-review-evidence",
+            review_evidence_path,
+            entry.get("reviewEvidenceSha256", ""),
+        )
     review_date = entry.get("reviewDate", "")
     if not review_date:
         failures.append(f"{model_id or 'unknown'}-review-date-missing")

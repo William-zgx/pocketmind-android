@@ -1175,6 +1175,12 @@ MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
 MODEL_LICENSE_MANIFEST="$TMP_DIR/model-manifest.md"
 MODEL_LICENSE_PENDING="$TMP_DIR/model-license-pending.json"
 MODEL_LICENSE_APPROVED="$TMP_DIR/model-license-approved.json"
+MODEL_LICENSE_CHAT_EVIDENCE="$TMP_DIR/model-license-chat-e2b-review.properties"
+MODEL_LICENSE_MEMORY_EVIDENCE="$TMP_DIR/model-license-memory-embedding-300m-review.properties"
+printf 'status=approved\nmodel=chat-e2b\nscope=license-redistribution-attribution\n' > "$MODEL_LICENSE_CHAT_EVIDENCE"
+printf 'status=approved\nmodel=memory-embedding-300m\nscope=license-redistribution-attribution\n' > "$MODEL_LICENSE_MEMORY_EVIDENCE"
+MODEL_LICENSE_CHAT_EVIDENCE_SHA="$(shasum -a 256 "$MODEL_LICENSE_CHAT_EVIDENCE" | awk '{print $1}')"
+MODEL_LICENSE_MEMORY_EVIDENCE_SHA="$(shasum -a 256 "$MODEL_LICENSE_MEMORY_EVIDENCE" | awk '{print $1}')"
 cat > "$MODEL_LICENSE_MANIFEST" <<'MODEL_LICENSE_MANIFEST_MD'
 | ID | File | Repository | Upstream revision | Bytes | SHA-256 | License status |
 | --- | --- | --- | --- | ---: | --- | --- |
@@ -1223,7 +1229,9 @@ cat > "$MODEL_LICENSE_PENDING" <<'MODEL_LICENSE_PENDING_JSON'
       "redistributionDecision": "not_approved",
       "attributionNotice": "",
       "reviewer": "",
-      "reviewDate": ""
+      "reviewDate": "",
+      "reviewEvidencePath": "",
+      "reviewEvidenceSha256": ""
     }
   ]
 }
@@ -1233,7 +1241,7 @@ expect_failure \
   env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_PENDING" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-pending.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-pending.properties" "status=failed"
-cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
+cat > "$MODEL_LICENSE_APPROVED" <<MODEL_LICENSE_APPROVED_JSON
 {
   "version": 1,
   "models": [
@@ -1247,7 +1255,9 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
-      "reviewDate": "2026-06-06"
+      "reviewDate": "2026-06-06",
+      "reviewEvidencePath": "$MODEL_LICENSE_CHAT_EVIDENCE",
+      "reviewEvidenceSha256": "$MODEL_LICENSE_CHAT_EVIDENCE_SHA"
     },
     {
       "id": "memory-embedding-300m",
@@ -1259,7 +1269,9 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
-      "reviewDate": "2026-06-06"
+      "reviewDate": "2026-06-06",
+      "reviewEvidencePath": "$MODEL_LICENSE_MEMORY_EVIDENCE",
+      "reviewEvidenceSha256": "$MODEL_LICENSE_MEMORY_EVIDENCE_SHA"
     }
   ]
 }
@@ -1283,6 +1295,13 @@ expect_failure \
   env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_REPO_ROOT" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-repo-root.properties"
 assert_report_contains_text "$ARTIFACT_DIR/model-license-repo-root.properties" "chat-e2b-license-source-not-concrete"
+MODEL_LICENSE_BAD_REVIEW_EVIDENCE_SHA="$TMP_DIR/model-license-bad-review-evidence-sha.json"
+sed 's/"reviewEvidenceSha256": "'"$MODEL_LICENSE_CHAT_EVIDENCE_SHA"'"/"reviewEvidenceSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_BAD_REVIEW_EVIDENCE_SHA"
+expect_failure \
+  "model license verifier rejects review evidence sha mismatch" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_BAD_REVIEW_EVIDENCE_SHA" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-bad-review-evidence-sha.properties"
+assert_report_contains_text "$ARTIFACT_DIR/model-license-bad-review-evidence-sha.properties" "chat-e2b-review-evidence-sha-mismatch"
 MODEL_LICENSE_STALE_REVIEW="$TMP_DIR/model-license-stale-review.json"
 sed 's/2026-06-06/2026-06-04/g' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_STALE_REVIEW"
 expect_failure \

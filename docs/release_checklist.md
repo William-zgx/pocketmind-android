@@ -143,10 +143,11 @@ release ticket or PR.
 - [ ] All four recommended model downloads in `docs/model_manifest.md` have
   manually verified manifest repository, pinned upstream revision, license
   name, license source URL or file path, redistribution decision, attribution
-  or notice requirements, reviewer, and review date. For Hugging Face-hosted
-  models, the license source must point to a concrete license, notice, terms,
-  or model-card file such as a `blob`, `raw`, or `resolve` URL; the repository
-  homepage is not acceptable as a license source.
+  or notice requirements, reviewer, review date, review evidence file path, and
+  matching review evidence SHA-256. For Hugging Face-hosted models, the license
+  source must point to a concrete license, notice, terms, or model-card file
+  such as a `blob`, `raw`, or `resolve` URL; the repository homepage is not
+  acceptable as a license source.
 - [ ] `docs/model_license_review.json` is updated from pending to approved
   records before broad distribution, and `VERIFY_MODEL_LICENSES=1
   scripts/verify_release_gate.sh` passes for the release candidate. The gate
@@ -155,7 +156,7 @@ release ticket or PR.
   metadata to match that manifest, and approvals to include aligned license
   names, approved redistribution, attribution or notice, reviewer, and a valid
   concrete license source plus a non-future review date not older than the
-  metadata collection date.
+  metadata collection date, with review evidence bound by SHA-256.
 - [ ] README License wording distinguishes app code from third-party model
   artifacts.
 - [ ] No API keys, bearer tokens, private model endpoints, raw prompts, or
