@@ -25,7 +25,7 @@ WINDOW_DUMP_FILE="${ARTIFACT_DIR}/fresh-start.xml"
 LOGCAT_FILE="${ARTIFACT_DIR}/logcat.txt"
 EMULATOR_LOG="${ARTIFACT_DIR}/emulator.log"
 
-MAIN_COPY_TEXT="${MAIN_COPY_TEXT:-PocketMind 已进入，模型待配置}"
+MAIN_COPY_TEXT="${MAIN_COPY_TEXT:-主界面已就绪}"
 FORBIDDEN_FIRST_RUN_TEXT="${FORBIDDEN_FIRST_RUN_TEXT:-准备基础能力包}"
 SELECTED_SERIAL=""
 API_LEVEL=""
@@ -164,6 +164,20 @@ emulator_avd_name() {
     awk 'NF && $0 != "OK" {value = $0} END {print value}'
 }
 
+install_debug_apk() {
+  local attempt output
+  for attempt in 1 2 3; do
+    if output="$("$ADB_BIN" -s "$SELECTED_SERIAL" install -r "$DEBUG_APK" 2>&1)"; then
+      return
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      sleep $((attempt * 3))
+    fi
+  done
+  printf '%s\n' "$output" >&2
+  fail install debug-apk-install-failed "adb install failed after 3 attempts."
+}
+
 [[ -x "$ADB_BIN" ]] || fail adb adb-missing "adb not found at $ADB_BIN."
 [[ -x "$EMULATOR_BIN" ]] || fail emulator emulator-missing "Android emulator binary not found at $EMULATOR_BIN."
 mkdir -p "$ARTIFACT_DIR"
@@ -191,7 +205,7 @@ AVD_LABEL="$(emulator_avd_name || true)"
 [[ -f "$DEBUG_APK" ]] || fail apk apk-missing "Debug APK not found at $DEBUG_APK."
 
 "$ADB_BIN" -s "$SELECTED_SERIAL" uninstall "$PACKAGE_NAME" >/dev/null 2>&1 || true
-"$ADB_BIN" -s "$SELECTED_SERIAL" install -r "$DEBUG_APK" >/dev/null
+install_debug_apk
 "$ADB_BIN" -s "$SELECTED_SERIAL" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
 sleep 5
 

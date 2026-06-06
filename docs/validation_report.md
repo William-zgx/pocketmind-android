@@ -23,6 +23,76 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Fresh start default-page clarity and APK artifact cleanup
+
+本轮覆盖项：
+
+- 将无模型首屏从“PocketMind 已进入，模型待配置”调整为更明确的“主界面已就绪”，并把
+  首页次级入口“更多”改为“模型管理”，降低看起来仍停在默认接入页的误解。
+- `scripts/verify_fresh_start_main_shell_emulator.sh` 的 main-shell 断言同步到新首屏文案，
+  并为 `adb install` 增加最多 3 次重试；安装失败时写入明确
+  `failedTarget=install` / `reason=debug-apk-install-failed`。
+- `scripts/test_validation_scripts.sh` 现在会在 fake Gradle 测试前备份真实 debug APK，
+  退出时恢复或清理，避免把 `app/build/outputs/apk/debug/app-debug.apk` 留成 15B 假包。
+
+验证命令：
+
+```bash
+./gradlew --no-daemon :app:assembleDebug --rerun-tasks
+scripts/test_validation_scripts.sh
+ARTIFACT_DIR=build/verification/current-page-check-final-retry AVD_NAME=pocketmind_api36_arm64 scripts/verify_fresh_start_main_shell_emulator.sh
+scripts/verify_local.sh
+git diff --check
+rg -n "<provider endpoint/model/API-key denylist>" -S . -g '!**/.git/**' -g '!**/.gradle/**' -g '!**/build/**'
+```
+
+结果：
+
+- 通过：debug APK 强制重建后为 109 MB zip，SHA-256 为
+  `080baa96372de8cb3ef37899acdd41bc4a54171615982c666902eaacd61d808c`。
+- 通过：`scripts/test_validation_scripts.sh` 结束后 debug APK 仍为同一真实 zip 包，没有再被
+  fake Gradle 留成 15B 文本文件。
+- 通过：API 36 emulator fresh start 验证，
+  `build/verification/current-page-check-final-retry/fresh-start-main-shell.properties` 记录
+  `status=passed`、`first_run_setup_visible=false`、`main_shell_copy_visible=true`；截图为
+  `build/verification/current-page-check-final-retry/fresh-start.png`。
+- 通过：`scripts/verify_local.sh`，包含 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 通过：`git diff --check` 无 whitespace 问题；敏感配置扫描未发现 DeepSeek endpoint、
+  model name 或 API key。
+- 未执行真机安装：当前 `adb devices -l` 未发现授权物理设备。
+
+## 2026-06-07 Formal release flow evidence recorder
+
+本轮覆盖项：
+
+- 新增 `scripts/record_release_flow_evidence.sh`，用于人工/真机验收后生成正式
+  `target=release-flow`、`releaseFlowPassed=true`、`candidateOnly=false` 的 flow
+  evidence 文件。
+- recorder 要求显式 `OWNER`，支持 `RELEASE_FLOW_KEYS` partial 记录和
+  `RELEASE_FLOW_ALL=1` 全量记录；partial summary 必须失败并列出 `pendingFlows`。
+- 不自动修改 `docs/release_validation_record.json`，也不把 candidate evidence 升级为
+  passed flow；release validation 仍等待真实 owner、date、evidencePath 和 SHA 绑定。
+
+验证命令：
+
+```bash
+bash -n scripts/record_release_flow_evidence.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script self-tests 覆盖 release flow recorder 缺少 owner 失败、
+  partial flow 失败、全量 formal evidence 通过，以及每个 flow evidence 的
+  `status`、`target`、`flowKey`、`releaseFlowPassed`、`candidateOnly`、owner/date
+  字段。
+- 通过：`scripts/verify_local.sh` 已在本轮后续总验证中通过，覆盖 shell syntax、
+  validation script self-tests、JVM tests、lint、debug/androidTest、release APK/AAB
+  和 artifact scan。
+- 预期仍未完成：`docs/release_validation_record.json.flowMatrix` 保持 pending，等待真实
+  release flow owner sign-off 和 evidence binding。
+
 ## 2026-06-07 Store policy evidence packet refresh
 
 本轮覆盖项：

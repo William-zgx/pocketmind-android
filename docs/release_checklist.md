@@ -282,6 +282,10 @@ release ticket or PR.
   `status=passed`, `target=release-flow`, a `flowKey` that matches the record
   key, and `releaseFlowPassed=true`; candidate-only or lightweight status-only
   flow evidence files are not accepted.
+- [ ] Release flow evidence is generated from explicit owner sign-off, for
+  example `OWNER="<reviewer>" RELEASE_FLOW_ALL=1
+  scripts/record_release_flow_evidence.sh`; partial runs must remain failed
+  until every required release flow is accepted.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.

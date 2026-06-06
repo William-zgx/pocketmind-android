@@ -6,7 +6,21 @@ cd "$ROOT_DIR"
 
 TMP_DIR="$(mktemp -d)"
 CLEANUP_PATHS=("$TMP_DIR/.cleanup-sentinel")
+DEBUG_APK_UNDER_TEST="app/build/outputs/apk/debug/app-debug.apk"
+DEBUG_APK_BACKUP="$TMP_DIR/app-debug.apk.backup"
+DEBUG_APK_EXISTED=0
+if [[ -f "$DEBUG_APK_UNDER_TEST" ]]; then
+  mkdir -p "$(dirname "$DEBUG_APK_BACKUP")"
+  cp "$DEBUG_APK_UNDER_TEST" "$DEBUG_APK_BACKUP"
+  DEBUG_APK_EXISTED=1
+fi
 cleanup_validation_test() {
+  if [[ "$DEBUG_APK_EXISTED" == "1" && -f "$DEBUG_APK_BACKUP" ]]; then
+    mkdir -p "$(dirname "$DEBUG_APK_UNDER_TEST")"
+    cp "$DEBUG_APK_BACKUP" "$DEBUG_APK_UNDER_TEST"
+  else
+    rm -f "$DEBUG_APK_UNDER_TEST"
+  fi
   rm -rf "$TMP_DIR"
   local path
   for path in "${CLEANUP_PATHS[@]}"; do
@@ -198,7 +212,7 @@ FAKE_PACKAGE_DUMPSYS
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
         ;;
       /sdcard/pocketmind-fresh-start.xml)
-        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-PocketMind 已进入，模型待配置}" > "$destination"
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-主界面已就绪}" > "$destination"
         ;;
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
@@ -453,6 +467,8 @@ grep -q 'scripts/collect_release_flow_matrix_evidence.sh' scripts/verify_local.s
   fail "verify_local.sh must include collect_release_flow_matrix_evidence.sh in shell syntax checks"
 grep -q 'scripts/record_manual_acceptance_evidence.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include record_manual_acceptance_evidence.sh in shell syntax checks"
+grep -q 'scripts/record_release_flow_evidence.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include record_release_flow_evidence.sh in shell syntax checks"
 grep -q 'scripts/verify_upgrade_install_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_upgrade_install_emulator.sh in shell syntax checks"
 grep -q 'releaseFlowPassed=false' scripts/verify_upgrade_install_emulator.sh ||
@@ -2129,6 +2145,51 @@ for manual_key in \
   assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "manualAcceptance=true"
   assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "owner=QA"
   assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "date=$VALIDATION_DATE"
+done
+
+expect_failure \
+  "release flow evidence recorder requires owner" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-flow-missing-owner" \
+  RELEASE_FLOW_ALL=1 scripts/record_release_flow_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/release-flow-missing-owner/release-flow-evidence.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-missing-owner/release-flow-evidence.properties" "target=release-flow-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-missing-owner/release-flow-evidence.properties" "reason=missing-owner"
+expect_failure \
+  "release flow evidence recorder reports pending flows" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-flow-partial" \
+  OWNER="QA" RELEASE_FLOW_KEYS="firstInstall,sessionPersistence" \
+  scripts/record_release_flow_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/release-flow-evidence.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/release-flow-evidence.properties" "target=release-flow-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/release-flow-evidence.properties" "reason=missing-required-release-flows"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/release-flow-evidence.properties" "acceptedFlows=firstInstall,sessionPersistence"
+assert_report_contains_text "$ARTIFACT_DIR/release-flow-partial/release-flow-evidence.properties" "pendingFlows="
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "target=release-flow"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "flowKey=firstInstall"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "releaseFlowPassed=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "candidateOnly=false"
+expect_success \
+  "release flow evidence recorder writes all formal evidence" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-flow-full" \
+  OWNER="QA" RELEASE_FLOW_ALL=1 VALIDATION_DATE="$VALIDATION_DATE" \
+  scripts/record_release_flow_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/release-flow-evidence.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/release-flow-evidence.properties" "target=release-flow-evidence"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/release-flow-evidence.properties" "pendingFlows="
+for flow_key in \
+  firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
+  remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
+  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
+  mediaProjectionCancellation; do
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "status=passed"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "target=release-flow"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "flowKey=$flow_key"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "releaseFlowPassed=true"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "candidateOnly=false"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "evidenceKind=formal-release-flow"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "owner=QA"
+  assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "date=$VALIDATION_DATE"
 done
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
