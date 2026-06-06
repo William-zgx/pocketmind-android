@@ -23,6 +23,60 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Product contract screen check and current regression
+
+本轮覆盖项：
+
+- API 36 arm64 模拟器安装当前包后复核首屏，不再把“仍在待准备/接入态”误判为测试占用或
+  UI 卡死。
+- 复核“配置远程模型（无需下载）”点击可打开模型管理的远程配置表单；无模型时页面保持
+  `待准备` 是因为没有下载/导入本地模型，也没有配置远程模型。
+- API 36 arm64 完整模拟器回归重新绑定到当前 product-contract UI 文案后的 35 个
+  AndroidTest。
+- release flow matrix candidate 继续 fail closed，但失败目标已从 stale source regression
+  收敛为缺正式批准的 release flow evidence。
+
+验证命令：
+
+```bash
+ARTIFACT_DIR=build/verification/product-contract-regression-current \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 scripts/regression_emulator.sh
+/Users/bytedance/Library/Android/sdk/platform-tools/adb devices -l
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 \
+  shell dumpsys package com.bytedance.zgx.pocketmind
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 \
+  exec-out uiautomator dump /dev/tty > build/verification/current-screen/ui.xml
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 \
+  exec-out screencap -p > build/verification/current-screen/current.png
+/Users/bytedance/Library/Android/sdk/platform-tools/adb -s emulator-5554 \
+  shell input tap 540 1678
+ARTIFACT_DIR=build/verification/product-contract-flow-matrix-current \
+  REPORT_FILE=build/verification/product-contract-flow-matrix-current/release-flow-matrix-candidate-evidence.properties \
+  scripts/collect_release_flow_matrix_evidence.sh
+```
+
+结果：
+
+- 通过：API 36 arm64 完整模拟器回归，
+  `build/verification/product-contract-regression-current/regression-emulator.properties`
+  包含 `status=passed`、`source_android_test_count=35`、
+  `expected_android_test_count=35`、`actual_android_test_count=35`、`clean_device=1`；
+  report SHA-256 为
+  `ed29aeb0a5cfe0508bf273ecfbbc2c6c8a95f8a1d1306c4a6f108410ca8a2844`。
+- 通过：当前模拟器安装包前台为 `com.bytedance.zgx.pocketmind/.MainActivity`，
+  `lastUpdateTime=2026-06-07 05:37:02`；UI dump 显示“隐私优先的随身 AI 助手”、
+  “配置远程模型（无需下载）”和“未找到可用模型，请下载、导入或配置远程模型”。
+- 通过：点击“配置远程模型（无需下载）”后打开模型管理远程页，UI dump 显示
+  “模型管理”、“选择本地离线或可选远程；远程发送和设备动作仍会先确认。”、
+  “服务地址”、“模型名”、“API Key”和“图片输入”。
+- 未通过但按预期生成失败证据：当前 flow matrix candidate report
+  `build/verification/product-contract-flow-matrix-current/release-flow-matrix-candidate-evidence.properties`
+  包含 `status=failed`、`failedTarget=flow-matrix`、
+  `reason=missing-approved-release-evidence-firstInstall,...`、
+  `sourceAndroidTestCount=35`，并生成 13 条 candidate-only flow evidence。
+- 未执行：真机复核。当前 `adb devices -l` 只发现 `emulator-5554`，没有物理设备 serial；
+  因此用户手上真机的页面状态不能记录为已验证或已修复。
+
 ## 2026-06-07 API36 regression refresh and stale evidence guard
 
 本轮覆盖项：
