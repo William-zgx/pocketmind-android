@@ -20,6 +20,7 @@ DEVICE_REPORT_FILE="${DEVICE_REPORT_FILE:-${ARTIFACT_DIR}/device-verification.pr
 SCREENSHOT_FILE="${ARTIFACT_DIR}/screenshot.png"
 WINDOW_DUMP_FILE="${ARTIFACT_DIR}/window.xml"
 LOGCAT_FILE="${ARTIFACT_DIR}/logcat.txt"
+CRASH_ANR_SMOKE_REPORT_FILE="${CRASH_ANR_SMOKE_REPORT_FILE:-${ARTIFACT_DIR}/crash-anr-smoke.properties}"
 
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SELECTED_SERIAL=""
@@ -87,6 +88,7 @@ write_emulator_report() {
     echo "screenshot_file=$SCREENSHOT_FILE"
     echo "window_dump_file=$WINDOW_DUMP_FILE"
     echo "logcat_file=$LOGCAT_FILE"
+    echo "crash_anr_smoke_report_file=$CRASH_ANR_SMOKE_REPORT_FILE"
     echo "emulator_log=$EMULATOR_LOG"
     echo "device_report_file=$DEVICE_REPORT_FILE"
   } > "$EMULATOR_REPORT_FILE"
@@ -216,6 +218,7 @@ ANDROID_SERIAL="$SELECTED_SERIAL" \
   ARTIFACT_DIR="$ARTIFACT_DIR" \
   VERIFICATION_REPORT_FILE="$DEVICE_REPORT_FILE" \
   INSTRUMENTATION_OUTPUT_FILE="${ARTIFACT_DIR}/instrumentation.txt" \
+  LOGCAT_FILE="$LOGCAT_FILE" \
   scripts/install_and_test_device.sh
 DEVICE_VERIFY_STATUS=$?
 set -e
@@ -223,6 +226,28 @@ if [[ "$DEVICE_VERIFY_STATUS" -ne 0 ]]; then
   nested_reason="$(report_value "$DEVICE_REPORT_FILE" "reason")"
   [[ -n "$nested_reason" ]] || nested_reason="device-verification-failed"
   fail device-verification "device-verification-$nested_reason" "Device verification failed; see $DEVICE_REPORT_FILE."
+fi
+
+set +e
+DEVICE_INSTRUMENTATION_OUTPUT_FILE="$(report_value "$DEVICE_REPORT_FILE" "instrumentation_output_file")"
+CRASH_ANR_SMOKE_ARGS=(
+  --device-report "$DEVICE_REPORT_FILE"
+  --logcat "$LOGCAT_FILE"
+  --report "$CRASH_ANR_SMOKE_REPORT_FILE"
+  --window "emulator verification"
+  --track "local-emulator"
+)
+if [[ -n "$DEVICE_INSTRUMENTATION_OUTPUT_FILE" ]]; then
+  CRASH_ANR_SMOKE_ARGS+=(--instrumentation-output "$DEVICE_INSTRUMENTATION_OUTPUT_FILE")
+fi
+scripts/collect_crash_anr_smoke_evidence.sh "${CRASH_ANR_SMOKE_ARGS[@]}"
+CRASH_ANR_SMOKE_STATUS=$?
+set -e
+if [[ "$CRASH_ANR_SMOKE_STATUS" -ne 0 ]]; then
+  nested_reason="$(report_value "$CRASH_ANR_SMOKE_REPORT_FILE" "reason")"
+  [[ -n "$nested_reason" ]] || nested_reason="crash-anr-smoke-failed"
+  fail crash-anr-smoke "crash-anr-smoke-$nested_reason" \
+    "Crash/ANR smoke evidence failed; see $CRASH_ANR_SMOKE_REPORT_FILE."
 fi
 
 echo "Emulator verification passed."

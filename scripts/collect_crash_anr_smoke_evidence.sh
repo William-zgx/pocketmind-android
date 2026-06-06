@@ -13,6 +13,8 @@ WINDOW="${WINDOW:-post-install instrumentation smoke}"
 TRACK="${TRACK:-local-emulator}"
 PACKAGE_NAME="${PACKAGE_NAME:-com.bytedance.zgx.pocketmind}"
 FAILURE_EVIDENCE_POLICY="${FAILURE_EVIDENCE_POLICY:-Attach logcat, tombstones, and ANR traces for any failure; state no crash or ANR when none were observed.}"
+EXPLICIT_INSTRUMENTATION_OUTPUT_FILE=0
+EXPLICIT_LOGCAT_FILE=0
 
 usage() {
   cat <<'USAGE'
@@ -38,10 +40,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     --instrumentation-output)
       INSTRUMENTATION_OUTPUT_FILE="${2:?missing instrumentation output file}"
+      EXPLICIT_INSTRUMENTATION_OUTPUT_FILE=1
       shift 2
       ;;
     --logcat)
       LOGCAT_FILE="${2:?missing logcat file}"
+      EXPLICIT_LOGCAT_FILE=1
       shift 2
       ;;
     --report)
@@ -213,6 +217,8 @@ API_LEVEL=""
 ABI=""
 DEVICE_REPORT_SHA=""
 DEVICE_REPORT_SIZE=""
+DEVICE_REPORT_INSTRUMENTATION_OUTPUT_FILE=""
+DEVICE_REPORT_LOGCAT_FILE=""
 INSTRUMENTATION_OUTPUT_SHA=""
 INSTRUMENTATION_OUTPUT_SIZE=""
 LOGCAT_SHA=""
@@ -237,8 +243,13 @@ else
   ABI="$(report_value "$DEVICE_REPORT_FILE" abi)"
   DEVICE_REPORT_SHA="$(sha256_file "$DEVICE_REPORT_FILE")"
   DEVICE_REPORT_SIZE="$(size_bytes "$DEVICE_REPORT_FILE")"
-  if [[ -z "$INSTRUMENTATION_OUTPUT_FILE" ]]; then
-    INSTRUMENTATION_OUTPUT_FILE="$(report_value "$DEVICE_REPORT_FILE" instrumentation_output_file)"
+  DEVICE_REPORT_INSTRUMENTATION_OUTPUT_FILE="$(report_value "$DEVICE_REPORT_FILE" instrumentation_output_file)"
+  DEVICE_REPORT_LOGCAT_FILE="$(report_value "$DEVICE_REPORT_FILE" logcat_file)"
+  if [[ "$EXPLICIT_INSTRUMENTATION_OUTPUT_FILE" == "0" && -n "$DEVICE_REPORT_INSTRUMENTATION_OUTPUT_FILE" ]]; then
+    INSTRUMENTATION_OUTPUT_FILE="$DEVICE_REPORT_INSTRUMENTATION_OUTPUT_FILE"
+  fi
+  if [[ "$EXPLICIT_LOGCAT_FILE" == "0" && -n "$DEVICE_REPORT_LOGCAT_FILE" ]]; then
+    LOGCAT_FILE="$DEVICE_REPORT_LOGCAT_FILE"
   fi
   [[ "$DEVICE_STATUS" == "passed" ]] || add_failure "device-status-not-passed"
   [[ "$INSTRUMENTATION_STATUS" == "passed" ]] || add_failure "instrumentation-status-not-passed"

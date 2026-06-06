@@ -1004,6 +1004,7 @@ abi=arm64-v8a
 instrumentation=passed
 instrumentation_test_count=3
 instrumentation_output_file=$OPERATIONS_SMOKE_INSTRUMENTATION
+logcat_file=$OPERATIONS_SMOKE_LOGCAT
 OPERATIONS_SMOKE_DEVICE_REPORT_TXT
 cat > "$OPERATIONS_SMOKE_LOGCAT" <<'OPERATIONS_SMOKE_LOGCAT_TXT'
 06-06 20:00:00.000  1000  1000 I ActivityTaskManager: Displayed com.bytedance.zgx.pocketmind/.MainActivity
@@ -1014,7 +1015,6 @@ expect_success \
   scripts/collect_crash_anr_smoke_evidence.sh \
     --device-report "$OPERATIONS_SMOKE_DEVICE_REPORT" \
     --instrumentation-output "$OPERATIONS_SMOKE_INSTRUMENTATION" \
-    --logcat "$OPERATIONS_SMOKE_LOGCAT" \
     --report "$OPERATIONS_SMOKE_EVIDENCE" \
     --window "2026-06-06 internal smoke" \
     --track internal_testing
@@ -3374,10 +3374,18 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "logcat_file=$ARTIFACT_DIR/logcat.txt"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "logcat_captured=1"
 grep -q "OK (20 tests)" "$ARTIFACT_DIR/instrumentation.txt" ||
   fail "Expected install helper to persist instrumentation output"
+[[ -s "$ARTIFACT_DIR/logcat.txt" ]] ||
+  fail "Expected install helper to persist logcat output"
 grep -q -- "-s device-a shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" ||
   fail "Expected adb device commands to target the only authorized device"
+grep -q -- "-s device-a logcat -c" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to clear the logcat window before validation"
+grep -q -- "-s device-a logcat -d -t 500" "$FAKE_ADB_LOG" ||
+  fail "Expected install helper to capture logcat after validation"
 grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to clear target app data before default success launch"
 grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
@@ -3620,12 +3628,17 @@ assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "evidenc
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "screenshot_file=$ARTIFACT_DIR/screenshot.png"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "window_dump_file=$ARTIFACT_DIR/window.xml"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "logcat_file=$ARTIFACT_DIR/logcat.txt"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "crash_anr_smoke_report_file=$ARTIFACT_DIR/crash-anr-smoke.properties"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "device_report_file=$ARTIFACT_DIR/device-verification.properties"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=emulator-5554"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "logcat_file=$ARTIFACT_DIR/logcat.txt"
+assert_report_contains "$ARTIFACT_DIR/crash-anr-smoke.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/crash-anr-smoke.properties" "logcatFile=$ARTIFACT_DIR/logcat.txt"
+assert_report_contains "$ARTIFACT_DIR/crash-anr-smoke.properties" "noReproducibleAnr=true"
 grep -q -- "-s emulator-5554 shell getprop sys.boot_completed" "$FAKE_ADB_LOG" ||
   fail "Expected emulator helper to wait for emulator boot completion"
 grep -q -- "-s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||

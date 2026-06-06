@@ -9695,3 +9695,35 @@ git diff --check
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
 - 通过：DeepSeek 测试配置的 key、endpoint 和 model 字面量没有落入仓库源码。
+
+## 2026-06-07 Emulator Crash/ANR smoke evidence chain
+
+本轮覆盖项：
+
+- `scripts/install_and_test_device.sh` 新增成功/失败路径的 `adb logcat` 采集，
+  device report 写入 `logcat_file`、`logcat_captured` 和 `logcat_tail_lines`。
+- `scripts/verify_emulator.sh` 在 device verification 通过后自动调用
+  `scripts/collect_crash_anr_smoke_evidence.sh`，并在 emulator report 写入
+  `crash_anr_smoke_report_file`。
+- collector 在给定 device report 时优先使用 report 里的 instrumentation/logcat
+  路径，避免外部环境变量污染证据来源。
+- `scripts/test_validation_scripts.sh` 新增 direct device logcat、emulator smoke
+  report 和 report-path 优先级覆盖。
+
+验证命令：
+
+```bash
+bash -n scripts/install_and_test_device.sh scripts/verify_emulator.sh scripts/collect_crash_anr_smoke_evidence.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：direct device fake flow 生成非空 `logcat.txt` 并记录在
+  `device-verification.properties`。
+- 通过：emulator fake flow 自动生成 `crash-anr-smoke.properties` 且状态为 passed。
+- 通过：collector 不再被外部 `INSTRUMENTATION_OUTPUT_FILE` 环境变量覆盖 report
+  内的证据路径。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。

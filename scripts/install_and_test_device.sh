@@ -14,6 +14,8 @@ RESET_APP_DATA_AFTER_TESTS="${RESET_APP_DATA_AFTER_TESTS:-1}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/device-$(date +%Y%m%d-%H%M%S)}"
 VERIFICATION_REPORT_FILE="${VERIFICATION_REPORT_FILE:-${ARTIFACT_DIR}/device-verification.properties}"
 INSTRUMENTATION_OUTPUT_FILE="${INSTRUMENTATION_OUTPUT_FILE:-${ARTIFACT_DIR}/instrumentation.txt}"
+LOGCAT_FILE="${LOGCAT_FILE:-${ARTIFACT_DIR}/logcat.txt}"
+LOGCAT_TAIL_LINES="${LOGCAT_TAIL_LINES:-500}"
 INSTRUMENTATION_CLASS="${INSTRUMENTATION_CLASS:-}"
 INSTRUMENTATION_TIMEOUT_SECONDS="${INSTRUMENTATION_TIMEOUT_SECONDS:-900}"
 
@@ -24,6 +26,7 @@ ABI_LIST=""
 DATA_FREE_KB=""
 INSTRUMENTATION_STATUS="not-run"
 INSTRUMENTATION_TEST_COUNT=""
+LOGCAT_CAPTURED=0
 FAILED_TARGET=""
 FAILURE_REASON=""
 SCRIPT_COMPLETED=0
@@ -61,10 +64,33 @@ write_verification_report() {
     echo "instrumentation_class=${INSTRUMENTATION_CLASS:-}"
     echo "instrumentation_timeout_seconds=$INSTRUMENTATION_TIMEOUT_SECONDS"
     echo "instrumentation_output_file=$INSTRUMENTATION_OUTPUT_FILE"
+    echo "logcat_file=$LOGCAT_FILE"
+    echo "logcat_captured=$LOGCAT_CAPTURED"
+    echo "logcat_tail_lines=$LOGCAT_TAIL_LINES"
     echo "debug_apk=$DEBUG_APK"
     echo "android_test_apk=$ANDROID_TEST_APK"
   } > "$VERIFICATION_REPORT_FILE"
   echo "Device verification report: $VERIFICATION_REPORT_FILE"
+}
+
+clear_logcat_window() {
+  if [[ -z "${SELECTED_SERIAL:-}" || ! -x "$ADB_BIN" ]]; then
+    return
+  fi
+  "$ADB_BIN" -s "$SELECTED_SERIAL" logcat -c >/dev/null 2>&1 || true
+}
+
+capture_logcat_artifact() {
+  if [[ -z "${SELECTED_SERIAL:-}" || ! -x "$ADB_BIN" ]]; then
+    return
+  fi
+  mkdir -p "$(dirname "$LOGCAT_FILE")"
+  "$ADB_BIN" -s "$SELECTED_SERIAL" logcat -d -t "$LOGCAT_TAIL_LINES" > "$LOGCAT_FILE" 2>/dev/null || true
+  if [[ -s "$LOGCAT_FILE" ]]; then
+    LOGCAT_CAPTURED=1
+  else
+    LOGCAT_CAPTURED=0
+  fi
 }
 
 stop_test_processes() {
@@ -101,6 +127,7 @@ on_exit() {
     if [[ "$INSTRUMENTATION_STATUS" == "running" ]]; then
       INSTRUMENTATION_STATUS="failed"
     fi
+    capture_logcat_artifact
     cleanup_test_device_state
     if [[ -z "$FAILED_TARGET" ]]; then
       FAILED_TARGET="script"
@@ -147,6 +174,7 @@ fi
 
 ADB=("$ADB_BIN" -s "$SELECTED_SERIAL")
 echo "Using Android device: $SELECTED_SERIAL"
+clear_logcat_window
 
 API_LEVEL="$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
 ABI_LIST="$("${ADB[@]}" shell getprop ro.product.cpu.abilist64 | tr -d '\r')"
@@ -305,6 +333,7 @@ INSTRUMENTATION_STATUS="passed"
 
 clear_app_data_after_tests
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
+capture_logcat_artifact
 
 SCRIPT_COMPLETED=1
 echo "Device install and smoke test passed. App remains installed."
