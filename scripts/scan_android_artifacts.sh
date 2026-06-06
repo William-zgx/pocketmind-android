@@ -43,11 +43,13 @@ done
 write_report() {
   local status="$1"
   local finding_count="$2"
+  local reason="${3:-}"
   if [[ -n "$REPORT_FILE" ]]; then
     mkdir -p "$(dirname "$REPORT_FILE")"
     {
       printf 'status=%s\n' "$status"
       printf 'target=android-artifact-scan\n'
+      printf 'reason=%s\n' "$reason"
       printf 'artifactCount=%s\n' "${#ARTIFACTS[@]}"
       printf 'findingCount=%s\n' "$finding_count"
       printf 'requireSigned=%s\n' "$REQUIRE_SIGNED"
@@ -71,13 +73,31 @@ write_report() {
 }
 
 if [[ "${#ARTIFACTS[@]}" -eq 0 ]]; then
-  write_report failed 1
+  write_report failed 1 no-artifact-provided
   echo "No APK or AAB artifact was provided." >&2
   exit 1
 fi
 
 TMP_FINDINGS="$(mktemp)"
-trap 'rm -f "$TMP_FINDINGS"' EXIT
+TMP_REASONS="$(mktemp)"
+trap 'rm -f "$TMP_FINDINGS" "$TMP_REASONS"' EXIT
+
+add_finding() {
+  local reason="$1"
+  local message="$2"
+  printf '%s\n' "$reason" >> "$TMP_REASONS"
+  printf '%s\n' "$message" >> "$TMP_FINDINGS"
+}
+
+finding_reason() {
+  awk '!seen[$0]++ {
+    if (out) {
+      out = out "," $0
+    } else {
+      out = $0
+    }
+  } END { print out }' "$TMP_REASONS"
+}
 
 find_apksigner() {
   if command -v apksigner >/dev/null 2>&1; then
@@ -179,32 +199,34 @@ artifact_certificate_subject() {
 
 for artifact in "${ARTIFACTS[@]}"; do
   if [[ ! -f "$artifact" ]]; then
-    printf '%s: missing artifact\n' "$artifact" >> "$TMP_FINDINGS"
+    add_finding artifact-missing "$artifact: missing artifact"
     continue
   fi
   entry_list="$(mktemp)"
   if ! unzip -Z1 "$artifact" > "$entry_list" 2>/dev/null; then
-    printf '%s: artifact is not a readable zip archive\n' "$artifact" >> "$TMP_FINDINGS"
+    add_finding artifact-not-readable-zip "$artifact: artifact is not a readable zip archive"
     rm -f "$entry_list"
     continue
   fi
   case "$artifact" in
     *.apk)
       if ! grep -qx 'AndroidManifest.xml' "$entry_list"; then
-        printf '%s: APK is missing AndroidManifest.xml\n' "$artifact" >> "$TMP_FINDINGS"
+        add_finding apk-manifest-missing "$artifact: APK is missing AndroidManifest.xml"
       fi
       ;;
     *.aab)
       if ! grep -qx 'BundleConfig.pb' "$entry_list"; then
-        printf '%s: AAB is missing BundleConfig.pb\n' "$artifact" >> "$TMP_FINDINGS"
+        add_finding aab-bundle-config-missing "$artifact: AAB is missing BundleConfig.pb"
       fi
       if ! grep -qx 'base/manifest/AndroidManifest.xml' "$entry_list"; then
-        printf '%s: AAB is missing base/manifest/AndroidManifest.xml\n' "$artifact" >> "$TMP_FINDINGS"
+        add_finding aab-manifest-missing "$artifact: AAB is missing base/manifest/AndroidManifest.xml"
       fi
       ;;
   esac
   if grep -E '(^|/)[^/]+[.](litertlm|jks|keystore|pem|p12)$' "$entry_list" >/tmp/pocketmind-artifact-files.$$; then
-    sed "s#^#$artifact:#" /tmp/pocketmind-artifact-files.$$ >> "$TMP_FINDINGS"
+    while IFS= read -r finding; do
+      add_finding forbidden-artifact-file "$artifact:$finding"
+    done < /tmp/pocketmind-artifact-files.$$
   fi
   rm -f "$entry_list"
   rm -f /tmp/pocketmind-artifact-files.$$
@@ -212,25 +234,27 @@ for artifact in "${ARTIFACTS[@]}"; do
     strings |
     grep -E '(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abprs]-[0-9A-Za-z-]{16,}|sk-[A-Za-z0-9_-]{24,}|code[.]byted[.]org)' \
       >/tmp/pocketmind-artifact-strings.$$; then
-    sed "s#^#$artifact:string:#" /tmp/pocketmind-artifact-strings.$$ >> "$TMP_FINDINGS"
+    while IFS= read -r finding; do
+      add_finding sensitive-string "$artifact:string:$finding"
+    done < /tmp/pocketmind-artifact-strings.$$
   fi
   rm -f /tmp/pocketmind-artifact-strings.$$
   if [[ "$REQUIRE_SIGNED" == "1" ]]; then
     signing_status="$(artifact_signing_status "$artifact")"
     if [[ "$signing_status" != "verified" ]]; then
-      printf '%s: signing status is %s\n' "$artifact" "$signing_status" >> "$TMP_FINDINGS"
+      add_finding "signing-status-$signing_status" "$artifact: signing status is $signing_status"
     fi
     certificate_sha256="$(normalize_sha256 "$(artifact_certificate_sha256 "$artifact")")"
     certificate_subject="$(artifact_certificate_subject "$artifact")"
     if [[ "$ALLOW_DEBUG_CERTIFICATE" != "1" ]] && grep -qi 'CN=Android Debug' <<<"$certificate_subject"; then
-      printf '%s: signed with Android debug certificate\n' "$artifact" >> "$TMP_FINDINGS"
+      add_finding debug-certificate "$artifact: signed with Android debug certificate"
     fi
     if [[ -n "$EXPECTED_CERTIFICATE_SHA256" ]]; then
       expected_sha256="$(normalize_sha256 "$EXPECTED_CERTIFICATE_SHA256")"
       if [[ -z "$certificate_sha256" ]]; then
-        printf '%s: signed certificate SHA-256 is missing\n' "$artifact" >> "$TMP_FINDINGS"
+        add_finding certificate-sha-missing "$artifact: signed certificate SHA-256 is missing"
       elif [[ "$certificate_sha256" != "$expected_sha256" ]]; then
-        printf '%s: signed certificate SHA-256 %s does not match expected %s\n' "$artifact" "$certificate_sha256" "$expected_sha256" >> "$TMP_FINDINGS"
+        add_finding certificate-sha-mismatch "$artifact: signed certificate SHA-256 $certificate_sha256 does not match expected $expected_sha256"
       fi
     fi
   fi
@@ -238,11 +262,11 @@ done
 
 FINDING_COUNT="$(grep -c . "$TMP_FINDINGS" || true)"
 if [[ "$FINDING_COUNT" -gt 0 ]]; then
-  write_report failed "$FINDING_COUNT"
+  write_report failed "$FINDING_COUNT" "$(finding_reason)"
   cat "$TMP_FINDINGS" >&2
   echo "Android artifact scan failed." >&2
   exit 1
 fi
 
-write_report passed 0
+write_report passed 0 ""
 echo "Android artifact scan passed."

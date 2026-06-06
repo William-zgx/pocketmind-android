@@ -1370,18 +1370,22 @@ expect_failure \
   "artifact scan rejects bundled model" \
   scripts/scan_android_artifacts.sh --apk "$UNSAFE_APK" --report "$ARTIFACT_DIR/artifact-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-failed.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-failed.properties" "forbidden-artifact-file"
 expect_failure \
   "artifact scan rejects unreadable aab" \
   scripts/scan_android_artifacts.sh --aab "$BAD_AAB" --report "$ARTIFACT_DIR/artifact-bad-aab.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-bad-aab.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-bad-aab.properties" "artifact-not-readable-zip"
 expect_failure \
   "artifact scan require-signed rejects unsigned zip" \
   scripts/scan_android_artifacts.sh --apk "$SAFE_APK" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-unsigned.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-unsigned.properties" "signing-status"
 expect_failure \
   "artifact scan require-signed rejects unsigned aab" \
   scripts/scan_android_artifacts.sh --aab "$SAFE_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-unsigned-aab.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-unsigned-aab.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-unsigned-aab.properties" "signing-status"
 DEBUG_SCAN_KEYSTORE="$TMP_DIR/debug-scan.keystore"
 DEBUG_SIGNED_AAB="$TMP_DIR/debug-signed.aab"
 cp "$SAFE_AAB" "$DEBUG_SIGNED_AAB"
@@ -1408,6 +1412,7 @@ expect_failure \
   "artifact scan require-signed rejects debug certificate" \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --report "$ARTIFACT_DIR/artifact-debug-cert.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-debug-cert.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-debug-cert.properties" "debug-certificate"
 expect_success \
   "artifact scan allows debug certificate only for smoke" \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --report "$ARTIFACT_DIR/artifact-debug-cert-smoke.properties"
@@ -1417,6 +1422,7 @@ expect_failure \
   "artifact scan rejects unexpected signing certificate" \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --expected-certificate-sha256 0000000000000000000000000000000000000000000000000000000000000000 --report "$ARTIFACT_DIR/artifact-cert-mismatch.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-cert-mismatch.properties" "status=failed"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-cert-mismatch.properties" "certificate-sha-mismatch"
 expect_success \
   "artifact scan accepts expected signing certificate" \
   scripts/scan_android_artifacts.sh --aab "$DEBUG_SIGNED_AAB" --require-signed --allow-debug-certificate --expected-certificate-sha256 "$DEBUG_SIGNED_AAB_CERT_SHA" --report "$ARTIFACT_DIR/artifact-cert-match.properties"
@@ -1543,6 +1549,8 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/android-artifact-scan.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
 assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/release-gate.properties" "releaseAab=app/build/outputs/bundle/release/app-release-signed.aab"
+assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/release-gate.properties" "failedTarget=android-artifact-scan"
+assert_report_contains "$ARTIFACT_DIR/release-signed-default-aab/release-gate.properties" "failedReason=REQUIRE_AAB-but-release-aab-missing"
 expect_failure \
   "release gate binds release record to scanned artifact in non-public mode" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-record-artifact-mismatch" \

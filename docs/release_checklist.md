@@ -81,6 +81,8 @@ release ticket or PR.
   the artifact is a readable APK/AAB with the expected manifest structure.
 - [ ] `scripts/scan_android_artifacts.sh` is run against the final APK/AAB and
   `android-artifact-scan.properties` is attached to the release record.
+- [ ] `android-artifact-scan.properties` records a machine-readable `reason`
+  list whenever artifact scanning fails.
 - [ ] Release artifact size is within the documented budget, and model files are
   described as optional/recommended downloads rather than packaged assets.
 

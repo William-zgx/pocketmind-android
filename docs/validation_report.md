@@ -15,6 +15,35 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Android artifact scan failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/scan_android_artifacts.sh` 在 failed report 中新增机器可读 `reason` 字段，
+  汇总 missing artifact、不可读 zip、manifest 结构缺失、禁止打包文件、敏感字符串、
+  signing status、debug certificate 和证书 SHA mismatch 等失败原因。
+- `scripts/verify_release_gate.sh` 可以把 artifact scan 子报告的 `reason` 提升到
+  `release-gate.properties.failedReason`。
+- `scripts/test_validation_scripts.sh` 覆盖 bundled model、bad AAB、unsigned artifact、
+  debug certificate、certificate mismatch，以及 release gate artifact scan failedReason。
+- `docs/release_checklist.md` 同步 artifact scan failed report 必须提供 reason list。
+
+验证命令：
+
+```bash
+bash -n scripts/scan_android_artifacts.sh scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 Android artifact scan failure reason 和 release
+  gate artifact failedReason 汇总。
+- 通过：`scripts/verify_local.sh`。
+- 未执行模拟器：本轮只加固 artifact/release gate 报告和测试 fixture，不改变 APK runtime
+  或 UI 行为。
+
 ## 2026-06-06 Perf baseline failure reason hardening
 
 本轮覆盖项：
