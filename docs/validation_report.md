@@ -15,6 +15,57 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation emulator evidence refresh
+
+本轮覆盖项：
+
+- `docs/release_readiness.md` 的 current emulator regression 证据从旧的 26 tests
+  记录更新为最新 28/28 AndroidTest 记录。
+- `docs/release_validation_record.json` 只填入已真实通过的 API 36 emulator regression
+  证据；整体状态继续保持 `pending_validation`，不替代真机、API matrix、manual
+  acceptance、截图或 perf 验收。
+
+验证命令：
+
+```bash
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+```
+
+结果：
+
+- 当前 verifier 按预期未通过；失败原因不包含 emulator regression report mismatch，说明
+  `build/verification/regression-emulator-20260606-160247/regression-emulator.properties`
+  已被识别为有效 emulator 证据。
+- 剩余失败项仍为真实未完成的 release validation 门槛：非 emulator 真机、API 28/32/33/34
+  matrix、manual acceptance、flow matrix、净化截图、performance sanity 和 reviewer/date。
+
+## 2026-06-06 Store policy draft hardening
+
+本轮覆盖项：
+
+- `docs/store_policy_record.json` 从空壳补成可审核草案：同步当前 privacy notice SHA，
+  补 Store listing 草稿、Data safety 说明、模型下载说明、manifest 权限用途和特殊访问说明。
+- `scripts/verify_store_policy_record.sh` 新增占位联系邮箱/隐私 URL 拒绝，避免
+  `example.*` 或 `.invalid` 占位值被误审批为正式商店记录。
+- `scripts/test_validation_scripts.sh` 增加 store policy 占位值负测。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_store_policy_record.sh --report build/verification/store-policy-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 store policy 占位联系信息负测。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+- 当前 `scripts/verify_store_policy_record.sh` 仍按预期未通过；失败原因收敛为
+  `status-not-approved`、占位 contact/privacy URL、reviewer/date 缺失，仍需真实商店联系信息、
+  外部隐私政策 URL 和人工 policy review。
+- 未执行模拟器：本轮只修改发布政策 JSON、验证脚本和文档，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Chat message privacy DB default hardening
 
 本轮覆盖项：

@@ -72,6 +72,7 @@ import sys
 import xml.etree.ElementTree as ET
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 record_path = Path(sys.argv[1])
 notice_path = Path(sys.argv[2])
@@ -105,9 +106,26 @@ for field in required_listing_fields:
         failures.append(f"{field}-missing")
 if listing.get("contactEmail") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", listing["contactEmail"]):
     failures.append("contact-email-invalid")
+elif listing.get("contactEmail"):
+    email_domain = listing["contactEmail"].rsplit("@", 1)[-1].lower()
+    if (
+        email_domain in {"example.com", "example.org", "example.net", "localhost"} or
+        email_domain.endswith(".example") or
+        email_domain.endswith(".invalid")
+    ):
+        failures.append("contact-email-placeholder")
 privacy_url = listing.get("privacyPolicyUrl", "")
 if privacy_url and not privacy_url.startswith("https://"):
     failures.append("privacy-policy-url-invalid")
+elif privacy_url:
+    privacy_host = urlparse(privacy_url).hostname or ""
+    privacy_host = privacy_host.lower()
+    if (
+        privacy_host in {"example.com", "example.org", "example.net", "localhost"} or
+        privacy_host.endswith(".example") or
+        privacy_host.endswith(".invalid")
+    ):
+        failures.append("privacy-policy-url-placeholder")
 if isinstance(listing.get("shortDescription"), str) and len(listing["shortDescription"]) > 80:
     failures.append("short-description-too-long")
 if isinstance(listing.get("fullDescription"), str) and len(listing["fullDescription"].strip()) < 120:

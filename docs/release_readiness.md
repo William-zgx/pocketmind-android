@@ -48,9 +48,9 @@ items below.
 - Current release-candidate emulator regression passed with
   `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
   `emulator-5554` (API 36, `arm64-v8a`):
-  `build/verification/regression-emulator-20260606-140228/regression-emulator.properties`
+  `build/verification/regression-emulator-20260606-160247/regression-emulator.properties`
   records `status=passed`, nested emulator/device reports passed, and
-  `instrumentation_test_count=26` matching the 26 AndroidTest source count.
+  `actual_android_test_count=28` matching the 28 AndroidTest source count.
 
 ## Remaining
 

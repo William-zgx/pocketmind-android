@@ -213,6 +213,14 @@ assert_report_contains() {
     fail "Expected $file to contain: $expected"
 }
 
+assert_report_contains_text() {
+  local file="$1"
+  local expected="$2"
+  [[ -f "$file" ]] || fail "Expected verification report at $file"
+  grep -qF "$expected" "$file" ||
+    fail "Expected $file to contain text: $expected"
+}
+
 reset_logs() {
   : > "$FAKE_ADB_LOG"
   : > "$FAKE_EMULATOR_LOG"
@@ -569,8 +577,8 @@ cat > "$STORE_POLICY_APPROVED" <<STORE_POLICY_APPROVED_JSON
     "shortDescription": "Local-first AI assistant.",
     "fullDescription": "PocketMind is a local-first personal AI assistant for internal testing. It stores user sessions locally, protects private context with confirmation, and clearly separates optional remote model calls from local-only data.",
     "category": "Productivity",
-    "contactEmail": "release@example.com",
-    "privacyPolicyUrl": "https://example.com/privacy"
+    "contactEmail": "release@pocketmind.app",
+    "privacyPolicyUrl": "https://pocketmind.app/privacy"
   },
   "dataSafety": {
     "userDataCollected": true,
@@ -642,6 +650,17 @@ expect_failure \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_EXTRA_PERMISSION" --report "$ARTIFACT_DIR/store-policy-permission-mismatch.properties"
 assert_report_contains "$ARTIFACT_DIR/store-policy-permission-mismatch.properties" "status=failed"
+STORE_POLICY_PLACEHOLDER_CONTACT="$TMP_DIR/store-policy-placeholder-contact.json"
+sed \
+  -e 's#release@pocketmind.app#release@example.com#' \
+  -e 's#https://pocketmind.app/privacy#https://example.com/privacy#' \
+  "$STORE_POLICY_APPROVED" > "$STORE_POLICY_PLACEHOLDER_CONTACT"
+expect_failure \
+  "store policy verifier rejects placeholder contact and privacy URL" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_PLACEHOLDER_CONTACT" --report "$ARTIFACT_DIR/store-policy-placeholder-contact.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-placeholder-contact.properties" "contact-email-placeholder"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-placeholder-contact.properties" "privacy-policy-url-placeholder"
 
 OPERATIONS_PENDING="$TMP_DIR/release-operations-pending.json"
 OPERATIONS_APPROVED="$TMP_DIR/release-operations-approved.json"

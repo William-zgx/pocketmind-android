@@ -3,11 +3,11 @@
   "policy": "Public release builds require VERIFY_RELEASE_VALIDATION=1 and an approved validation record covering emulator, non-emulator physical device, manual acceptance, matrix coverage, and sanitized screenshots.",
   "status": "pending_validation",
   "emulatorRegression": {
-    "status": "pending",
-    "reportPath": "",
-    "avd": "",
-    "apiLevel": 0,
-    "abi": "",
+    "status": "passed",
+    "reportPath": "build/verification/regression-emulator-20260606-160247/regression-emulator.properties",
+    "avd": "focus_agent_api36_arm64",
+    "apiLevel": 36,
+    "abi": "arm64-v8a",
     "cleanDevice": true
   },
   "physicalDevice": {
@@ -45,9 +45,9 @@
     },
     {
       "apiLevel": 36,
-      "status": "pending",
-      "evidence": "",
-      "evidencePath": ""
+      "status": "passed",
+      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on focus_agent_api36_arm64.",
+      "evidencePath": "build/verification/regression-emulator-20260606-160247/regression-emulator.properties"
     }
   ],
   "manualAcceptance": {

@@ -3,14 +3,14 @@
   "policy": "Public release builds require VERIFY_STORE_POLICY=1 and an approved store policy record.",
   "status": "pending_policy_review",
   "privacyNoticePath": "docs/privacy_notice.md",
-  "privacyNoticeSha256": "",
+  "privacyNoticeSha256": "0a4ff22e0ea3906ba3eba94d6a988278dc3fb32f0588cf7aff155f36b0b42dda",
   "appListing": {
     "appName": "PocketMind",
-    "shortDescription": "",
-    "fullDescription": "",
-    "category": "",
-    "contactEmail": "",
-    "privacyPolicyUrl": ""
+    "shortDescription": "Local-first personal AI assistant.",
+    "fullDescription": "PocketMind is a local-first personal AI assistant for Android. It keeps chats, explicit memories, model files, and tool audit records in local app storage by default. Optional remote model calls and model downloads happen only through user-configured or documented endpoints.",
+    "category": "Productivity",
+    "contactEmail": "release-contact@example.invalid",
+    "privacyPolicyUrl": "https://example.invalid/pocketmind/privacy"
   },
   "dataSafety": {
     "userDataCollected": true,
@@ -30,71 +30,71 @@
     "androidPermissionsDisclosed": true
   },
   "modelDownloads": {
-    "describedAsLargeOptionalAssets": false,
+    "describedAsLargeOptionalAssets": true,
     "declaresNotBundledInApk": true
   },
   "permissions": [
     {
       "name": "android.permission.INTERNET",
-      "purpose": ""
+      "purpose": "Connects for user-configured remote model calls and optional model downloads."
     },
     {
       "name": "android.permission.RECORD_AUDIO",
-      "purpose": ""
+      "purpose": "Lets the user dictate text through explicit voice input before sending."
     },
     {
       "name": "android.permission.READ_CALENDAR",
-      "purpose": ""
+      "purpose": "Reads busy/free calendar windows only after user-confirmed tool requests."
     },
     {
       "name": "android.permission.READ_CONTACTS",
-      "purpose": ""
+      "purpose": "Looks up contact names or phone matches only after user-confirmed tool requests."
     },
     {
       "name": "android.permission.READ_EXTERNAL_STORAGE",
-      "purpose": ""
+      "purpose": "Supports legacy Android 12 and below media or file metadata reads after confirmation."
     },
     {
       "name": "android.permission.READ_MEDIA_IMAGES",
-      "purpose": ""
+      "purpose": "Reads selected recent images or screenshots for metadata and OCR flows after confirmation."
     },
     {
       "name": "android.permission.READ_MEDIA_VIDEO",
-      "purpose": ""
+      "purpose": "Supports user-provided video attachments and recent media metadata checks after confirmation."
     },
     {
       "name": "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-      "purpose": ""
+      "purpose": "Honors Android selected visual media grants for user-chosen image inputs."
     },
     {
       "name": "android.permission.READ_MEDIA_AUDIO",
-      "purpose": ""
+      "purpose": "Handles user-provided audio attachments as metadata-only inputs without automatic upload."
     },
     {
       "name": "android.permission.POST_NOTIFICATIONS",
-      "purpose": ""
+      "purpose": "Posts reminder notifications only for user-created or confirmed background tasks."
     },
     {
       "name": "android.permission.RECEIVE_BOOT_COMPLETED",
-      "purpose": ""
+      "purpose": "Restores scheduled reminder alarms after device reboot or app replacement."
     },
     {
       "name": "android.permission.PACKAGE_USAGE_STATS",
-      "purpose": ""
+      "purpose": "Estimates the foreground app for confirmed device-context tools when Usage Access is granted."
     }
   ],
   "specialAccessDisclosures": [
     {
       "name": "UsageAccess",
-      "purpose": ""
+      "purpose": "Used only after confirmation to estimate the current foreground app."
     },
     {
       "name": "AccessibilityService",
-      "purpose": ""
+      "purpose": "Used only after confirmation to read current-screen text nodes."
     },
     {
       "name": "MediaProjection",
-      "purpose": ""
+      "purpose": "Used only after foreground consent for one-shot current screenshot OCR."
     }
   ],
   "review": {
