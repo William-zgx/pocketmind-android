@@ -6441,3 +6441,35 @@ scripts/verify_local.sh
   `ALLOW_DEBUG_KEYSTORE` 未设置。
 - 需要连接固定目标真机后运行正式设备验收和真实 perf baseline。
 - 需要人工完成模型 license / redistribution review。
+
+## 2026-06-06 Latest emulator regression on current HEAD
+
+本轮覆盖项：
+
+- 按当前要求不连接真机，直接使用模拟器验证最新提交。
+- 使用 `focus_agent_api36_arm64` AVD，以 headless 参数启动，执行完整
+  `scripts/regression_emulator.sh`。
+
+验证命令：
+
+```bash
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：`build/verification/regression-emulator-20260606-113802/regression-emulator.properties`
+  `status=passed`。
+- 通过：模拟器 `emulator-5554`，API 36，`arm64-v8a`，AVD
+  `focus_agent_api36_arm64`。
+- 通过：debug APK 与 androidTest APK 均安装成功。
+- 通过：instrumentation `OK (26 tests)`，实际运行 26 个 AndroidTest，与源码计数一致。
+
+仍阻塞正式 RC：
+
+- 当前验证满足模拟器回归要求，但不替代 production signing、模型 license /
+  redistribution 人工批准和正式发布隐私审查。
