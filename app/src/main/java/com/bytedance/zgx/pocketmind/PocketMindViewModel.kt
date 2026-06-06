@@ -285,13 +285,16 @@ class PocketMindViewModel(
     fun updateMemoryEnabled(enabled: Boolean) {
         firstRunSetupRepository.setMemoryEnabled(enabled)
         memoryRepository.enabled = enabled
+        syncTaskStateMemories(memoryEnabled = enabled)
         _uiState.update {
             it.copy(
                 memoryEnabled = enabled,
                 memoryHits = if (enabled) it.memoryHits else emptyList(),
+                longTermMemories = if (enabled) loadLongTermMemories(memoryEnabled = true) else emptyList(),
                 statusText = if (enabled) "本地记忆已开启" else "本地记忆已关闭",
             )
         }
+        rebuildMemoryIndex()
     }
 
     fun forgetLongTermMemory(memoryId: String) {
@@ -3250,7 +3253,9 @@ class PocketMindViewModel(
     private fun createInitialState(): ChatUiState {
         val modelState = modelRepository.currentState()
         val backend = generationParametersRepository.loadBackend()
-        syncTaskStateMemories()
+        val memoryEnabled = firstRunSetupRepository.isMemoryEnabled()
+        memoryRepository.enabled = memoryEnabled
+        syncTaskStateMemories(memoryEnabled = memoryEnabled)
         syncSemanticMemoryRuntime()
         return ChatUiState(
             modelPath = modelState.activeModelPath,
@@ -3262,10 +3267,10 @@ class PocketMindViewModel(
             backend = backend,
             modelHealth = modelState.modelHealthForCurrentSelection(backend),
             showFirstRunSetup = !firstRunSetupRepository.isSetupDismissed(),
-            memoryEnabled = firstRunSetupRepository.isMemoryEnabled(),
+            memoryEnabled = memoryEnabled,
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
             semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
-            longTermMemories = loadLongTermMemories(),
+            longTermMemories = loadLongTermMemories(memoryEnabled = memoryEnabled),
             backgroundTasks = loadBackgroundTasks(),
             backgroundTaskHistory = loadBackgroundTaskHistory(),
             periodicCheckPolicy = loadPeriodicCheckPolicy(),
@@ -3385,7 +3390,7 @@ class PocketMindViewModel(
         semanticMemoryRuntimeController?.semanticMemoryRuntimeStatus
             ?: SemanticMemoryRuntimeStatus.RuntimeUnavailable
 
-    private fun syncTaskStateMemories() {
+    private fun syncTaskStateMemories(memoryEnabled: Boolean = _uiState.value.memoryEnabled) {
         runCatching {
             val activeTasks = backgroundTaskScheduler.scheduledTasks()
                 .filter { task ->
@@ -3398,9 +3403,10 @@ class PocketMindViewModel(
                 .filter { record ->
                     record.type == MemoryRecordType.TaskState &&
                         record.id.startsWith(TASK_STATE_MEMORY_RECORD_PREFIX) &&
-                        record.id !in activeMemoryIds
+                        (!memoryEnabled || record.id !in activeMemoryIds)
                 }
                 .forEach { record -> longTermMemoryControls.forget(record.id) }
+            if (!memoryEnabled) return@runCatching
             activeTasks.forEach { task ->
                 val memoryId = taskStateMemoryRecordId(task.id)
                 if (longTermMemoryControls.isAutoManagedTaskStateSuppressed(memoryId)) return@forEach
@@ -3422,16 +3428,20 @@ class PocketMindViewModel(
                 .mapTo(mutableSetOf()) { task -> taskStateMemoryRecordId(task.id) }
         }.getOrDefault(emptySet())
 
-    private fun loadLongTermMemories(): List<LongTermMemorySummary> =
-        runCatching {
-            longTermMemoryControls.savedRecords().map { record ->
-                LongTermMemorySummary(
-                    id = record.id,
-                    type = record.type,
-                    text = record.text,
-                )
-            }
-        }.getOrDefault(emptyList())
+    private fun loadLongTermMemories(memoryEnabled: Boolean = _uiState.value.memoryEnabled): List<LongTermMemorySummary> =
+        if (!memoryEnabled) {
+            emptyList()
+        } else {
+            runCatching {
+                longTermMemoryControls.savedRecords().map { record ->
+                    LongTermMemorySummary(
+                        id = record.id,
+                        type = record.type,
+                        text = record.text,
+                    )
+                }
+            }.getOrDefault(emptyList())
+        }
 
     private fun persistExplicitPreferenceMemory(message: ChatMessage): Boolean {
         if (message.role != MessageRole.User) return false

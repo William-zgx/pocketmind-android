@@ -4499,6 +4499,52 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun memoryDisabledDoesNotIndexScheduledTaskStateOnStartupRefreshOrSend() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        val memoryRepository = MemoryRepository(recordStore = store)
+        val taskMemoryId = taskStateMemoryRecordId("task-1")
+        memoryRepository.indexTaskState(taskMemoryId, "旧的后台任务状态")
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val scheduler = FakeBackgroundTaskScheduler(
+            scheduledTasks = listOf(
+                scheduledTask(
+                    id = "task-1",
+                    type = ScheduledTaskType.Reminder,
+                    status = ScheduledTaskStatus.Scheduled,
+                    title = "喝水",
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            firstRunStore = FakeFirstRunSetupStore(memoryEnabled = false),
+            memoryRepository = memoryRepository,
+            backgroundTaskScheduler = scheduler,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.memoryEnabled)
+        assertTrue(store.records().none { it.type == MemoryRecordType.TaskState })
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+
+        viewModel.refreshBackgroundTasks()
+        advanceUntilIdle()
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertEquals("普通远程问题", remoteRuntime.calls.single().prompt)
+        assertTrue(store.records().none { it.type == MemoryRecordType.TaskState })
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertTrue(memoryRepository.search("后台任务").isEmpty())
+    }
+
+    @Test
     fun restoreStartupStateReschedulesReminderAlarmsBeforeLoadingBackgroundTasks() = runTest(dispatcher) {
         val scheduler = FakeBackgroundTaskScheduler(
             scheduledTasks = listOf(
@@ -4603,6 +4649,53 @@ class PocketMindViewModelTest {
         assertFalse(call.prompt.contains("不要进入远程的提醒正文"))
         assertFalse(call.history.toString().contains("喝水"))
         assertFalse(call.history.toString().contains("不要进入远程的提醒正文"))
+    }
+
+    @Test
+    fun updateMemoryDisabledRemovesActiveTaskStateMemoryAndPreventsResync() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        val memoryRepository = MemoryRepository(recordStore = store)
+        val taskMemoryId = taskStateMemoryRecordId("task-1")
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val scheduler = FakeBackgroundTaskScheduler(
+            scheduledTasks = listOf(
+                scheduledTask(
+                    id = "task-1",
+                    type = ScheduledTaskType.Reminder,
+                    status = ScheduledTaskStatus.Scheduled,
+                    title = "喝水",
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            memoryRepository = memoryRepository,
+            backgroundTaskScheduler = scheduler,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+        assertTrue(store.hasRecord(taskMemoryId, MemoryRecordType.TaskState))
+
+        viewModel.updateMemoryEnabled(false)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.memoryEnabled)
+        assertTrue(store.records().none { it.id == taskMemoryId && it.type == MemoryRecordType.TaskState })
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+
+        viewModel.refreshBackgroundTasks()
+        advanceUntilIdle()
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertEquals("普通远程问题", remoteRuntime.calls.single().prompt)
+        assertTrue(store.records().none { it.id == taskMemoryId && it.type == MemoryRecordType.TaskState })
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertTrue(memoryRepository.search("后台任务").isEmpty())
     }
 
     @Test

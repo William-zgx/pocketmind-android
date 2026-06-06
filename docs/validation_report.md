@@ -15,6 +15,30 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Memory disabled task-state suppression
+
+本轮覆盖项：
+
+- `syncTaskStateMemories()` 受 `memoryEnabled` gate 控制；本地记忆关闭时会删除自动管理的
+  TaskState 记录，并跳过 scheduled/running background task 的自动写入。
+- `createInitialState()` 先读取 first-run memory 开关，再同步 TaskState，避免初始化阶段绕过
+  用户关闭记忆的选择。
+- `updateMemoryEnabled(false)` 会清空 UI 里的长期记忆和 memory hits，并防止 refresh/send
+  路径重新生成 TaskState 记忆。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.memoryDisabledDoesNotIndexScheduledTaskStateOnStartupRefreshOrSend' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.updateMemoryDisabledRemovesActiveTaskStateMemoryAndPreventsResync'
+```
+
+结果：
+
+- 通过：targeted ViewModel memory JVM tests。
+- 未执行模拟器：本轮只修改记忆开关和 JVM 回归测试，不改变 Android UI 或系统交互。
+
 ## 2026-06-06 Remote image draft not-ready privacy hardening
 
 本轮覆盖项：
