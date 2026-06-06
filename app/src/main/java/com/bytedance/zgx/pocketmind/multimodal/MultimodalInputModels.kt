@@ -46,7 +46,7 @@ data class SharedInput(
             .joinToString(separator = "\n")
         return buildString {
             if (protectedImageSourceCount > 0) {
-                append("已收到受保护图片。为保护隐私，本次未读取或发送图片内容；请切换支持视觉的远程模型，或改用本地 OCR 摘录。")
+                append("已收到受保护图片。当前模型未启用视觉输入能力，本次未读取、OCR 或发送图片内容；请切换支持视觉的远程模型后重新选择图片。")
             }
             if (protectedSourceCount > 0) {
                 if (isNotEmpty()) append("\n\n")
@@ -69,7 +69,7 @@ data class SharedInput(
                 if (hasAttachedImages) {
                     append("请根据我分享的图片和附件信息进行处理；图片已随本次请求发送给模型。如果当前模型或接口不支持图片输入，请直接说明不支持。")
                 } else {
-                    append("请根据我分享的附件信息和可用文字摘录进行处理；如果图片没有 OCR 摘录，请明确说明当前无法看到图片视觉内容。")
+                    append("请根据我分享的附件信息和可用文字摘录进行处理；如果包含图片，请明确说明当前模型不支持视觉输入，且不会自动 OCR。")
                 }
             }
             if (attachmentBlock.isNotBlank()) {
@@ -80,7 +80,7 @@ data class SharedInput(
                     )
                 } else {
                     append(
-                        "已分享附件（默认只读取元数据；text/*/JSON/XML/YAML 文档、RTF/PDF 文本层、PDF 扫描页 OCR、Office Open XML 文档和用户主动提供的 image/* 附件会读取受限文本/OCR 摘录；当前不读取图片视觉内容或像素语义）：\n",
+                        "已分享附件（默认只读取元数据；text/*/JSON/XML/YAML 文档、RTF/PDF 文本层、PDF 扫描页 OCR 和 Office Open XML 文档会读取受限文本/OCR 摘录；图片不会被自动 OCR，也不读取视觉内容或像素语义）：\n",
                     )
                 }
                 append(attachmentBlock)
@@ -116,7 +116,7 @@ private fun SharedAttachment.unavailablePreviewNotice(): String? =
             if (imageAttachment != null) {
                 "图片已附加到本次模型请求；如果当前模型或接口不支持图片输入，请直接说明不支持。"
             } else {
-                "图片视觉内容未读取；当前只支持图片 OCR 文字摘录，无法看到照片/画面内容。"
+                "当前模型不支持视觉输入；未读取图片内容，也不会自动 OCR。需要文字识别时，请显式使用 OCR 工具。"
             }
 
         SharedAttachmentKind.Video ->

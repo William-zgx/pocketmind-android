@@ -1730,7 +1730,7 @@ class PocketMindViewModel(
             _uiState.value.messages + ChatMessage(
                 role = MessageRole.Assistant,
                 text = buildString {
-                    append("当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。")
+                    append("当前远程模型未启用图片输入能力，未读取、OCR 或发送图片；请切换支持视觉的远程模型后重新选择图片。")
                     if (protectedSourceCount > 0) {
                         append("本次分享中的其他内容也未读取或发送。")
                     }
@@ -1804,7 +1804,7 @@ class PocketMindViewModel(
                     privacy = MessagePrivacy.LocalOnly,
                 ) + ChatMessage(
                     role = MessageRole.Assistant,
-                    text = "已接收分享内容。请先准备模型后再发送，当前只会读取受限文本、JSON/XML/YAML/RTF/PDF/Office 文档摘录、OCR 摘录和附件元数据。",
+                    text = "已接收分享内容。请先准备模型后再发送；图片不会被自动 OCR，当前只会读取受限文本、JSON/XML/YAML/RTF/PDF/Office 文档摘录、PDF 扫描页 OCR 摘录和附件元数据。",
                     privacy = MessagePrivacy.LocalOnly,
                 ),
                 persistNow = true,
@@ -4228,7 +4228,7 @@ private fun SharedAttachment.composerSummaryLabel(): String {
     val base = safeDisplayNameForPrompt() ?: kind.label
     return when {
         kind == SharedAttachmentKind.Image && imageAttachment != null -> "$base · 图片"
-        kind == SharedAttachmentKind.Image && textPreview == null -> "$base · 无 OCR"
+        kind == SharedAttachmentKind.Image && textPreview == null -> "$base · 不支持视觉"
         kind == SharedAttachmentKind.Image -> "$base · OCR"
         else -> base
     }

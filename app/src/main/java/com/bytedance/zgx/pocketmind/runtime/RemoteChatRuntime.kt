@@ -248,7 +248,7 @@ internal fun buildChatCompletionBody(
     imageAttachments: List<ChatImageAttachment> = emptyList(),
 ): JSONObject {
     require(imageAttachments.isEmpty() || config.supportsVisionInput) {
-        "当前远程模型未启用图片输入能力，未读取或发送图片；请切换支持视觉的远程模型，或改用本地 OCR 摘录。"
+        "当前远程模型未启用图片输入能力，未读取、OCR 或发送图片；请切换支持视觉的远程模型后重新选择图片。"
     }
     return JSONObject()
         .put("model", config.modelName)

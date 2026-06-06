@@ -82,7 +82,7 @@ object CapabilityMatrix {
                 requiresLocalModel = false,
                 remoteEligible = false,
                 confirmationPolicy = ConfirmationPolicy.NotRequired,
-                failureBehavior = "远程模式保护分享文本和非图片附件；本地模式只读取受限文本、OCR 或元数据。",
+                failureBehavior = "远程模式保护分享文本和非图片附件；本地模式只读取受限文本、PDF 扫描页 OCR 或元数据，图片不自动 OCR。",
                 requiredTests = listOf("SharedInputTest", "PocketMindViewModelTest", "MainActivitySharedIntentTest"),
                 ownerAgent = CapabilityOwnerAgent.Multimodal,
             ),

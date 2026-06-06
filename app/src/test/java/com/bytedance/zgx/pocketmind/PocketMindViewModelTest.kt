@@ -619,7 +619,7 @@ class PocketMindViewModelTest {
         assertEquals(MessageRole.Assistant, message.role)
         assertEquals(MessagePrivacy.LocalOnly, message.privacy)
         assertTrue(message.text.contains("未启用图片输入能力"))
-        assertTrue(message.text.contains("未读取或发送图片"))
+        assertTrue(message.text.contains("未读取、OCR 或发送图片"))
         assertFalse(message.text.contains("screen.png"))
         assertFalse(message.text.contains("data:image/png"))
         assertEquals("当前远程模型不支持图片输入", viewModel.uiState.value.statusText)
@@ -1000,7 +1000,7 @@ class PocketMindViewModelTest {
         )
         advanceUntilIdle()
 
-        assertEquals("photo.jpg · 无 OCR", viewModel.uiState.value.pendingSharedInputDraft?.summary)
+        assertEquals("photo.jpg · 不支持视觉", viewModel.uiState.value.pendingSharedInputDraft?.summary)
 
         viewModel.sendPendingSharedInput("这张图里有什么")
         advanceUntilIdle()
@@ -1008,8 +1008,8 @@ class PocketMindViewModelTest {
         val prompt = runtime.prompts.single()
         assertTrue(prompt.contains("这张图里有什么"))
         assertTrue(prompt.contains("photo.jpg"))
-        assertTrue(prompt.contains("图片视觉内容未读取"))
-        assertTrue(prompt.contains("无法看到照片/画面内容"))
+        assertTrue(prompt.contains("当前模型不支持视觉输入"))
+        assertTrue(prompt.contains("不会自动 OCR"))
     }
 
     @Test

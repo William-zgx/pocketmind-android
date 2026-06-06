@@ -99,7 +99,6 @@ class SharedInputTest {
 
         val prompt = input.toPrompt()
 
-        assertTrue(prompt.contains("用户主动提供的 image/* 附件"))
         assertTrue(prompt.contains("图片文字摘录（已截断）"))
         assertTrue(prompt.contains("标题"))
         assertTrue(prompt.contains("正文"))
@@ -552,7 +551,8 @@ class SharedInputTest {
 
         assertFalse(input.isEmpty)
         assertTrue(prompt.contains("已收到受保护图片"))
-        assertTrue(prompt.contains("未读取或发送图片内容"))
+        assertTrue(prompt.contains("未读取、OCR 或发送图片内容"))
+        assertTrue(prompt.contains("当前模型未启用视觉输入能力"))
         assertFalse(prompt.contains("2"))
     }
 
@@ -1017,7 +1017,6 @@ class SharedInputTest {
                     streamOpened = true
                     """{\rtf1\ansi Visible RTF text}""".byteInputStream()
                 },
-                extractImageText = { error("image OCR should not be used for RTF") },
             )
 
             assertTrue(streamOpened)
@@ -1035,7 +1034,6 @@ class SharedInputTest {
                 mismatchStreamOpened = true
                 """{\rtf1 should not be read}""".byteInputStream()
             },
-            extractImageText = { error("image OCR should not be used for application/rtf") },
         )
         assertNull(mismatchedKindPreview)
         assertFalse(mismatchStreamOpened)
@@ -1047,7 +1045,6 @@ class SharedInputTest {
             mimeType = "application/pdf",
             kind = SharedAttachmentKind.Document,
             openInputStream = { pdfBytes("BT (PDF title) Tj ET").inputStream() },
-            extractImageText = { error("image OCR should not be used for PDF") },
             extractPdfImageText = { error("PDF OCR should not run when text layer is available") },
         )
 
@@ -1067,7 +1064,6 @@ class SharedInputTest {
                 streamOpened = true
                 "%PDF-1.4\n%%EOF".byteInputStream()
             },
-            extractImageText = { error("image OCR should not be used directly for PDF") },
             extractPdfImageText = {
                 pdfOcrUsed = true
                 SharedTextPreview(
@@ -1099,13 +1095,30 @@ class SharedInputTest {
                     streamOpened = true
                     "%PDF-1.4\n%%EOF".byteInputStream()
                 },
-                extractImageText = { null },
                 extractPdfImageText = { error("PDF OCR should not run for $kind $mimeType") },
             )
 
             assertNull(preview)
             assertFalse(streamOpened)
         }
+    }
+
+    @Test
+    fun sharedAttachmentTextPreviewDoesNotOpenImageStreamsForImplicitOcr() {
+        var streamOpened = false
+
+        val preview = readSharedAttachmentTextPreview(
+            mimeType = "image/png",
+            kind = SharedAttachmentKind.Image,
+            openInputStream = {
+                streamOpened = true
+                "private image bytes".byteInputStream()
+            },
+            extractPdfImageText = { error("PDF OCR should not run for image attachments") },
+        )
+
+        assertNull(preview)
+        assertFalse(streamOpened)
     }
 
     @Test
@@ -1120,7 +1133,6 @@ class SharedInputTest {
                 mimeType = mimeType,
                 kind = SharedAttachmentKind.Document,
                 openInputStream = { text.byteInputStream() },
-                extractImageText = { error("image OCR should not be used for $mimeType") },
             )
 
             assertNotNull(preview)
@@ -1140,7 +1152,6 @@ class SharedInputTest {
                     streamOpened = true
                     "binary".byteInputStream()
                 },
-                extractImageText = { error("image OCR should not be used for $mimeType") },
             )
 
             assertNull(preview)
@@ -1163,7 +1174,6 @@ class SharedInputTest {
                     mimeType = mimeType,
                     kind = kind,
                     openInputStream = { error("protected share must not open attachment stream") },
-                    extractImageText = { error("protected share must not run OCR") },
                     extractPdfImageText = { error("protected share must not run PDF OCR") },
                     mode = mode,
                 )

@@ -17,6 +17,47 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Shared image no implicit OCR boundary
+
+本轮覆盖项：
+
+- 分享/附件中的普通 `image/*` 在本地模型路径不再自动运行 OCR，也不打开图片 stream；
+  图片默认进入远程视觉模型输入，远程模型不支持视觉时直接提示不支持。
+- 保留显式、受确认保护的 OCR 工具能力，例如最近图片 OCR、截图 OCR 和 PDF 扫描页
+  OCR fallback；本次只移除 shared image 的隐式 OCR 兜底。
+- UI prompt、composer 摘要、远程 runtime require message、Capability Matrix、
+  privacy notice 和 phone acceptance 文档同步为“不自动 OCR / 不支持视觉”口径。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.multimodal.SharedInputTest' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.stagedSharedImageWithoutOcrWarnsLocalModelThatVisualContentIsUnavailable' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeRejectsSharedImageOcrPreviewBeforeBuildingPrompt' --tests 'com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntimeTest'
+git diff --check
+bash -n scripts/check_emulator_api_matrix.sh scripts/regression_emulator_api_matrix.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/check_emulator_api_matrix.sh --report build/verification/emulator-api-matrix-readiness-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator_api_matrix.sh --required-apis 36 --artifact-dir build/verification/regression-emulator-api36-no-implicit-image-ocr --report build/verification/regression-emulator-api36-no-implicit-image-ocr/regression-emulator-api-matrix.properties --readiness-report build/verification/regression-emulator-api36-no-implicit-image-ocr/emulator-api-matrix-readiness.properties
+```
+
+结果：
+
+- 通过：targeted JVM 回归、validation script self-tests、`git diff --check`、
+  脚本语法检查和 `scripts/verify_local.sh`。
+- 通过：API 36 emulator matrix 回归；
+  `build/verification/regression-emulator-api36-no-implicit-image-ocr/regression-emulator-api-matrix.properties`
+  记录 `status=passed`、`passedApis=36`、
+  `api36ReportSha256=4811a6b53c3096ad5b441c807bc877f54aa7a384a991b0e14ed0d261ad9cd47b`。
+- 通过：API 36 per-API 回归；
+  `build/verification/regression-emulator-api36-no-implicit-image-ocr/api-36/regression-emulator.properties`
+  记录 `status=passed`、`actual_android_test_count=28`、`api_level=36`、
+  `abi=arm64-v8a`、`avd=focus_agent_api36_arm64`。
+- 预期失败：完整 API matrix readiness 仍未就绪；
+  `build/verification/emulator-api-matrix-readiness-current.properties` 记录
+  `status=failed`、`failedTarget=api-matrix-readiness`、
+  `reason=missing-system-image-api-28,missing-avd-api-28,missing-system-image-api-32,missing-avd-api-32,missing-system-image-api-33,missing-avd-api-33,missing-system-image-api-34,missing-avd-api-34`。
+- 未执行：真机验收仍按当前约束跳过；本轮只在模拟器中验证。
+
 ## 2026-06-06 Upgrade install emulator evidence
 
 本轮覆盖项：

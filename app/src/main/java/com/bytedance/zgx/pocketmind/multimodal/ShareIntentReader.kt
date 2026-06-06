@@ -152,7 +152,6 @@ class ShareIntentReader(
                 mimeType = resolvedMimeType,
                 kind = kind,
                 openInputStream = { context.contentResolver.openInputStream(this) },
-                extractImageText = { imageTextExtractor.extract(this) },
                 extractPdfImageText = { pdfPageTextExtractor.extract(this) },
             )
         } else {
@@ -277,7 +276,6 @@ internal fun readSharedAttachmentTextPreview(
     mimeType: String?,
     kind: SharedAttachmentKind,
     openInputStream: () -> InputStream?,
-    extractImageText: () -> SharedTextPreview?,
     extractPdfImageText: () -> SharedTextPreview? = { null },
     mode: SharedInputReadMode = SharedInputReadMode.LocalPrompt,
 ): SharedTextPreview? =
@@ -303,9 +301,6 @@ internal fun readSharedAttachmentTextPreview(
             readSharedAttachmentTextPreviewFromStream(openInputStream) { input ->
                 OfficeOpenXmlPreviewReader.read(input, mimeType)
             }
-
-        kind == SharedAttachmentKind.Image && canReadImageTextPreviewFor(mimeType) ->
-            extractImageText()
 
         else -> null
     }
