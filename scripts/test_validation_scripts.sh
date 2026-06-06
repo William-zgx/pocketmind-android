@@ -394,6 +394,27 @@ assert_report_contains_text() {
     fail "Expected $file to contain text: $expected"
 }
 
+write_model_release_flow_contract_fixture() {
+  local flow="$1"
+  case "$flow" in
+    localModelDownloadVerification)
+      printf 'localModelDownloadVerified=true\n'
+      printf 'modelSha256VerificationCovered=true\n'
+      printf 'storagePreflightCovered=true\n'
+      printf 'downloadFailureRecoveryCovered=true\n'
+      printf 'remoteFallbackExplained=true\n'
+      printf 'lightweightAlternativeExplained=true\n'
+      ;;
+    customModelImportOrUrlRejection)
+      printf 'customLitertlmImportCovered=true\n'
+      printf 'customDownloadHttpsOnly=true\n'
+      printf 'customInvalidUrlRejected=true\n'
+      printf 'customCredentialedUrlRejected=true\n'
+      printf 'customUnverifiedModelMarked=true\n'
+      ;;
+  esac
+}
+
 write_crash_anr_smoke_fixture() {
   local report_file="$1"
   local device_report="$2"
@@ -1371,6 +1392,7 @@ target=release-flow
 flowKey=$flow_key
 releaseFlowPassed=true
 VALIDATION_FLOW_EVIDENCE_PROPERTIES
+  write_model_release_flow_contract_fixture "$flow_key" >> "$TMP_DIR/validation-flow-evidence/$flow_key.properties"
 done
 VALIDATION_PERF_BASELINE="$TMP_DIR/validation-performance-evidence/perf-baseline.properties"
 cat > "$VALIDATION_PERF_BASELINE" <<VALIDATION_PERF_BASELINE_PROPERTIES
@@ -1670,6 +1692,64 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-target-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-key-mismatch"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-release-flow-not-passed"
+VALIDATION_WEAK_LOCAL_MODEL_FLOW="$TMP_DIR/release-validation-weak-local-model-flow.json"
+VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-local-model-download.properties"
+cat > "$VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE" <<'VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow
+flowKey=localModelDownloadVerification
+releaseFlowPassed=true
+candidateOnly=false
+VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_LOCAL_MODEL_FLOW" "$VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["localModelDownloadVerification"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["localModelDownloadVerification"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak local model download evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_LOCAL_MODEL_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-model-download-verification-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-storage-preflight-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-lightweight-alternative-explanation-missing"
+VALIDATION_WEAK_CUSTOM_MODEL_FLOW="$TMP_DIR/release-validation-weak-custom-model-flow.json"
+VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-custom-model.properties"
+cat > "$VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE" <<'VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow
+flowKey=customModelImportOrUrlRejection
+releaseFlowPassed=true
+candidateOnly=false
+VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_CUSTOM_MODEL_FLOW" "$VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["customModelImportOrUrlRejection"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["customModelImportOrUrlRejection"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak custom model evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_CUSTOM_MODEL_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-https-only-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-invalid-url-rejection-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-unverified-marker-missing"
 VALIDATION_BARE_MANUAL="$TMP_DIR/release-validation-bare-manual.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_BARE_MANUAL" <<'PY'
 import json
@@ -2231,6 +2311,13 @@ for generated_flow_key in \
   assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "candidateOnly=true"
   assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "releaseFlowPassed=false"
 done
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "localModelDownloadVerified=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "modelSha256VerificationCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "storagePreflightCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "lightweightAlternativeExplained=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customDownloadHttpsOnly=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customInvalidUrlRejected=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
 cat > "$FLOW_CANDIDATE_STALE_EMULATOR_REPORT" <<FLOW_CANDIDATE_STALE_EMULATOR_REPORT_PROPERTIES
 status=passed
 target=regression-emulator
@@ -2275,6 +2362,7 @@ for flow_key in \
     printf 'owner=QA\n'
     printf 'date=%s\n' "$VALIDATION_DATE"
     printf 'summary=%s release flow was explicitly approved.\n' "$flow_key"
+    write_model_release_flow_contract_fixture "$flow_key"
   } > "$FLOW_CANDIDATE_EVIDENCE_DIR/$flow_key.properties"
 done
 python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_EMULATOR_REPORT" "$FLOW_CANDIDATE_EMULATOR_SHA" "$FLOW_CANDIDATE_EVIDENCE_DIR" "$VALIDATION_DATE" <<'PY'
@@ -2463,6 +2551,13 @@ for flow_key in \
   assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "owner=QA"
   assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "date=$VALIDATION_DATE"
 done
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "localModelDownloadVerified=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "modelSha256VerificationCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "downloadFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "remoteFallbackExplained=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customLitertlmImportCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customCredentialedUrlRejected=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
 FAKE_AVDMANAGER="$TMP_DIR/fake-avdmanager"

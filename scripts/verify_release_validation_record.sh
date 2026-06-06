@@ -519,6 +519,26 @@ def validate_flow_evidence(key, evidence_path):
         failures.append(f"{prefix}-candidate-evidence-not-approved")
     if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{prefix}-release-flow-not-passed")
+    required_true_fields = {
+        "localModelDownloadVerification": {
+            "localModelDownloadVerified": "model-download-verification-missing",
+            "modelSha256VerificationCovered": "model-sha-verification-missing",
+            "storagePreflightCovered": "storage-preflight-missing",
+            "downloadFailureRecoveryCovered": "download-failure-recovery-missing",
+            "remoteFallbackExplained": "remote-fallback-explanation-missing",
+            "lightweightAlternativeExplained": "lightweight-alternative-explanation-missing",
+        },
+        "customModelImportOrUrlRejection": {
+            "customLitertlmImportCovered": "custom-import-missing",
+            "customDownloadHttpsOnly": "custom-https-only-missing",
+            "customInvalidUrlRejected": "invalid-url-rejection-missing",
+            "customCredentialedUrlRejected": "credentialed-url-rejection-missing",
+            "customUnverifiedModelMarked": "custom-unverified-marker-missing",
+        },
+    }.get(key, {})
+    for field, reason in required_true_fields.items():
+        if props.get(field, "").lower() not in {"true", "1", "yes"}:
+            failures.append(f"{prefix}-{reason}")
 
 def validate_png_file(name, path):
     try:

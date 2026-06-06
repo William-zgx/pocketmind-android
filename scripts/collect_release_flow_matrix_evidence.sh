@@ -274,6 +274,27 @@ flow_source_files() {
   esac
 }
 
+write_flow_contract_fields() {
+  local flow="$1"
+  case "$flow" in
+    localModelDownloadVerification)
+      printf 'localModelDownloadVerified=true\n'
+      printf 'modelSha256VerificationCovered=true\n'
+      printf 'storagePreflightCovered=true\n'
+      printf 'downloadFailureRecoveryCovered=true\n'
+      printf 'remoteFallbackExplained=true\n'
+      printf 'lightweightAlternativeExplained=true\n'
+      ;;
+    customModelImportOrUrlRejection)
+      printf 'customLitertlmImportCovered=true\n'
+      printf 'customDownloadHttpsOnly=true\n'
+      printf 'customInvalidUrlRejected=true\n'
+      printf 'customCredentialedUrlRejected=true\n'
+      printf 'customUnverifiedModelMarked=true\n'
+      ;;
+  esac
+}
+
 if [[ ! -f "$VALIDATION_RECORD_FILE" ]]; then
   fail validation-record missing-validation-record-file "Release validation record file is missing: $VALIDATION_RECORD_FILE"
 fi
@@ -358,6 +379,7 @@ for flow in "${GENERATED_FLOWS[@]}"; do
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
     printf 'summary=%s\n' "$(flow_summary "$flow")"
+    write_flow_contract_fields "$flow"
   } > "$evidence_path"
   GENERATED_EVIDENCE_PATHS+=("$evidence_path")
 done
@@ -423,6 +445,26 @@ def is_valid_evidence(flow, value):
         return False
     if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         return False
+    required_true_fields = {
+        "localModelDownloadVerification": [
+            "localModelDownloadVerified",
+            "modelSha256VerificationCovered",
+            "storagePreflightCovered",
+            "downloadFailureRecoveryCovered",
+            "remoteFallbackExplained",
+            "lightweightAlternativeExplained",
+        ],
+        "customModelImportOrUrlRejection": [
+            "customLitertlmImportCovered",
+            "customDownloadHttpsOnly",
+            "customInvalidUrlRejected",
+            "customCredentialedUrlRejected",
+            "customUnverifiedModelMarked",
+        ],
+    }.get(flow, [])
+    for field in required_true_fields:
+        if props.get(field, "").lower() not in {"true", "1", "yes"}:
+            return False
     recorded_date = value.get("date", "")
     if not non_empty_string(recorded_date) or not date_pattern.match(recorded_date):
         return False

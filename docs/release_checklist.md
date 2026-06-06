@@ -288,6 +288,12 @@ release ticket or PR.
   `status=passed`, `target=release-flow`, a `flowKey` that matches the record
   key, and `releaseFlowPassed=true`; candidate-only or lightweight status-only
   flow evidence files are not accepted.
+- [ ] `localModelDownloadVerification` release flow evidence must explicitly
+  record local download verification, SHA-256 verification, storage preflight,
+  failure recovery, remote fallback explanation, and lightweight alternative
+  explanation. `customModelImportOrUrlRejection` evidence must explicitly
+  record `.litertlm` import coverage, HTTPS-only custom download policy,
+  invalid/credentialed URL rejection, and the unverified custom model marker.
 - [ ] Release flow evidence is generated from explicit owner sign-off, for
   example `OWNER="<reviewer>" RELEASE_FLOW_ALL=1
   scripts/record_release_flow_evidence.sh`; partial runs must remain failed

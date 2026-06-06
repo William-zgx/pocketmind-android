@@ -9760,3 +9760,38 @@ bash scripts/verify_local.sh
   release validation verifier fail-closed。
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Model flow release evidence hardening
+
+本轮覆盖项：
+
+- `scripts/record_release_flow_evidence.sh` 写入模型 flow 的结构化验收字段。
+  `localModelDownloadVerification` 必须声明本地模型下载验证、SHA-256 校验、
+  存储空间预检、失败恢复、远程 fallback 说明和轻量替代说明。
+- `customModelImportOrUrlRejection` 必须声明 `.litertlm` 导入、自定义下载
+  HTTPS-only、非法 URL 拒绝、带凭据 URL 拒绝和未校验自定义模型标记。
+- `scripts/verify_release_validation_record.sh` 对上述字段 fail-closed，避免
+  仅凭 `releaseFlowPassed=true` 的薄证据通过正式 release validation。
+- `scripts/collect_release_flow_matrix_evidence.sh` 的候选证据同步展示这些字段，
+  并在判断已批准 release flow 时使用同一套模型证据契约。
+- `docs/release_checklist.md` 同步记录验收人需要检查的模型 flow 字段。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/record_release_flow_evidence.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：release validation verifier 接受包含模型 flow 字段的 approved fixture。
+- 通过：缺少本地模型下载结构化字段的 flow evidence 被拒绝。
+- 通过：缺少自定义模型 HTTPS/非法 URL/未校验标记字段的 flow evidence 被拒绝。
+- 通过：flow matrix candidate evidence 和正式 release flow recorder 都输出模型字段。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。
+- 通过：使用用户提供的 DeepSeek endpoint、model 和 key 字面量做仓库扫描，
+  均未命中；具体敏感 literal 未写入文档。

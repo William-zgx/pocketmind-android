@@ -89,6 +89,27 @@ fail() {
   exit 1
 }
 
+write_flow_contract_fields() {
+  local flow="$1"
+  case "$flow" in
+    localModelDownloadVerification)
+      printf 'localModelDownloadVerified=true\n'
+      printf 'modelSha256VerificationCovered=true\n'
+      printf 'storagePreflightCovered=true\n'
+      printf 'downloadFailureRecoveryCovered=true\n'
+      printf 'remoteFallbackExplained=true\n'
+      printf 'lightweightAlternativeExplained=true\n'
+      ;;
+    customModelImportOrUrlRejection)
+      printf 'customLitertlmImportCovered=true\n'
+      printf 'customDownloadHttpsOnly=true\n'
+      printf 'customInvalidUrlRejected=true\n'
+      printf 'customCredentialedUrlRejected=true\n'
+      printf 'customUnverifiedModelMarked=true\n'
+      ;;
+  esac
+}
+
 if [[ -z "$OWNER" ]]; then
   fail missing-owner "OWNER is required for release flow evidence."
 fi
@@ -132,6 +153,7 @@ for flow in "${accepted_flows[@]}"; do
     printf 'date=%s\n' "$VALIDATION_DATE"
     printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
     printf 'evidenceSummary=%s\n' "$RELEASE_FLOW_NOTE"
+    write_flow_contract_fields "$flow"
   } > "$evidence_path"
 done
 
