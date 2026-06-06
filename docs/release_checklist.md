@@ -207,6 +207,9 @@ release ticket or PR.
   records should link `regression-emulator.properties` plus the nested
   emulator/device reports, and each linked report must include a matching
   SHA-256 in `docs/release_validation_record.json`.
+- [ ] Failed device, emulator, or regression reports include machine-readable
+  `failedTarget` and `reason` fields plus any generated screenshot, window dump,
+  logcat, or instrumentation evidence paths.
 - [ ] Manual acceptance in `docs/phone_acceptance.md` is sampled for model
   setup, remote-mode privacy, tool confirmation, permissions, background
   reminders, sharing, and multimodal entry points.

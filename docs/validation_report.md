@@ -7,6 +7,8 @@
 - `本轮覆盖项：` 描述本次验证覆盖的行为、文档或脚本契约。
 - `验证命令：` 记录实际执行的命令；未执行的设备、模拟器或真机项必须明确说明。
 - `结果：` 记录通过、失败或未执行原因，并引用关键 artifact。
+- 设备、模拟器和发布门禁失败必须记录机器可读 `failedTarget` / `reason`，以及关键
+  evidence path；不能只写“见 artifact”。
 - 自动回归与必须手工验收的结论必须分开记录；语音输入、Android 系统文档选择器和
   MediaProjection 前台同意不能因为脚本、mock intent、直接 reader/ViewModel 调用或
   UI 文案存在而写成已手工通过。
@@ -14,6 +16,43 @@
 完整模拟器回归以 `scripts/regression_emulator.sh` 产出的
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
+
+## 2026-06-06 Emulator failure evidence contract hardening
+
+本轮覆盖项：
+
+- `scripts/install_and_test_device.sh` 的 device report 新增机器可读 `failedTarget`
+  和 `reason`，覆盖 device selection、ABI、data free space、install 和
+  instrumentation 失败。
+- `scripts/verify_emulator.sh` 的 emulator report 新增 `failedTarget`、`reason`、
+  `evidence_dir`、`screenshot_file`、`window_dump_file`、`logcat_file`，并把 nested
+  device report reason 汇总为 emulator 失败原因。
+- `scripts/regression_emulator.sh` 的权威 regression report 新增 `failedTarget`
+  和 `reason`，覆盖 emulator helper 失败、expected test count 配置错误、
+  instrumentation count 缺失或不足。
+- `scripts/test_validation_scripts.sh` 锁住 device / emulator / regression failed
+  reports 的 reason、failedTarget 和 failure screenshot evidence。
+- `docs/release_checklist.md` 同步设备/模拟器验证报告失败字段要求。
+
+验证命令：
+
+```bash
+bash -n scripts/install_and_test_device.sh scripts/verify_emulator.sh scripts/regression_emulator.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=focus_agent_api36_arm64 EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 device / emulator / regression failed
+  report reason 和 evidence path。
+- 通过：`scripts/verify_local.sh`。
+- 通过：真实模拟器回归 `focus_agent_api36_arm64` / `emulator-5554`，API 36，
+  `arm64-v8a`，28 个 AndroidTest 全部通过；
+  `build/verification/regression-emulator-20260606-175158/regression-emulator.properties`
+  记录 `status=passed`、`failedTarget=`、`reason=`，SHA-256 为
+  `abeaf2f2fc8c108da77d9fbb541bc44be29a1aa739ed985a8eab310e613d1509`。
 
 ## 2026-06-06 Privacy scan failure reason hardening
 

@@ -1740,6 +1740,8 @@ expect_failure \
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "target=device"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=device-selection"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=device-selection-ambiguous"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=not-run"
 
 reset_logs
@@ -1781,6 +1783,8 @@ expect_failure \
   FAKE_ADB_DEVICES=$'device-a\tdevice' FAKE_ABI_LIST="armeabi-v7a,x86" \
   GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=device-abi"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=device-abi-not-arm64"
 grep -q "not arm64-v8a compatible" <<<"$LAST_OUTPUT" ||
   fail "Expected install helper to reject non arm64-v8a devices"
 grep -q -- "-s device-a shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" ||
@@ -1794,6 +1798,8 @@ expect_failure \
   FAKE_DATA_FREE_KB="3145727" \
   GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=data-free-space"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=data-free-below-threshold"
 grep -q "less than 3 GB free on /data" <<<"$LAST_OUTPUT" ||
   fail "Expected install helper to reject devices with low /data free space"
 grep -q -- "-s device-a shell df -k /data" "$FAKE_ADB_LOG" ||
@@ -1807,6 +1813,8 @@ expect_success \
   scripts/install_and_test_device.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget="
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "api_level=36"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "abi=arm64-v8a,armeabi-v7a"
@@ -1829,6 +1837,8 @@ assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=instrumentation"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=instrumentation-success-marker-missing"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
 grep -q "final OK/success marker" <<<"$LAST_OUTPUT" ||
   fail "Expected install helper to reject malformed instrumentation output without final OK"
@@ -1856,6 +1866,8 @@ assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=device-a"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=failed"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "failedTarget=instrumentation"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=instrumentation-failed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=3"
 grep -q "FAILURES!!!" "$ARTIFACT_DIR/instrumentation.txt" ||
   fail "Expected failed instrumentation output to be persisted"
@@ -1868,6 +1880,8 @@ expect_failure \
   EMULATOR_SELECT_TIMEOUT_SECONDS=0 GRADLE_CMD="$FAKE_GRADLE" \
   scripts/verify_emulator.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget=android-serial"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason=android-serial-not-emulator"
 
 reset_logs
 expect_failure \
@@ -1876,6 +1890,8 @@ expect_failure \
   FAKE_ADB_DEVICES=$'device-a\tdevice' EMULATOR_SELECT_TIMEOUT_SECONDS=0 \
   GRADLE_CMD="$FAKE_GRADLE" scripts/verify_emulator.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget=emulator-selection"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason=no-single-authorized-emulator"
 
 reset_logs
 expect_failure \
@@ -1884,6 +1900,8 @@ expect_failure \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
   scripts/verify_emulator.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget=emulator-binary"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason=emulator-binary-missing"
 grep -q "Android emulator binary not found" <<<"$LAST_OUTPUT" ||
   fail "Expected emulator helper to report missing emulator binary"
 
@@ -1894,6 +1912,8 @@ expect_failure \
   FAKE_ADB_DEVICES="" FAKE_EMULATOR_AVDS="other-avd" AVD_NAME="test-avd" \
   GRADLE_CMD="$FAKE_GRADLE" scripts/verify_emulator.sh
 assert_no_gradle_call
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget=requested-avd"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason=requested-avd-not-found"
 grep -q "AVD_NAME=test-avd not found" <<<"$LAST_OUTPUT" ||
   fail "Expected emulator helper to report unknown AVD"
 
@@ -1906,9 +1926,15 @@ expect_success \
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "target=emulator"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget="
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "serial=emulator-5554"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "api_level=36"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "avd=test-avd"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "evidence_dir=$ARTIFACT_DIR"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "screenshot_file=$ARTIFACT_DIR/screenshot.png"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "window_dump_file=$ARTIFACT_DIR/window.xml"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "logcat_file=$ARTIFACT_DIR/logcat.txt"
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "device_report_file=$ARTIFACT_DIR/device-verification.properties"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "serial=emulator-5554"
@@ -2013,6 +2039,8 @@ expect_success \
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "target=regression-emulator"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget="
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason="
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "clean_device=1"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "source_android_test_count=$SOURCE_ANDROID_TEST_COUNT"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT"
@@ -2034,6 +2062,8 @@ expect_failure \
   scripts/regression_emulator.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=instrumentation-test-count"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=instrumentation-test-count-below-expected"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "actual_android_test_count=$LOW_ANDROID_TEST_COUNT"
 grep -q "expected at least $SOURCE_ANDROID_TEST_COUNT" <<<"$LAST_OUTPUT" ||
@@ -2060,6 +2090,8 @@ expect_failure \
   GRADLE_CMD="$FAKE_GRADLE" scripts/regression_emulator.sh
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=expected-android-test-count"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=expected-android-test-count-below-source"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "source_android_test_count=$SOURCE_ANDROID_TEST_COUNT"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "expected_android_test_count=$LOW_ANDROID_TEST_COUNT"
 grep -q "cannot be lower than AndroidTest source count" <<<"$LAST_OUTPUT" ||
@@ -2085,6 +2117,8 @@ expect_failure \
   GRADLE_CMD="$FAKE_GRADLE" scripts/regression_emulator.sh
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=expected-android-test-count"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=expected-android-test-count-invalid"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "expected_android_test_count=abc"
 
 reset_logs
@@ -2095,6 +2129,8 @@ expect_failure \
   EXPECTED_ANDROID_TEST_COUNT="$SOURCE_ANDROID_TEST_COUNT" GRADLE_CMD="$FAKE_GRADLE" scripts/regression_emulator.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=instrumentation-test-count"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=instrumentation-test-count-missing"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "actual_android_test_count="
 grep -q "instrumentation_test_count" <<<"$LAST_OUTPUT" ||
@@ -2109,6 +2145,8 @@ expect_failure \
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "target=regression-emulator"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=emulator-verification"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=emulator-verification-emulator-binary-missing"
 
 reset_logs
 expect_failure \
@@ -2119,11 +2157,18 @@ expect_failure \
   EXPECTED_ANDROID_TEST_COUNT="$SOURCE_ANDROID_TEST_COUNT" GRADLE_CMD="$FAKE_GRADLE" scripts/regression_emulator.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "failedTarget=emulator-verification"
+assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "reason=emulator-verification-device-verification-instrumentation-failed"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "serial=emulator-5554"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "api_level=36"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "abi=arm64-v8a,armeabi-v7a"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "actual_android_test_count=3"
 assert_report_contains "$ARTIFACT_DIR/regression-emulator.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "failedTarget=device-verification"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "reason=device-verification-instrumentation-failed"
+assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "screenshot_file=$ARTIFACT_DIR/screenshot.png"
+[[ -s "$ARTIFACT_DIR/screenshot.png" ]] ||
+  fail "Expected emulator helper to capture a failure screenshot"
 grep -q "FAILURES!!!" "$ARTIFACT_DIR/instrumentation.txt" ||
   fail "Expected regression failed report to link persisted instrumentation failure output"
 

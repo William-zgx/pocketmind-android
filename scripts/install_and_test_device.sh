@@ -21,6 +21,8 @@ ABI_LIST=""
 DATA_FREE_KB=""
 INSTRUMENTATION_STATUS="not-run"
 INSTRUMENTATION_TEST_COUNT=""
+FAILED_TARGET=""
+FAILURE_REASON=""
 
 PACKAGE_NAME="com.bytedance.zgx.pocketmind"
 TEST_PACKAGE_NAME="${PACKAGE_NAME}.test"
@@ -40,6 +42,8 @@ write_verification_report() {
     echo "status=$status_label"
     echo "exit_code=$exit_code"
     echo "target=device"
+    echo "failedTarget=${FAILED_TARGET:-}"
+    echo "reason=${FAILURE_REASON:-}"
     echo "started_at_utc=$STARTED_AT_UTC"
     echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "serial=${SELECTED_SERIAL:-}"
@@ -58,22 +62,32 @@ write_verification_report() {
 
 trap 'status=$?; write_verification_report "$status"; exit "$status"' EXIT
 
-scripts/doctor.sh --device
+fail_with_reason() {
+  FAILED_TARGET="$1"
+  FAILURE_REASON="$2"
+  shift 2
+  echo "$*" >&2
+  exit 1
+}
+
+if ! scripts/doctor.sh --device; then
+  fail_with_reason doctor doctor-device-failed "Android device environment check failed."
+fi
 
 if [[ -n "${ANDROID_SERIAL:-}" ]]; then
   SELECTED_SERIAL="$ANDROID_SERIAL"
   SELECTED_STATE="$("$ADB_BIN" devices | awk -v serial="$SELECTED_SERIAL" '$1 == serial {print $2; found = 1} END {if (!found) print ""}')"
   if [[ "$SELECTED_STATE" != "device" ]]; then
     "$ADB_BIN" devices
-    echo "ANDROID_SERIAL=$SELECTED_SERIAL is not an authorized Android device; state is ${SELECTED_STATE:-missing}." >&2
-    exit 1
+    fail_with_reason device-selection selected-device-unavailable \
+      "ANDROID_SERIAL=$SELECTED_SERIAL is not an authorized Android device; state is ${SELECTED_STATE:-missing}."
   fi
 else
   DEVICE_COUNT="$("$ADB_BIN" devices | awk 'NR > 1 && $2 == "device" {count += 1} END{print count + 0}')"
   if [[ "$DEVICE_COUNT" != "1" ]]; then
     "$ADB_BIN" devices
-    echo "Connect exactly one authorized Android device, or set ANDROID_SERIAL to select one." >&2
-    exit 1
+    fail_with_reason device-selection device-selection-ambiguous \
+      "Connect exactly one authorized Android device, or set ANDROID_SERIAL to select one."
   fi
   SELECTED_SERIAL="$("$ADB_BIN" devices | awk 'NR > 1 && $2 == "device" {print $1; exit}')"
 fi
@@ -84,14 +98,14 @@ echo "Using Android device: $SELECTED_SERIAL"
 API_LEVEL="$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
 ABI_LIST="$("${ADB[@]}" shell getprop ro.product.cpu.abilist64 | tr -d '\r')"
 if [[ "$ABI_LIST" != *"arm64-v8a"* ]]; then
-  echo "Connected device is not arm64-v8a compatible: ${ABI_LIST:-unknown}" >&2
-  exit 1
+  fail_with_reason device-abi device-abi-not-arm64 \
+    "Connected device is not arm64-v8a compatible: ${ABI_LIST:-unknown}"
 fi
 
 DATA_FREE_KB="$("${ADB[@]}" shell df -k /data | awk 'NR == 2 {print $4}' | tr -d '\r')"
 if [[ "$DATA_FREE_KB" =~ ^[0-9]+$ && "$DATA_FREE_KB" -lt "$REQUIRED_FREE_KB" ]]; then
-  echo "Connected device has less than 3 GB free on /data; model download/import may fail." >&2
-  exit 1
+  fail_with_reason data-free-space data-free-below-threshold \
+    "Connected device has less than 3 GB free on /data; model download/import may fail."
 fi
 
 if [[ "$CLEAN_DEVICE" == "1" ]]; then
@@ -146,14 +160,20 @@ printf '%s\n' "$TEST_OUTPUT"
 INSTRUMENTATION_TEST_COUNT="$(instrumentation_test_count_for "$TEST_OUTPUT")"
 if [[ "$TEST_STATUS" -eq 0 ]] && instrumentation_output_failed "$TEST_OUTPUT"; then
   TEST_STATUS=1
+  FAILED_TARGET="instrumentation"
+  FAILURE_REASON="instrumentation-failed"
 fi
 if [[ "$TEST_STATUS" -eq 0 ]] && ! instrumentation_output_succeeded "$TEST_OUTPUT"; then
   echo "Instrumentation output did not include a final OK/success marker." >&2
   TEST_STATUS=1
+  FAILED_TARGET="instrumentation"
+  FAILURE_REASON="instrumentation-success-marker-missing"
 fi
 if [[ "$TEST_STATUS" -ne 0 ]]; then
   INSTRUMENTATION_STATUS="failed"
   if grep -q "INSTALL_FAILED_USER_RESTRICTED" <<<"$TEST_OUTPUT"; then
+    FAILED_TARGET="install"
+    FAILURE_REASON="install-user-restricted"
     cat >&2 <<'EOF'
 
 Device refused ADB installation.
@@ -161,6 +181,12 @@ On Xiaomi/HyperOS/MIUI devices, enable Developer options -> USB debugging,
 USB install / Install via USB, and accept any install confirmation shown on the phone.
 Then rerun scripts/install_and_test_device.sh.
 EOF
+  fi
+  if [[ -z "$FAILED_TARGET" ]]; then
+    FAILED_TARGET="instrumentation"
+  fi
+  if [[ -z "$FAILURE_REASON" ]]; then
+    FAILURE_REASON="instrumentation-command-failed"
   fi
   exit "$TEST_STATUS"
 fi
