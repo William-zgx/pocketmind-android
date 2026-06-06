@@ -23,6 +23,35 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Privacy review evidence packet refresh
+
+本轮覆盖项：
+
+- 同步 `docs/privacy_review.json.noticeSha256` 到当前 `docs/privacy_notice.md`。
+- 新增 release/security/legal 三份 pending privacy review evidence packet，作为 reviewer
+  审查输入；它们明确标记 `status=pending`、`approvalStatus=not-approved`。
+- 不修改三方 `decision`、reviewer 或 review date；public privacy review 仍保持
+  fail-closed。
+
+验证命令：
+
+```bash
+shasum -a 256 docs/privacy_notice.md docs/privacy_review_evidence/*.properties
+scripts/verify_privacy_review.sh --report build/verification/privacy-review-current.properties
+```
+
+结果：
+
+- 通过：当前 privacy notice SHA 为
+  `027ffabe4d4be62c3ce14434c8bdcee9d106620222af37d8d937fcbbddf65385`，已写入
+  `docs/privacy_review.json`。
+- 通过：三份 pending evidence packet 的 SHA-256 已绑定到 review 文件：
+  release `9915a7262b5ffcdddd5539e3143a0d689ea0857d85aab6b1ac1a4ca985b3e8b8`，
+  security `9a2f6c6348e6063937d0e20ae865f4f7b28fdf8215de87edcb7cca44d6fca3ca`，
+  legal `75bbb042f32b460eeacd2bfcf6348a4cb4e33cb7f69741dcbb808b8a417bc51f`。
+- 预期失败：`scripts/verify_privacy_review.sh` 仍记录 `status=failed`；当前失败原因
+  只剩 release/security/legal 三方 decision、reviewer 和 review date。
+
 ## 2026-06-07 Model license source metadata refresh
 
 本轮覆盖项：
