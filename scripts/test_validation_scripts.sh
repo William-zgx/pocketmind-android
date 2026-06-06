@@ -265,6 +265,8 @@ grep -q 'scripts/verify_privacy_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_privacy_review.sh in shell syntax checks"
 grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
+grep -q 'scripts/verify_release_mapping.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_release_mapping.sh in shell syntax checks"
 grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
 grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
@@ -316,6 +318,27 @@ expect_failure \
   "perf baseline verifier rejects mismatched artifact sha" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 different-sha --report "$ARTIFACT_DIR/perf-sha-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-sha-failed.properties" "status=failed"
+
+RELEASE_MAPPING="$TMP_DIR/mapping.txt"
+printf 'com.bytedance.zgx.pocketmind.Sample -> a:\n' > "$RELEASE_MAPPING"
+expect_success \
+  "release mapping verifier accepts non-empty mapping file" \
+  scripts/verify_release_mapping.sh --file "$RELEASE_MAPPING" --report "$ARTIFACT_DIR/release-mapping.properties"
+assert_report_contains "$ARTIFACT_DIR/release-mapping.properties" "status=passed"
+grep -q '^mappingSha256=' "$ARTIFACT_DIR/release-mapping.properties" ||
+  fail "release mapping report must include mapping sha"
+grep -q '^mappingSizeBytes=' "$ARTIFACT_DIR/release-mapping.properties" ||
+  fail "release mapping report must include mapping size"
+expect_failure \
+  "release mapping verifier rejects missing mapping file" \
+  scripts/verify_release_mapping.sh --file "$TMP_DIR/missing-mapping.txt" --report "$ARTIFACT_DIR/release-mapping-missing.properties"
+assert_report_contains "$ARTIFACT_DIR/release-mapping-missing.properties" "status=failed"
+EMPTY_RELEASE_MAPPING="$TMP_DIR/empty-mapping.txt"
+: > "$EMPTY_RELEASE_MAPPING"
+expect_failure \
+  "release mapping verifier rejects empty mapping file" \
+  scripts/verify_release_mapping.sh --file "$EMPTY_RELEASE_MAPPING" --report "$ARTIFACT_DIR/release-mapping-empty.properties"
+assert_report_contains "$ARTIFACT_DIR/release-mapping-empty.properties" "status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
@@ -601,6 +624,7 @@ assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.p
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireSignedArtifact=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseMapping=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/signing-cert.properties" "status=failed"
 
 expect_failure \
@@ -613,6 +637,17 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-require-aab/android-artifact-scan.properties" "status=failed"
+expect_failure \
+  "release gate requires mapping when mapping gate is enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-mapping-gate" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_RELEASE_MAPPING=1 \
+  RELEASE_MAPPING_FILE="$TMP_DIR/missing-mapping.txt" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-mapping-gate/release-mapping.properties" "status=failed"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh

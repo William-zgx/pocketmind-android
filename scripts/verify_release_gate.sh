@@ -18,6 +18,8 @@ VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
+VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
+RELEASE_MAPPING_FILE="${RELEASE_MAPPING_FILE:-app/build/outputs/mapping/release/mapping.txt}"
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
 EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 GRADLE_CMD="${GRADLE_CMD:-./gradlew}"
@@ -29,6 +31,7 @@ if [[ "$PUBLIC_RELEASE" == "1" ]]; then
   VERIFY_PRIVACY_REVIEW=1
   REQUIRE_AAB=1
   REQUIRE_SIGNED_ARTIFACT=1
+  VERIFY_RELEASE_MAPPING=1
 fi
 
 write_gate_report() {
@@ -42,6 +45,8 @@ write_gate_report() {
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
     printf 'requireSignedArtifact=%s\n' "$REQUIRE_SIGNED_ARTIFACT"
+    printf 'verifyReleaseMapping=%s\n' "$VERIFY_RELEASE_MAPPING"
+    printf 'releaseMappingFile=%s\n' "$RELEASE_MAPPING_FILE"
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
     printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
   } > "$ARTIFACT_DIR/release-gate.properties"
@@ -132,6 +137,20 @@ else
   echo "PERF_BASELINE_FILE must point at the RC perf-baseline.properties file." >&2
   write_gate_report failed
   exit 1
+fi
+
+if [[ "$VERIFY_RELEASE_MAPPING" == "1" ]]; then
+  if ! scripts/verify_release_mapping.sh --file "$RELEASE_MAPPING_FILE" --report "$ARTIFACT_DIR/release-mapping.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=release-mapping\n'
+    printf 'reason=VERIFY_RELEASE_MAPPING-not-enabled\n'
+    printf 'mappingFile=%s\n' "$RELEASE_MAPPING_FILE"
+  } > "$ARTIFACT_DIR/release-mapping.properties"
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then

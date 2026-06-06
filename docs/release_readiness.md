@@ -17,7 +17,7 @@ items below.
   privacy scanning, privacy notice review records, APK/AAB artifact scanning,
   model license review records, RC perf-baseline verification, artifact SHA
   matching, and optional public release enforcement for signed artifacts plus
-  AAB presence.
+  AAB presence and release mapping output.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -46,7 +46,7 @@ items below.
 - Current release-candidate emulator regression passed with
   `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
   `emulator-5554` (API 36, `arm64-v8a`):
-  `build/verification/regression-emulator-20260604-040806/regression-emulator.properties`
+  `build/verification/regression-emulator-20260606-121722/regression-emulator.properties`
   records `status=passed`, nested emulator/device reports passed, and
   `instrumentation_test_count=26` matching the 26 AndroidTest source count.
 
@@ -87,4 +87,4 @@ items below.
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
   production signing and bundle generation are complete. `PUBLIC_RELEASE=1`
   enables privacy review, model license, AAB, signed-artifact, and certificate
-  fingerprint checks.
+  fingerprint checks, plus release mapping verification.

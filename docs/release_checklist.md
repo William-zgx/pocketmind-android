@@ -150,7 +150,9 @@ release ticket or PR.
 - [ ] Release assembly and bundle tasks pass with release minification/resource
   shrinking enabled.
 - [ ] ProGuard/R8 mapping files for the release candidate are archived with the
-  artifact so crash stacks can be decoded.
+  artifact so crash stacks can be decoded. Attach
+  `release-mapping.properties` from `scripts/verify_release_mapping.sh`; the
+  `PUBLIC_RELEASE=1` gate requires this mapping check.
 
 ## Test Matrix
 

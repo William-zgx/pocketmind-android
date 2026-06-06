@@ -6655,3 +6655,42 @@ scripts/verify_local.sh
 - 通过：脚本单测覆盖 privacy review 的未来日期失败。
 - 通过：脚本单测覆盖 model license review 的未来日期失败。
 - 通过：`scripts/verify_local.sh`。
+
+## 2026-06-06 Release mapping gate
+
+本轮覆盖项：
+
+- 新增 `scripts/verify_release_mapping.sh`，校验 release R8/ProGuard
+  `mapping.txt` 存在且非空，并生成 `release-mapping.properties`，记录
+  mapping 路径、SHA-256 和字节数。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_RELEASE_MAPPING=1`；正式
+  `PUBLIC_RELEASE=1` profile 会自动开启 mapping gate。
+- release checklist 明确要求归档 `release-mapping.properties` 和对应
+  mapping 文件，避免正式包发布后无法反混淆 crash stack。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+scripts/verify_release_mapping.sh --report build/verification/release-mapping/release-mapping.properties
+
+AVD_NAME=focus_agent_api36_arm64 \
+EMULATOR_ARGS='-no-window -no-audio -no-snapshot-save -no-boot-anim' \
+EMULATOR_SELECT_TIMEOUT_SECONDS=120 \
+BOOT_TIMEOUT_SECONDS=300 \
+scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 release mapping verifier 成功、缺失失败、空文件失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用 `verifyReleaseMapping=1`。
+- 通过：脚本单测覆盖 `VERIFY_RELEASE_MAPPING=1` 时 release gate 对缺失
+  mapping fail-closed。
+- 通过：`scripts/verify_local.sh`。
+- 通过：真实 release mapping verifier；报告为
+  `build/verification/release-mapping/release-mapping.properties`。
+- 通过：仅模拟器回归；`focus_agent_api36_arm64` / `emulator-5554` / API 36 /
+  `arm64-v8a`，`build/verification/regression-emulator-20260606-121722/regression-emulator.properties`
+  记录 `status=passed`，instrumentation 为 `OK (26 tests)`。
