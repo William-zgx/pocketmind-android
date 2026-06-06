@@ -3321,12 +3321,7 @@ class PocketMindViewModel(
         val memoryEnabled = firstRunSetupRepository.isMemoryEnabled()
         val inferenceMode = remoteModelRepository.loadMode()
         val remoteConfig = remoteModelRepository.loadConfig()
-        val firstRunDismissed = firstRunSetupRepository.isSetupDismissed()
-        val shouldShowSetup = shouldShowStartupModelSetup(
-            firstRunDismissed = firstRunDismissed,
-            modelState = modelState,
-            remoteConfig = remoteConfig,
-        )
+        val hasUsableEndpoint = hasStartupModelEndpoint(modelState, remoteConfig)
         memoryRepository.enabled = memoryEnabled
         syncTaskStateMemories(memoryEnabled = memoryEnabled)
         syncSemanticMemoryRuntime()
@@ -3339,7 +3334,7 @@ class PocketMindViewModel(
             remoteModelConfig = remoteConfig,
             backend = backend,
             modelHealth = modelState.modelHealthForCurrentSelection(backend),
-            showFirstRunSetup = shouldShowSetup,
+            showFirstRunSetup = false,
             memoryEnabled = memoryEnabled,
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
             semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
@@ -3355,7 +3350,7 @@ class PocketMindViewModel(
             messages = sessionRepository.activeMessages(),
             isArm64Supported = isArm64Device(),
             availableModelStorageBytes = modelRepository.resolveModelStorageBytes(),
-            statusText = if (shouldShowSetup && firstRunDismissed) {
+            statusText = if (!hasUsableEndpoint) {
                 "未找到可用模型，请下载、导入或配置远程模型"
             } else {
                 "未加载模型"
@@ -3363,12 +3358,11 @@ class PocketMindViewModel(
         )
     }
 
-    private fun shouldShowStartupModelSetup(
-        firstRunDismissed: Boolean,
+    private fun hasStartupModelEndpoint(
         modelState: ModelSelectionState,
         remoteConfig: RemoteModelConfig,
     ): Boolean =
-        !firstRunDismissed || (modelState.activeModelPath == null && !remoteConfig.isConfigured)
+        modelState.activeModelPath != null || remoteConfig.isConfigured
 
     private fun updateModelState(modelState: ModelSelectionState) {
         syncSemanticMemoryRuntime()

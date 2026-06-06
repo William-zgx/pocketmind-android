@@ -148,7 +148,29 @@ class PocketMindViewModelTest {
     }
 
     @Test
-    fun startupShowsSetupAgainWhenDismissedButNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
+    fun startupDoesNotShowSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = null),
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Local,
+                config = RemoteModelConfig(),
+            ),
+            firstRunStore = FakeFirstRunSetupStore(setupDismissed = false),
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showFirstRunSetup)
+        assertFalse(viewModel.uiState.value.isReady)
+        assertEquals(
+            "未找到可用模型，请下载、导入或配置远程模型",
+            viewModel.uiState.value.statusText,
+        )
+    }
+
+    @Test
+    fun startupKeepsSetupDismissedWhenNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
         val viewModel = createViewModel(
             modelRepository = FakeModelRepository(activeModelPath = null),
             remoteStore = FakeRemoteModelStore(
@@ -161,7 +183,7 @@ class PocketMindViewModelTest {
         viewModel.restoreStartupState(skipModelRuntimeWork = true)
         advanceUntilIdle()
 
-        assertTrue(viewModel.uiState.value.showFirstRunSetup)
+        assertFalse(viewModel.uiState.value.showFirstRunSetup)
         assertFalse(viewModel.uiState.value.isReady)
         assertEquals(
             "未找到可用模型，请下载、导入或配置远程模型",

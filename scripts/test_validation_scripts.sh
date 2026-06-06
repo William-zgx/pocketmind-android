@@ -303,6 +303,10 @@ create_fake_gradle() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_GRADLE_LOG:?}"
+if [[ "$*" == *":app:assembleDebug"* || "$*" == *" assembleDebug"* ]]; then
+  mkdir -p app/build/outputs/apk/debug
+  printf 'fake debug apk\n' > app/build/outputs/apk/debug/app-debug.apk
+fi
 FAKE_GRADLE
   chmod +x "$path"
 }
@@ -431,6 +435,8 @@ grep -q 'scripts/prepare_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include prepare_emulator_api_matrix.sh in shell syntax checks"
 grep -q 'scripts/regression_emulator_api_matrix.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include regression_emulator_api_matrix.sh in shell syntax checks"
+grep -q 'scripts/install_review_device.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include install_review_device.sh in shell syntax checks"
 grep -q 'scripts/live_remote_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include live_remote_emulator.sh in shell syntax checks"
 grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
@@ -1793,6 +1799,42 @@ assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-started-at-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-data-free-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-device-report.properties" "physical-device-report-instrumentation-output-file-missing"
+VALIDATION_MANUAL_INSTALL_AS_DEVICE_RECORD="$TMP_DIR/release-validation-manual-install-as-device.json"
+VALIDATION_MANUAL_INSTALL_REPORT="$TMP_DIR/manual-acceptance-install-device.properties"
+cat > "$VALIDATION_MANUAL_INSTALL_REPORT" <<VALIDATION_MANUAL_INSTALL_REPORT_PROPERTIES
+status=passed
+exit_code=0
+target=manual-acceptance-install
+manualAcceptanceInstall=true
+regressionEvidence=false
+started_at_utc=2026-06-06T00:00:00Z
+finished_at_utc=2026-06-06T00:01:00Z
+serial=device-a
+api_level=36
+abi=arm64-v8a
+clean_device=0
+kept_app_data=1
+instrumentation=not-run
+VALIDATION_MANUAL_INSTALL_REPORT_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_MANUAL_INSTALL_AS_DEVICE_RECORD" "$VALIDATION_MANUAL_INSTALL_REPORT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+report = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["physicalDevice"]["reportPath"] = str(report)
+record["physicalDevice"]["reportSha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects manual install report as physical regression evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_MANUAL_INSTALL_AS_DEVICE_RECORD" --report "$ARTIFACT_DIR/release-validation-manual-install-as-device.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-manual-install-as-device.properties" "physical-device-report-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-manual-install-as-device.properties" "physical-device-report-instrumentation-not-passed"
 VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH="$TMP_DIR/release-validation-device-output-count-mismatch.json"
 VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_REPORT="$TMP_DIR/device-output-count-mismatch.properties"
 VALIDATION_DEVICE_OUTPUT_COUNT_MISMATCH_OUTPUT="$TMP_DIR/instrumentation-count-mismatch.txt"
@@ -3239,6 +3281,58 @@ grep -q -- "-s device-b shell getprop ro.product.cpu.abilist64" "$FAKE_ADB_LOG" 
   fail "Expected adb device commands to target ANDROID_SERIAL"
 grep -q -- "-s device-b install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
   fail "Expected debug APK install to target ANDROID_SERIAL"
+
+reset_logs
+expect_success \
+  "review install helper preserves app data and does not run instrumentation" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/install_review_device.sh
+grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
+  fail "Expected review install helper to assemble debug APK"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "target=manual-acceptance-install"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "manualAcceptanceInstall=true"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "regressionEvidence=false"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "clean_device=0"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "kept_app_data=1"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "instrumentation=not-run"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config=not-requested"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "install_output_file=$ARTIFACT_DIR/install.txt"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "start_output_file=$ARTIFACT_DIR/start.txt"
+[[ -s "$ARTIFACT_DIR/install.txt" ]] ||
+  fail "Expected review install helper to preserve install output"
+[[ -s "$ARTIFACT_DIR/start.txt" ]] ||
+  fail "Expected review install helper to preserve start output"
+grep -q -- "-s device-a install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
+  fail "Expected review install helper to install debug APK"
+if grep -q -- "pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+  fail "Review install helper must not clear app data"
+fi
+if grep -q -- "uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+  fail "Review install helper must not uninstall app by default"
+fi
+if grep -q -- "am instrument" "$FAKE_ADB_LOG"; then
+  fail "Review install helper must not run instrumentation"
+fi
+
+reset_logs
+expect_success \
+  "review install helper can inject debug remote config without logging secrets" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  POCKETMIND_REVIEW_REMOTE_BASE_URL="https://example.invalid" \
+  POCKETMIND_REVIEW_REMOTE_MODEL="example-model" \
+  POCKETMIND_REVIEW_REMOTE_API_KEY="example-secret" \
+  scripts/install_review_device.sh
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config=saved"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config_source=POCKETMIND_REVIEW_REMOTE_BASE_URL,POCKETMIND_REVIEW_REMOTE_MODEL,POCKETMIND_REVIEW_REMOTE_API_KEY"
+grep -q -- "-s device-a shell run-as com.bytedance.zgx.pocketmind am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+  fail "Expected review install helper to use debug receiver via run-as"
+if grep -q "example-secret" "$ARTIFACT_DIR/manual-acceptance-install-device.properties"; then
+  fail "Review install report must not persist remote API key"
+fi
 
 reset_logs
 expect_failure \

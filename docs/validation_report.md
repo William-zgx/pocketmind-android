@@ -23,6 +23,43 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Manual review install and setup page loop fix
+
+本轮覆盖项：
+
+- 首屏不再把“准备基础能力包”作为全新安装默认页；没有本地模型和远程配置时仍进入
+  PocketMind 主界面，并通过主界面卡片提示去下载、导入或配置远程模型。
+- 新增 `scripts/install_review_device.sh` 作为人工验收安装入口；它不运行
+  instrumentation、不默认清 App 数据，报告标记为 `target=manual-acceptance-install`
+  和 `regressionEvidence=false`。
+- `scripts/install_and_test_device.sh` 的自动回归洁净行为保持不变，仍默认
+  `RESET_APP_DATA_AFTER_TESTS=1`。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+./gradlew --no-daemon -Pkotlin.incremental=false :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotShowSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupKeepsSetupDismissedWhenNoLocalOrRemoteModelIsAvailable' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotReopenSetupWhenRemoteModelIsConfigured'
+ARTIFACT_DIR=build/verification/fresh-start-main-shell-current AVD_NAME=pocketmind_api36_arm64 bash -c 'assemble debug, clean install, launch MainActivity, capture screencap/uiautomator dump, assert no "准备基础能力包", assert "PocketMind 已进入，模型待配置"'
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：`scripts/test_validation_scripts.sh`，确认人工验收安装 report 不清 App 数据、
+  不运行 instrumentation、不落远程 API key，且不能被 release validation 误当作
+  physical regression evidence。
+- 通过：targeted ViewModel JVM tests，确认 fresh install 和已跳过状态都不再显示准备区；
+  远程模型已配置时仍直接进入 ready 状态。
+- 通过：API 36 clean install 手工启动验证，
+  `build/verification/fresh-start-main-shell-current/fresh-start-main-shell.properties`
+  记录 `status=passed`、`target=fresh-start-main-shell`、
+  `first_run_setup_visible=false`、`main_shell_copy_visible=true`；截图为
+  `build/verification/fresh-start-main-shell-current/fresh-start.png`，UI dump 为
+  `build/verification/fresh-start-main-shell-current/fresh-start.xml`。
+- 通过：`scripts/verify_local.sh`，包含 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+
 ## 2026-06-07 API 36 default emulator startup validation
 
 本轮覆盖项：
@@ -59,7 +96,7 @@ scripts/verify_release_validation_record.sh --report build/verification/release-
 - 预期失败：release validation record 仍未 approved，当前失败原因继续是未完成的
   physical device full evidence、API 28/32/33/34 matrix、manual acceptance、flow
   matrix、performance sanity 和 reviewer/date。API 36 evidence 已绑定到本轮通过的
- 完整回归报告。
+  完整回归报告。
 
 ## 2026-06-06 Physical install and live remote device validation
 

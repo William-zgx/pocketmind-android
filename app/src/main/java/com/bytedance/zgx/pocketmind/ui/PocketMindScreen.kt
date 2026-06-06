@@ -699,7 +699,7 @@ private fun ChatEmptyState(
     val readyTitle = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady -> "远程模型已就绪"
         state.isReady -> "本机模型已就绪"
-        else -> "准备你的随身模型"
+        else -> "PocketMind 已进入，模型待配置"
     }
     val readyDescription = when {
         state.inferenceMode == InferenceMode.Remote && state.isReady ->
@@ -707,7 +707,7 @@ private fun ChatEmptyState(
         state.isReady ->
             "当前会话为空，选择一个开场问题，或在底部直接输入。问答和历史记录会保留在本机。"
         else ->
-            "先下载推荐模型或导入已有 .litertlm 文件；加载成功后即可离线问答。"
+            "主界面、会话和工具入口已经可用；进入模型管理配置本地或远程模型后即可开始问答。"
     }
     Column(
         modifier = Modifier

@@ -59,6 +59,34 @@ CLEAN_DEVICE=1 scripts/install_and_test_device.sh
 
 需要保留真机安装时，不要直接运行 `./gradlew :app:connectedDebugAndroidTest`；Android Gradle Plugin 可能会在 instrumentation 结束后清理安装包。
 
+## 人工验收安装
+
+如果目的是在手机上继续人工查看页面、远程配置或已保存会话，不要使用完整 smoke
+脚本作为最后一步。`scripts/install_and_test_device.sh` 默认会在测试后清空 App 数据，
+这会清掉远程模型配置并把 App 带回无模型、无远程配置的干净起点。
+
+人工查看当前 debug 包时使用：
+
+```bash
+ANDROID_SERIAL=<physical-device-serial> \
+ARTIFACT_DIR=build/verification/manual-acceptance-install-current \
+scripts/install_review_device.sh
+```
+
+需要临时注入远程模型配置时，通过环境变量传入；报告只记录变量来源，不记录实际密钥：
+
+```bash
+ANDROID_SERIAL=<physical-device-serial> \
+POCKETMIND_REVIEW_REMOTE_BASE_URL=<https-base-url> \
+POCKETMIND_REVIEW_REMOTE_MODEL=<model-name> \
+POCKETMIND_REVIEW_REMOTE_API_KEY=<api-key> \
+ARTIFACT_DIR=build/verification/manual-acceptance-install-remote-current \
+scripts/install_review_device.sh
+```
+
+该脚本生成 `target=manual-acceptance-install`、`regressionEvidence=false` 的 report；
+它只用于人工验收安装，不能作为 release validation 的 physical regression evidence。
+
 ## RC 性能基线
 
 正式 RC 需要把真机实测指标写成 `perf-baseline.properties`，并与签名 APK/AAB 的
