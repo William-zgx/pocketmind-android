@@ -159,6 +159,9 @@ FAKE_PACKAGE_DUMPSYS
       uiautomator\ dump\ /sdcard/pocketmind-fresh-start.xml)
         echo "UI hierchary dumped to: /sdcard/pocketmind-fresh-start.xml"
         ;;
+      uiautomator\ dump\ /sdcard/pocketmind-model-manager.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-model-manager.xml"
+        ;;
       uiautomator\ dump\ /sdcard/pocketmind-release-*.xml)
         echo "UI hierchary dumped to: ${*:3}"
         ;;
@@ -212,7 +215,21 @@ FAKE_PACKAGE_DUMPSYS
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
         ;;
       /sdcard/pocketmind-fresh-start.xml)
-        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_FRESH_START_UI_TEXT:-隐私优先的随身 AI 助手}" > "$destination"
+        if [[ -n "${FAKE_FRESH_START_UI_TEXT:-}" ]]; then
+          printf '<hierarchy><node text="%s" /></hierarchy>\n' "$FAKE_FRESH_START_UI_TEXT" > "$destination"
+        else
+          cat > "$destination" <<'FAKE_FRESH_START_UI'
+<hierarchy>
+  <node text="PocketMind" enabled="true" clickable="false" bounds="[76,150][303,223]" />
+  <node text="隐私优先的随身 AI 助手" enabled="true" clickable="false" bounds="[76,226][303,275]" />
+  <node content-desc="模型管理" enabled="true" clickable="true" bounds="[471,149][597,275]" />
+  <node text="开始和 PocketMind 对话" enabled="true" clickable="false" bounds="[94,600][778,691]" />
+</hierarchy>
+FAKE_FRESH_START_UI
+        fi
+        ;;
+      /sdcard/pocketmind-model-manager.xml)
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_MODEL_MANAGER_UI_TEXT:-选择本地离线或可选远程；远程发送和设备动作仍会先确认。}" > "$destination"
         ;;
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
@@ -3934,14 +3951,33 @@ assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "target
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "serial=emulator-5554"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_visible=false"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "main_shell_copy_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_manager_click_opened=true"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "screenshot=$ARTIFACT_DIR/fresh-start.png"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "window_dump=$ARTIFACT_DIR/fresh-start.xml"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_manager_window_dump=$ARTIFACT_DIR/model-manager.xml"
 grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to clean install the app"
 grep -q -- "-s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to install debug APK"
 grep -q -- "-s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to launch MainActivity"
+grep -q -- "-s emulator-5554 shell input tap 534 212" "$FAKE_ADB_LOG" ||
+  fail "Expected fresh start helper to tap the model manager button"
+assert_report_contains_text "$ARTIFACT_DIR/model-manager.xml" "选择本地离线或可选远程"
+
+reset_logs
+expect_failure \
+  "fresh start main shell helper rejects model manager click with no response" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
+  FAKE_MODEL_MANAGER_UI_TEXT="仍停留在主页面" \
+  GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "failedTarget=ui"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "reason=model-manager-click-no-response"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "main_shell_copy_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_manager_click_opened=false"
 
 reset_logs
 expect_failure \

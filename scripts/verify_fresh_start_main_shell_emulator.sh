@@ -22,11 +22,14 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-build/verification/fresh-start-main-shell-$(date +
 REPORT_FILE="${REPORT_FILE:-${ARTIFACT_DIR}/fresh-start-main-shell.properties}"
 SCREENSHOT_FILE="${ARTIFACT_DIR}/fresh-start.png"
 WINDOW_DUMP_FILE="${ARTIFACT_DIR}/fresh-start.xml"
+MODEL_MANAGER_DUMP_FILE="${ARTIFACT_DIR}/model-manager.xml"
 LOGCAT_FILE="${ARTIFACT_DIR}/logcat.txt"
 EMULATOR_LOG="${ARTIFACT_DIR}/emulator.log"
 
 MAIN_COPY_TEXT="${MAIN_COPY_TEXT:-隐私优先的随身 AI 助手}"
 FORBIDDEN_FIRST_RUN_TEXT="${FORBIDDEN_FIRST_RUN_TEXT:-离线基础问答可选下载}"
+MODEL_MANAGER_BUTTON_LABEL="${MODEL_MANAGER_BUTTON_LABEL:-模型管理}"
+MODEL_MANAGER_EXPECTED_TEXT="${MODEL_MANAGER_EXPECTED_TEXT:-选择本地离线或可选远程；远程发送和设备动作仍会先确认。}"
 SELECTED_SERIAL=""
 API_LEVEL=""
 ABI_LIST=""
@@ -37,6 +40,7 @@ STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STARTED_EMULATOR=0
 FIRST_RUN_SETUP_VISIBLE=""
 MAIN_SHELL_COPY_VISIBLE=""
+MODEL_MANAGER_CLICK_OPENED=""
 
 write_report() {
   local exit_code="$1"
@@ -57,20 +61,28 @@ write_report() {
     echo "avd=${AVD_LABEL:-${AVD_NAME:-}}"
     echo "screenshot=$SCREENSHOT_FILE"
     echo "window_dump=$WINDOW_DUMP_FILE"
+    echo "model_manager_window_dump=$MODEL_MANAGER_DUMP_FILE"
     echo "logcat_file=$LOGCAT_FILE"
     echo "emulator_log=$EMULATOR_LOG"
     echo "first_run_setup_visible=${FIRST_RUN_SETUP_VISIBLE:-}"
     echo "main_shell_copy_visible=${MAIN_SHELL_COPY_VISIBLE:-}"
+    echo "model_manager_click_opened=${MODEL_MANAGER_CLICK_OPENED:-}"
   } > "$REPORT_FILE"
   echo "Fresh start main shell report: $REPORT_FILE"
+}
+
+dump_ui() {
+  local remote_path="$1"
+  local local_path="$2"
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell uiautomator dump "$remote_path" >/dev/null 2>&1 || true
+  "$ADB_BIN" -s "$SELECTED_SERIAL" pull "$remote_path" "$local_path" >/dev/null 2>&1 || true
 }
 
 capture_artifacts() {
   if [[ -n "${SELECTED_SERIAL:-}" && -x "$ADB_BIN" ]]; then
     mkdir -p "$ARTIFACT_DIR"
     "$ADB_BIN" -s "$SELECTED_SERIAL" exec-out screencap -p > "$SCREENSHOT_FILE" 2>/dev/null || true
-    "$ADB_BIN" -s "$SELECTED_SERIAL" shell uiautomator dump /sdcard/pocketmind-fresh-start.xml >/dev/null 2>&1 || true
-    "$ADB_BIN" -s "$SELECTED_SERIAL" pull /sdcard/pocketmind-fresh-start.xml "$WINDOW_DUMP_FILE" >/dev/null 2>&1 || true
+    dump_ui /sdcard/pocketmind-fresh-start.xml "$WINDOW_DUMP_FILE"
     "$ADB_BIN" -s "$SELECTED_SERIAL" logcat -d -t 300 > "$LOGCAT_FILE" 2>/dev/null || true
   fi
 }
@@ -178,6 +190,49 @@ install_debug_apk() {
   fail install debug-apk-install-failed "adb install failed after 3 attempts."
 }
 
+tap_clickable_node_by_label() {
+  local label="$1"
+  local dump_file="$2"
+  local point
+  point="$(python3 - "$dump_file" "$label" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+path = Path(sys.argv[1])
+label = sys.argv[2]
+try:
+    root = ET.fromstring(path.read_text(errors="ignore"))
+except Exception:
+    sys.exit(1)
+
+def bounds_center(bounds):
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds or "")
+    if not match:
+        return None
+    left, top, right, bottom = map(int, match.groups())
+    return (left + right) // 2, (top + bottom) // 2
+
+for node in root.iter("node"):
+    if node.attrib.get("enabled") != "true":
+        continue
+    if node.attrib.get("clickable") != "true":
+        continue
+    if node.attrib.get("content-desc") != label and node.attrib.get("text") != label:
+        continue
+    center = bounds_center(node.attrib.get("bounds"))
+    if center:
+        print(center[0], center[1])
+        sys.exit(0)
+sys.exit(1)
+PY
+)"
+  [[ -n "$point" ]] ||
+    fail ui model-manager-button-not-found "Could not find a clickable $label node in $dump_file."
+  "$ADB_BIN" -s "$SELECTED_SERIAL" shell input tap $point >/dev/null
+}
+
 [[ -x "$ADB_BIN" ]] || fail adb adb-missing "adb not found at $ADB_BIN."
 [[ -x "$EMULATOR_BIN" ]] || fail emulator emulator-missing "Android emulator binary not found at $EMULATOR_BIN."
 mkdir -p "$ARTIFACT_DIR"
@@ -222,5 +277,16 @@ if ! grep -Fq "$MAIN_COPY_TEXT" "$WINDOW_DUMP_FILE"; then
   fail ui main-shell-copy-missing "Fresh start UI dump is missing $MAIN_COPY_TEXT."
 fi
 MAIN_SHELL_COPY_VISIBLE="true"
+
+MODEL_MANAGER_CLICK_OPENED="false"
+tap_clickable_node_by_label "$MODEL_MANAGER_BUTTON_LABEL" "$WINDOW_DUMP_FILE"
+sleep 2
+dump_ui /sdcard/pocketmind-model-manager.xml "$MODEL_MANAGER_DUMP_FILE"
+[[ -s "$MODEL_MANAGER_DUMP_FILE" ]] ||
+  fail evidence model-manager-window-dump-missing "Model manager UI dump was not captured."
+if ! grep -Fq "$MODEL_MANAGER_EXPECTED_TEXT" "$MODEL_MANAGER_DUMP_FILE"; then
+  fail ui model-manager-click-no-response "Tapping $MODEL_MANAGER_BUTTON_LABEL did not open the model manager sheet."
+fi
+MODEL_MANAGER_CLICK_OPENED="true"
 
 echo "Fresh start main shell validation passed."

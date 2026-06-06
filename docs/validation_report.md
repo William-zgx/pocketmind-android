@@ -9795,3 +9795,41 @@ git diff --check
   release AAB 和 artifact scan。
 - 通过：使用用户提供的 DeepSeek endpoint、model 和 key 字面量做仓库扫描，
   均未命中；具体敏感 literal 未写入文档。
+
+## 2026-06-07 Fresh-start main shell interaction smoke
+
+本轮覆盖项：
+
+- `scripts/verify_fresh_start_main_shell_emulator.sh` 在 clean install 后不只检查
+  主 Shell 文案，还会从真实 UI dump 中定位 clickable `模型管理` 节点并执行
+  `adb shell input tap`。
+- 点击后脚本采集 `model-manager.xml`，要求模型管理 sheet 出现
+  `选择本地离线或可选远程；远程发送和设备动作仍会先确认。`，否则以
+  `model-manager-click-no-response` fail-closed。
+- report 新增 `model_manager_window_dump` 和 `model_manager_click_opened`，
+  用于区分“首屏文案存在”与“关键控件确实可交互”。
+- `scripts/test_validation_scripts.sh` 新增 fake adb 正例和“点击后仍停留主页面”
+  负例，覆盖用户反馈的“页面看起来卡住、点击没反应”风险。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_fresh_start_main_shell_emulator.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+AVD_NAME=pocketmind_api36_arm64 ARTIFACT_DIR=build/verification/fresh-start-interactive-current scripts/verify_fresh_start_main_shell_emulator.sh
+bash scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：API 36 arm64 clean install fresh-start，
+  `build/verification/fresh-start-interactive-current/fresh-start-main-shell.properties`
+  记录 `first_run_setup_visible=false`、`main_shell_copy_visible=true`、
+  `model_manager_click_opened=true`。
+- 通过：`fresh-start.xml` 包含 `隐私优先的随身 AI 助手` 和
+  `开始和 PocketMind 对话`，不包含 `离线基础问答可选下载`。
+- 通过：点击后 `model-manager.xml` 包含 `模型管理`、`当前模型` 和
+  `选择本地离线或可选远程；远程发送和设备动作仍会先确认。`
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。
