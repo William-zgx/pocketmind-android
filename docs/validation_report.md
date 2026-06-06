@@ -15,6 +15,26 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release record source commit hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_record.sh` 要求 `release.gitCommit` 等于当前 `HEAD`，不再接受
+  仅作为当前历史祖先的旧提交。
+- `scripts/test_validation_scripts.sh` 增加旧 commit release record 的失败用例。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script self-tests。
+- 未执行模拟器：本轮只加固 release record 脚本和文档，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 ModelHealth generation failure hardening
 
 本轮覆盖项：

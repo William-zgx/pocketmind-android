@@ -24,8 +24,8 @@ release ticket or PR.
   mixed-batch rejection, and the privacy boundary for LocalOnly tool results.
 - [ ] `docs/release_record.json` is updated for the release candidate and
   `VERIFY_RELEASE_RECORD=1 scripts/verify_release_gate.sh` passes. The gate
-  checks the recorded Gradle version, Git commit, artifact checksum, signing
-  certificate fingerprint, `status=passed` verification evidence files,
+  checks the recorded Gradle version, current HEAD Git commit, artifact
+  checksum, signing certificate fingerprint, `status=passed` verification evidence files,
   unsupported capabilities, Agent behavior summary, and resolved or accepted
   blockers. For `PUBLIC_RELEASE=1`, the record must use a public distribution
   channel and match the final AAB path, artifact SHA-256, and production

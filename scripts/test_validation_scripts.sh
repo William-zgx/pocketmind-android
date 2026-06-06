@@ -381,6 +381,7 @@ RELEASE_RECORD_ARTIFACT_SIZE="$(wc -c < "$RELEASE_RECORD_ARTIFACT" | tr -d ' ')"
 RELEASE_RECORD_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_REPORT" | awk '{print $1}')"
 RELEASE_RECORD_FAILED_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_FAILED_REPORT" | awk '{print $1}')"
 RELEASE_RECORD_HEAD="$(git rev-parse HEAD)"
+RELEASE_RECORD_NON_HEAD="$(git rev-parse HEAD^)"
 RELEASE_RECORD_DATE="$(date +%F)"
 cat > "$RELEASE_RECORD_PENDING" <<'RELEASE_RECORD_PENDING_JSON'
 {
@@ -481,6 +482,12 @@ expect_failure \
   "release record verifier rejects future release dates" \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_FUTURE" --report "$ARTIFACT_DIR/release-record-future.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-future.properties" "status=failed"
+RELEASE_RECORD_OLD_COMMIT="$TMP_DIR/release-record-old-commit.json"
+sed 's/"gitCommit": "'"$RELEASE_RECORD_HEAD"'"/"gitCommit": "'"$RELEASE_RECORD_NON_HEAD"'"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_OLD_COMMIT"
+expect_failure \
+  "release record verifier rejects non-head source commit" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_OLD_COMMIT" --report "$ARTIFACT_DIR/release-record-old-commit.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-old-commit.properties" "status=failed"
 RELEASE_RECORD_BAD_SHA="$TMP_DIR/release-record-bad-sha.json"
 sed 's/"sha256": "'"$RELEASE_RECORD_ARTIFACT_SHA"'"/"sha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_BAD_SHA"
 expect_failure \

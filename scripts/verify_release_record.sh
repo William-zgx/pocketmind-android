@@ -154,12 +154,13 @@ if release.get("versionName") != expected_version_name:
     failures.append("version-name-mismatch")
 
 git_commit = release.get("gitCommit", "")
+head_commit = git_value("rev-parse", "HEAD")
 if not re.fullmatch(r"[0-9a-f]{40}", git_commit):
     failures.append("git-commit-invalid")
 elif not git_success("cat-file", "-e", f"{git_commit}^{{commit}}"):
     failures.append("git-commit-missing")
-elif not git_success("merge-base", "--is-ancestor", git_commit, "HEAD"):
-    failures.append("git-commit-not-in-current-history")
+elif git_commit != head_commit:
+    failures.append("git-commit-not-current-head")
 
 if not release.get("gitBranch"):
     failures.append("git-branch-missing")
