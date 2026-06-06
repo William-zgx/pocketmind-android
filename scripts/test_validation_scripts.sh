@@ -1044,7 +1044,12 @@ for flow_key in \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
   remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
   mediaProjectionCancellation; do
-  printf 'status=passed\nflow=%s\n' "$flow_key" > "$TMP_DIR/validation-flow-evidence/$flow_key.properties"
+  cat > "$TMP_DIR/validation-flow-evidence/$flow_key.properties" <<VALIDATION_FLOW_EVIDENCE_PROPERTIES
+status=passed
+target=release-flow
+flowKey=$flow_key
+releaseFlowPassed=true
+VALIDATION_FLOW_EVIDENCE_PROPERTIES
 done
 VALIDATION_PERF_BASELINE="$TMP_DIR/validation-performance-evidence/perf-baseline.properties"
 cat > "$VALIDATION_PERF_BASELINE" <<VALIDATION_PERF_BASELINE_PROPERTIES
@@ -1253,6 +1258,32 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_CANDIDATE_FLOW" --report "$ARTIFACT_DIR/release-validation-candidate-flow.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-candidate-flow.properties" "flow-firstInstall-candidate-evidence-not-approved"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-candidate-flow.properties" "flow-firstInstall-release-flow-not-passed"
+VALIDATION_WEAK_FLOW="$TMP_DIR/release-validation-weak-flow.json"
+VALIDATION_WEAK_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-firstInstall.properties"
+cat > "$VALIDATION_WEAK_FLOW_EVIDENCE" <<'VALIDATION_WEAK_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+flow=firstInstall
+VALIDATION_WEAK_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_FLOW" "$VALIDATION_WEAK_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["firstInstall"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["firstInstall"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak flow matrix evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-key-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-release-flow-not-passed"
 VALIDATION_BARE_MANUAL="$TMP_DIR/release-validation-bare-manual.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_BARE_MANUAL" <<'PY'
 import json

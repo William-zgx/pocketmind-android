@@ -134,12 +134,7 @@ def validate_evidence_record(section, key, value):
         if section == "manual":
             validate_manual_evidence(key, evidence_path)
         if section == "flow":
-            props = properties_for(evidence_path)
-            if props.get("target") == "release-flow-matrix-candidate-evidence" or \
-                    props.get("candidateOnly", "").lower() in {"true", "1", "yes"}:
-                failures.append(f"{prefix}-candidate-evidence-not-approved")
-            if props.get("releaseFlowPassed", "").lower() in {"false", "0", "no"}:
-                failures.append(f"{prefix}-release-flow-not-passed")
+            validate_flow_evidence(key, evidence_path)
     if not non_empty_string(value.get("owner")):
         failures.append(f"{prefix}-owner-missing")
     validate_date_field(value.get("date", ""), prefix)
@@ -193,6 +188,21 @@ def validate_manual_evidence(key, evidence_path):
         failures.append(f"{prefix}-key-mismatch")
     if props.get("manualAcceptance", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{prefix}-manual-acceptance-not-true")
+
+def validate_flow_evidence(key, evidence_path):
+    prefix = f"flow-{key}"
+    evidence_prefix = f"{prefix}-evidence"
+    props = properties_for(evidence_path)
+    if props.get("status") != "passed":
+        failures.append(f"{evidence_prefix}-status-not-passed")
+    if props.get("target") != "release-flow":
+        failures.append(f"{evidence_prefix}-target-invalid")
+    if props.get("flowKey") != key:
+        failures.append(f"{evidence_prefix}-key-mismatch")
+    if props.get("candidateOnly", "").lower() in {"true", "1", "yes"}:
+        failures.append(f"{prefix}-candidate-evidence-not-approved")
+    if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
+        failures.append(f"{prefix}-release-flow-not-passed")
 
 def count_android_tests():
     count = 0

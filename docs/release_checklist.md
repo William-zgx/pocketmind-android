@@ -252,6 +252,10 @@ release ticket or PR.
   report with `status=passed`, `target=manual-acceptance`, a `manualKey` that
   matches the record key, and `manualAcceptance=true`; lightweight status-only
   manual evidence files are not accepted.
+- [ ] Every `flowMatrix` evidence file is a formal release flow report with
+  `status=passed`, `target=release-flow`, a `flowKey` that matches the record
+  key, and `releaseFlowPassed=true`; candidate-only or lightweight status-only
+  flow evidence files are not accepted.
 - [ ] Remote model manual acceptance samples both a single public evidence
   tool request and a multi-evidence question such as two-location comparison;
   mixed private/action tool batches must fail closed before execution.
