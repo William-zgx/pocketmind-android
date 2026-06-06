@@ -47,6 +47,25 @@ class AgentCoreDocumentationTest {
     }
 
     @Test
+    fun readmeStartsWithProductContractBeforeImplementationDetails() {
+        val readme = readRepoFile("README.md")
+
+        val contractIndex = readme.indexOf("## Product Contract")
+        val implementationIndex = readme.indexOf("## Implementation Highlights")
+        val firstScreenIndex = readme.indexOf("## First Screen And Trust Flow")
+
+        assertTrue("README must introduce the product contract", contractIndex >= 0)
+        assertTrue("README must keep implementation details after the product contract", implementationIndex > contractIndex)
+        assertTrue("README must document the first-screen trust flow", firstScreenIndex > implementationIndex)
+        assertTrue(readme.contains("Local by default"))
+        assertTrue(readme.contains("Remote is optional"))
+        assertTrue(readme.contains("Actions are confirmed"))
+        assertTrue(readme.contains("Users stay in control"))
+        assertTrue(readme.contains("remote sends"))
+        assertTrue(readme.contains("device actions still require confirmation"))
+    }
+
+    @Test
     fun validationDocsUseRegressionEmulatorPassedArtifactAsFullRegressionContract() {
         listOf(
             "README.md" to readRepoFile("README.md"),

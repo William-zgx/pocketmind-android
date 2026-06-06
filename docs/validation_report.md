@@ -23,6 +23,72 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 API36 regression refresh and stale evidence guard
+
+本轮覆盖项：
+
+- API 36 arm64 完整模拟器回归重新绑定到当前 AndroidTest 源测试数：35 个源测试、
+  35 个预期测试、35 个实际执行测试全部通过。
+- Smoke instrumentation 在每个测试实例启动 Activity 前重置持久状态，避免远程/本地模式状态污染导致
+  “配置远程模型”入口和首屏文案用例不稳定。
+- release flow 候选证据脚本会比较当前 AndroidTest 源测试数与 regression artifact
+  记录的测试数；如果 artifact 仍是旧的 28 个测试，会以
+  `failedTarget=source-regression`、`reason=emulator-regression-source-test-count-mismatch`
+  fail closed。
+- release flow 候选覆盖从 8 条扩展到 13 条，新增本地模型下载校验、重启后提醒、
+  分享/文件输入、语音输入、最近媒体 OCR 等候选证据。候选证据仍不能替代正式人工 flow
+  acceptance。
+
+验证命令：
+
+```bash
+ANDROID_SERIAL=emulator-5554 ARTIFACT_DIR=build/verification/smoke-isolated-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' \
+  scripts/install_and_test_device.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 \
+  ARTIFACT_DIR=build/verification/regression-emulator-api36-flow-expanded-current \
+  REGRESSION_REPORT_FILE=build/verification/regression-emulator-api36-flow-expanded-current/regression-emulator.properties \
+  EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 \
+  scripts/regression_emulator.sh
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/test_validation_scripts.sh scripts/verify_local.sh
+scripts/test_validation_scripts.sh
+ARTIFACT_DIR=build/verification/release-flow-matrix-expanded-current \
+  REPORT_FILE=build/verification/release-flow-matrix-expanded-current/release-flow-matrix-candidate-evidence.properties \
+  scripts/collect_release_flow_matrix_evidence.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：API 36 arm64 targeted SmokeTest，
+  `build/verification/smoke-isolated-current/device-verification.properties`
+  包含 `status=passed`、`instrumentation_test_count=6`。
+- 通过：API 36 arm64 完整模拟器回归，
+  `build/verification/regression-emulator-api36-flow-expanded-current/regression-emulator.properties`
+  包含 `status=passed`、`source_android_test_count=35`、
+  `expected_android_test_count=35`、`actual_android_test_count=35`；report SHA-256 为
+  `3f44dbe853251c3901e5f104a05995242281fe7fb30a97d7e08aa3c1dfa80144`。
+- 通过：`scripts/test_validation_scripts.sh`，覆盖 validation record、release record、
+  perf baseline、screenshot capture、release flow 候选证据和 APK/AAB 扫描脚本自测。
+- 未通过但按预期生成失败证据：当前 flow matrix 候选报告
+  `build/verification/release-flow-matrix-expanded-current/release-flow-matrix-candidate-evidence.properties`
+  包含 `status=failed`、`failedTarget=flow-matrix`、
+  `reason=missing-approved-release-evidence-firstInstall,...`、`sourceAndroidTestCount=35`，
+  并生成 13 条 candidate-only flow evidence。
+- 未通过但按预期生成失败证据：当前 release validation report
+  `build/verification/release-validation-current.properties` 包含 `status=failed`，
+  失败原因集中在 pending 的真机、API 28/32/33/34、manual acceptance、flow matrix、
+  performance sanity 和 reviewer approval。
+- 通过：`scripts/verify_local.sh` 完成 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 通过：`git diff --check` 未发现空白或补丁格式问题；本轮 diff 敏感信息扫描未发现 API key、
+  bearer token 或远程模型密钥。
+- 未作为正式 release 通过证据：API 28/32/33/34、非模拟器真机验收、正式 flow
+  acceptance、performance baseline、reviewer approval 仍保持 pending。
+
 ## 2026-06-07 Product positioning entry and flow matrix guard
 
 本轮覆盖项：

@@ -4,8 +4,8 @@
   "status": "pending_validation",
   "emulatorRegression": {
     "status": "passed",
-    "reportPath": "build/verification/regression-emulator-api36-default-args-current/regression-emulator.properties",
-    "reportSha256": "d2fc72b000b39ad20e77741ba43b1abeb2646fca580108ebeafcf582c215ee4f",
+    "reportPath": "build/verification/regression-emulator-api36-flow-expanded-current/regression-emulator.properties",
+    "reportSha256": "3f44dbe853251c3901e5f104a05995242281fe7fb30a97d7e08aa3c1dfa80144",
     "avd": "pocketmind_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
@@ -52,9 +52,9 @@
     {
       "apiLevel": 36,
       "status": "passed",
-      "evidence": "API 36 arm64 emulator regression passed 28 AndroidTest(s) on pocketmind_api36_arm64 using verify_emulator.sh default headless wipe-data startup arguments.",
-      "evidencePath": "build/verification/regression-emulator-api36-default-args-current/regression-emulator.properties",
-      "evidenceSha256": "d2fc72b000b39ad20e77741ba43b1abeb2646fca580108ebeafcf582c215ee4f"
+      "evidence": "API 36 arm64 emulator regression passed 35 AndroidTest(s) on pocketmind_api36_arm64 with source AndroidTest count matching the regression report; expanded release-flow candidate evidence now rejects stale lower-count reports.",
+      "evidencePath": "build/verification/regression-emulator-api36-flow-expanded-current/regression-emulator.properties",
+      "evidenceSha256": "3f44dbe853251c3901e5f104a05995242281fe7fb30a97d7e08aa3c1dfa80144"
     }
   ],
   "manualAcceptance": {

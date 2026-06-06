@@ -3617,7 +3617,7 @@ expect_failure \
   "fresh start main shell helper rejects first-run setup page" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
-  FAKE_FRESH_START_UI_TEXT="准备基础能力包" \
+  FAKE_FRESH_START_UI_TEXT="离线基础问答可选下载" \
   GRADLE_CMD="$FAKE_GRADLE" \
   scripts/verify_fresh_start_main_shell_emulator.sh
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=failed"

@@ -13,7 +13,22 @@ stay behind local permission and confirmation gates.
 The project is built with Kotlin, Jetpack Compose, Android Gradle Plugin, and
 Google AI Edge LiteRT-LM.
 
-## Features
+## Product Contract
+
+- **Local by default:** basic questions can run from a downloaded or imported
+  local model, and chat history, memory, and local tool results stay on device
+  unless the user chooses a remote path.
+- **Remote is optional:** remote chat and image understanding require an
+  explicitly configured OpenAI-compatible endpoint; every remote send shows
+  what can leave the phone before it is sent.
+- **Actions are confirmed:** contacts, calendar, screen, media, reminders,
+  sharing, settings, and app-opening actions stay behind permission,
+  disclosure, and confirmation gates.
+- **Users stay in control:** privacy guidance is available in-app, remote keys
+  can be cleared, conversations and memories can be deleted, and release gates
+  track Play Data safety / privacy-policy consistency.
+
+## Implementation Highlights
 
 - On-device streaming chat with LiteRT-LM models.
 - The local LiteRT runtime configures the current `.litertlm` chat assets at
@@ -122,18 +137,22 @@ Google AI Edge LiteRT-LM.
   skill gates.
 - Instrumented smoke tests for first launch and model manager entry points.
 
-## Screens And Model Flow
+## First Screen And Trust Flow
 
-PocketMind opens directly into the chat surface. The top bar exposes model,
-background task, and session management:
+PocketMind opens directly into the assistant surface. The first screen explains
+the promise before asking for model setup: local basic chat is available after a
+model download/import, remote multimodal use is optional, and remote sends or
+device actions still require confirmation.
 
-1. Open **Model**.
-2. Pick a recommended model, paste a custom `.litertlm` URL, or import a local
-   model file.
-3. Or configure a remote chat service with a base URL, model name, and optional
-   API key.
-4. Load the selected local model, or switch to the configured remote model.
-5. Chat once the app reports that the selected backend is ready.
+1. Choose the local path by downloading or importing a trusted `.litertlm`
+   model, or choose the remote path by configuring a compatible endpoint.
+2. Review the in-app privacy guidance from the top bar whenever model,
+   attachment, voice, memory, or device-action behavior is unclear.
+3. Chat once the selected backend reports ready.
+4. Confirm remote sends after reviewing the destination, history, and attached
+   images that can leave the phone.
+5. Confirm or cancel any device action after reviewing its purpose, permission
+   needs, and data destination.
 
 Model selection itself does not immediately reload the runtime. This keeps the
 model manager responsive while browsing models or switching CPU/GPU; use
