@@ -20,7 +20,45 @@
 当前 release validation evidence contract 以最新 verifier 为准：API matrix
 必须链接 nested per-API regression report；manual acceptance 必须链接正式
 `manual-acceptance` 报告；flow matrix 必须链接正式 `release-flow` 报告；
-performance sanity 必须链接通过的 `perf-baseline` verifier report。
+performance sanity 必须链接通过的 `perf-baseline` verifier report；screenshots
+必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
+
+## 2026-06-06 Release validation screenshot report binding
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 现在会校验每张 screenshot 文件的
+  PNG signature，而不只检查文件存在和 SHA。
+- 每个 screenshot entry 必须链接 `release-screenshots.properties`，并通过
+  `reportSha256` 绑定报告文件。
+- screenshot report 必须是 `status=passed`、`target=release-screenshots`、
+  `clean_device=1`，并且报告里的 `screenshot.<name>.path`、`sha256`、
+  `sanitized` 必须和 JSON entry 匹配。
+- `scripts/test_validation_scripts.sh` 的 approved validation fixture 改为真实
+  PNG 签名和正式 screenshot report，并新增“文本冒充 PNG”负例。
+- `docs/release_validation_record.json` 的四张现有截图都绑定到当前
+  `build/verification/release-screenshots-current/release-screenshots.properties`。
+- `docs/release_checklist.md` 同步该门禁口径。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+git diff --check
+scripts/test_validation_scripts.sh
+scripts/verify_release_validation_record.sh --report build/verification/release-validation-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：shell 语法检查、`git diff --check`、validation script self-tests 和
+  `scripts/verify_local.sh`。
+- 预期失败：当前 release validation record 仍未 approved；失败原因继续保留真实未完成项：
+  真机、API 28/32/33/34、manual acceptance、flow matrix、performance sanity 和
+  reviewer/date。没有截图 report 或 PNG 相关失败。
+- 未执行模拟器：本轮只加固 release validation 门禁脚本、测试 fixture 和文档；
+  没有重新采集截图。
 
 ## 2026-06-06 Release validation performance key binding
 

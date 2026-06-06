@@ -135,8 +135,11 @@ release ticket or PR.
 - [ ] Screenshots do not include real contacts, notifications, clipboard text,
   current-screen text, API keys, emails, phone numbers, or internal hostnames.
 - [ ] Every screenshot attached to release validation is listed in
-  `docs/release_validation_record.json` with its sanitized flag and matching
-  SHA-256.
+  `docs/release_validation_record.json` with its sanitized flag, matching
+  screenshot SHA-256, and a matching `release-screenshots.properties` report
+  path/SHA-256. Each linked screenshot file must be PNG evidence captured by
+  `scripts/capture_release_screenshots.sh`; text or placeholder files are not
+  accepted.
 
 ## Privacy And License
 

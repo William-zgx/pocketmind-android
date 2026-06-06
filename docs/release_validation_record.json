@@ -93,24 +93,32 @@
       "name": "chat-home",
       "path": "build/verification/release-screenshots-current/screenshots/chat-home.png",
       "sha256": "75b6360a316460b6e2301013bbb3bafa8d2436aa28dc89339cfb1534e4736316",
+      "reportPath": "build/verification/release-screenshots-current/release-screenshots.properties",
+      "reportSha256": "4f41254a5f347ff6b10211fc07789c1659afd0598d0644ff2e45e4cbc09bd9ae",
       "sanitized": true
     },
     {
       "name": "model-manager",
       "path": "build/verification/release-screenshots-current/screenshots/model-manager.png",
       "sha256": "2e9c4f37d6d9e5583b6707afe515a489c90d7190b77bee9dca51dacb2f28cc82",
+      "reportPath": "build/verification/release-screenshots-current/release-screenshots.properties",
+      "reportSha256": "4f41254a5f347ff6b10211fc07789c1659afd0598d0644ff2e45e4cbc09bd9ae",
       "sanitized": true
     },
     {
       "name": "confirmation-sheet",
       "path": "build/verification/release-screenshots-current/screenshots/confirmation-sheet.png",
       "sha256": "8c39a05d2a07886d95bb08a2285da70d57507a8b7adc44bc64a1a9de0e531b1f",
+      "reportPath": "build/verification/release-screenshots-current/release-screenshots.properties",
+      "reportSha256": "4f41254a5f347ff6b10211fc07789c1659afd0598d0644ff2e45e4cbc09bd9ae",
       "sanitized": true
     },
     {
       "name": "background-tasks-or-audit",
       "path": "build/verification/release-screenshots-current/screenshots/background-tasks-or-audit.png",
       "sha256": "631ad318e57790446313bef7e5958b966e61367577f8ec28dc00667f3e0b482e",
+      "reportPath": "build/verification/release-screenshots-current/release-screenshots.properties",
+      "reportSha256": "4f41254a5f347ff6b10211fc07789c1659afd0598d0644ff2e45e4cbc09bd9ae",
       "sanitized": true
     }
   ],

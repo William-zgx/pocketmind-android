@@ -1010,11 +1010,40 @@ VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"
 VALIDATION_EMULATOR_REPORT="$TMP_DIR/regression-emulator.properties"
 VALIDATION_DEVICE_REPORT="$TMP_DIR/device-verification.properties"
 VALIDATION_EMULATOR_DEVICE_REPORT="$TMP_DIR/emulator-device-verification.properties"
+VALIDATION_SCREENSHOT_REPORT="$TMP_DIR/release-screenshots.properties"
 VALIDATION_DATE="$(date +%F)"
 mkdir -p "$TMP_DIR/validation-screenshots"
-for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
-  printf 'fake screenshot %s\n' "$screenshot_name" > "$TMP_DIR/validation-screenshots/$screenshot_name.png"
-done
+python3 - "$TMP_DIR/validation-screenshots" <<'PY'
+import base64
+import sys
+from pathlib import Path
+
+target = Path(sys.argv[1])
+target.mkdir(parents=True, exist_ok=True)
+png = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
+for name in ("chat-home", "model-manager", "confirmation-sheet", "background-tasks-or-audit"):
+    (target / f"{name}.png").write_bytes(png)
+PY
+{
+  printf 'status=passed\n'
+  printf 'exit_code=0\n'
+  printf 'target=release-screenshots\n'
+  printf 'clean_device=1\n'
+  printf 'serial=emulator-5554\n'
+  printf 'api_level=36\n'
+  printf 'abi=arm64-v8a\n'
+  printf 'avd=test-avd\n'
+  printf 'screenshot_dir=%s\n' "$TMP_DIR/validation-screenshots"
+  for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
+    screenshot_path="$TMP_DIR/validation-screenshots/$screenshot_name.png"
+    screenshot_sha="$(shasum -a 256 "$screenshot_path" | awk '{print $1}')"
+    printf 'screenshot.%s.path=%s\n' "$screenshot_name" "$screenshot_path"
+    printf 'screenshot.%s.sha256=%s\n' "$screenshot_name" "$screenshot_sha"
+    printf 'screenshot.%s.sanitized=true\n' "$screenshot_name"
+  done
+} > "$VALIDATION_SCREENSHOT_REPORT"
 mkdir -p "$TMP_DIR/validation-api-evidence"
 for api_level in 28 32 33 34 36; do
   cat > "$TMP_DIR/validation-api-evidence/api-$api_level.properties" <<VALIDATION_API_EVIDENCE_PROPERTIES
@@ -1184,10 +1213,10 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
     "mediaProjectionCancellation": {"status": "passed", "evidence": "MediaProjection cancellation flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/mediaProjectionCancellation.properties", "owner": "QA", "date": "$VALIDATION_DATE"}
   },
   "screenshots": [
-    {"name": "chat-home", "path": "$TMP_DIR/validation-screenshots/chat-home.png", "sanitized": true},
-    {"name": "model-manager", "path": "$TMP_DIR/validation-screenshots/model-manager.png", "sanitized": true},
-    {"name": "confirmation-sheet", "path": "$TMP_DIR/validation-screenshots/confirmation-sheet.png", "sanitized": true},
-    {"name": "background-tasks-or-audit", "path": "$TMP_DIR/validation-screenshots/background-tasks-or-audit.png", "sanitized": true}
+    {"name": "chat-home", "path": "$TMP_DIR/validation-screenshots/chat-home.png", "reportPath": "$VALIDATION_SCREENSHOT_REPORT", "sanitized": true},
+    {"name": "model-manager", "path": "$TMP_DIR/validation-screenshots/model-manager.png", "reportPath": "$VALIDATION_SCREENSHOT_REPORT", "sanitized": true},
+    {"name": "confirmation-sheet", "path": "$TMP_DIR/validation-screenshots/confirmation-sheet.png", "reportPath": "$VALIDATION_SCREENSHOT_REPORT", "sanitized": true},
+    {"name": "background-tasks-or-audit", "path": "$TMP_DIR/validation-screenshots/background-tasks-or-audit.png", "reportPath": "$VALIDATION_SCREENSHOT_REPORT", "sanitized": true}
   ],
   "performanceSanity": {
     "firstLaunch": {"status": "passed", "evidence": "First launch performance sanity passed.", "evidencePath": "$TMP_DIR/validation-performance-evidence/firstLaunch.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
@@ -1224,6 +1253,7 @@ for section in ("manualAcceptance", "flowMatrix", "performanceSanity"):
         item["evidenceSha256"] = sha(item["evidencePath"])
 for entry in record["screenshots"]:
     entry["sha256"] = sha(entry["path"])
+    entry["reportSha256"] = sha(entry["reportPath"])
 
 record_path.write_text(json.dumps(record, indent=2))
 PY
@@ -1451,6 +1481,50 @@ expect_failure \
   "release validation verifier rejects screenshot sha mismatch" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_SCREENSHOT_BAD_SHA" --report "$ARTIFACT_DIR/release-validation-screenshot-bad-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-bad-sha.properties" "chat-home-screenshot-sha-mismatch"
+VALIDATION_SCREENSHOT_NOT_PNG="$TMP_DIR/release-validation-screenshot-not-png.json"
+VALIDATION_SCREENSHOT_NOT_PNG_FILE="$TMP_DIR/validation-screenshots/not-png-chat-home.png"
+VALIDATION_SCREENSHOT_NOT_PNG_REPORT="$TMP_DIR/release-screenshots-not-png.properties"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_NOT_PNG" "$VALIDATION_SCREENSHOT_NOT_PNG_FILE" "$VALIDATION_SCREENSHOT_NOT_PNG_REPORT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+screenshot = Path(sys.argv[3])
+report = Path(sys.argv[4])
+record = json.loads(source.read_text())
+screenshot.write_text("not a png\n")
+screenshot_sha = hashlib.sha256(screenshot.read_bytes()).hexdigest()
+report.write_text(
+    "\n".join(
+        [
+            "status=passed",
+            "exit_code=0",
+            "target=release-screenshots",
+            "clean_device=1",
+            "serial=emulator-5554",
+            "api_level=36",
+            "abi=arm64-v8a",
+            "avd=test-avd",
+            f"screenshot.chat-home.path={screenshot}",
+            f"screenshot.chat-home.sha256={screenshot_sha}",
+            "screenshot.chat-home.sanitized=true",
+            "",
+        ]
+    )
+)
+record["screenshots"][0]["path"] = str(screenshot)
+record["screenshots"][0]["sha256"] = screenshot_sha
+record["screenshots"][0]["reportPath"] = str(report)
+record["screenshots"][0]["reportSha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects non-png screenshot evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_SCREENSHOT_NOT_PNG" --report "$ARTIFACT_DIR/release-validation-screenshot-not-png.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-not-png.properties" "chat-home-screenshot-not-png"
 VALIDATION_MISSING_DEVICE="$TMP_DIR/release-validation-missing-device.json"
 sed 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$TMP_DIR/missing-device.properties"'"#' "$VALIDATION_APPROVED" > "$VALIDATION_MISSING_DEVICE"
 expect_failure \

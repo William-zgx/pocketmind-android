@@ -206,6 +206,38 @@ def validate_flow_evidence(key, evidence_path):
     if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{prefix}-release-flow-not-passed")
 
+def validate_png_file(name, path):
+    try:
+        signature = Path(path).read_bytes()[:8]
+    except OSError:
+        failures.append(f"{name}-screenshot-read-failed")
+        return
+    if signature != b"\x89PNG\r\n\x1a\n":
+        failures.append(f"{name}-screenshot-not-png")
+
+def validate_screenshot_report(name, entry, path):
+    report_path = entry.get("reportPath", "")
+    if not non_empty_string(report_path):
+        failures.append(f"{name}-screenshot-report-path-missing")
+        return
+    if not Path(report_path).is_file():
+        failures.append(f"{name}-screenshot-report-missing")
+        return
+    validate_file_sha(f"{name}-screenshot-report", report_path, entry.get("reportSha256", ""))
+    props = properties_for(report_path)
+    if props.get("status") != "passed":
+        failures.append(f"{name}-screenshot-report-status-not-passed")
+    if props.get("target") != "release-screenshots":
+        failures.append(f"{name}-screenshot-report-target-invalid")
+    if props.get("clean_device") != "1":
+        failures.append(f"{name}-screenshot-report-clean-device-not-true")
+    if props.get(f"screenshot.{name}.path") != path:
+        failures.append(f"{name}-screenshot-report-path-mismatch")
+    if props.get(f"screenshot.{name}.sha256") != entry.get("sha256", ""):
+        failures.append(f"{name}-screenshot-report-sha-mismatch")
+    if props.get(f"screenshot.{name}.sanitized", "").lower() not in {"true", "1", "yes"}:
+        failures.append(f"{name}-screenshot-report-not-sanitized")
+
 def count_android_tests():
     count = 0
     if not android_test_source_dir.is_dir():
@@ -402,6 +434,8 @@ for entry in screenshots:
         failures.append(f"{name or 'unknown'}-screenshot-missing")
     else:
         validate_file_sha(f"{name or 'unknown'}-screenshot", path, entry.get("sha256", ""))
+        validate_png_file(name or "unknown", path)
+        validate_screenshot_report(name or "unknown", entry, path)
     if entry.get("sanitized") is not True:
         failures.append(f"{name or 'unknown'}-screenshot-not-sanitized")
 for missing in sorted(required_screenshots - seen_screenshots):
