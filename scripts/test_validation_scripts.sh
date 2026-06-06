@@ -421,6 +421,37 @@ expect_success \
   "release record verifier accepts approved current record" \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_APPROVED" --report "$ARTIFACT_DIR/release-record-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-approved.properties" "status=passed"
+expect_failure \
+  "release record verifier rejects internal channel in public context" \
+  env PUBLIC_RELEASE_CONTEXT=1 \
+  EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_ARTIFACT" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$RELEASE_RECORD_ARTIFACT_SHA" \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_APPROVED" --report "$ARTIFACT_DIR/release-record-public-internal-channel.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-public-internal-channel.properties" "status=failed"
+RELEASE_RECORD_PUBLIC="$TMP_DIR/release-record-public.json"
+sed 's/"targetChannel": "internal_testing"/"targetChannel": "open_testing"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_PUBLIC"
+expect_success \
+  "release record verifier accepts matching public aab record" \
+  env PUBLIC_RELEASE_CONTEXT=1 \
+  EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_ARTIFACT" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$RELEASE_RECORD_ARTIFACT_SHA" \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_PUBLIC" --report "$ARTIFACT_DIR/release-record-public.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-public.properties" "status=passed"
+RELEASE_RECORD_OTHER_ARTIFACT="$TMP_DIR/release-record-other.aab"
+printf 'other release artifact\n' > "$RELEASE_RECORD_OTHER_ARTIFACT"
+expect_failure \
+  "release record verifier rejects mismatched public artifact path" \
+  env PUBLIC_RELEASE_CONTEXT=1 \
+  EXPECTED_RELEASE_ARTIFACT_PATH="$RELEASE_RECORD_OTHER_ARTIFACT" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$(shasum -a 256 "$RELEASE_RECORD_OTHER_ARTIFACT" | awk '{print $1}')" \
+  EXPECTED_SIGNING_CERT_SHA256=1111111111111111111111111111111111111111111111111111111111111111 \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_PUBLIC" --report "$ARTIFACT_DIR/release-record-public-artifact-mismatch.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-public-artifact-mismatch.properties" "status=failed"
 RELEASE_RECORD_FUTURE="$TMP_DIR/release-record-future.json"
 sed 's/"releaseDate": "'"$RELEASE_RECORD_DATE"'"/"releaseDate": "2999-01-01"/' "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_FUTURE"
 expect_failure \

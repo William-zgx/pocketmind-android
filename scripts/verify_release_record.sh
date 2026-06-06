@@ -6,6 +6,11 @@ cd "$ROOT_DIR"
 
 RELEASE_RECORD_FILE="${RELEASE_RECORD_FILE:-docs/release_record.json}"
 GRADLE_FILE="${GRADLE_FILE:-app/build.gradle.kts}"
+PUBLIC_RELEASE_CONTEXT="${PUBLIC_RELEASE_CONTEXT:-0}"
+EXPECTED_RELEASE_ARTIFACT_PATH="${EXPECTED_RELEASE_ARTIFACT_PATH:-}"
+EXPECTED_RELEASE_ARTIFACT_TYPE="${EXPECTED_RELEASE_ARTIFACT_TYPE:-}"
+EXPECTED_RELEASE_ARTIFACT_SHA256="${EXPECTED_RELEASE_ARTIFACT_SHA256:-}"
+EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 REPORT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -35,6 +40,11 @@ write_report() {
       printf 'target=release-record\n'
       printf 'recordFile=%s\n' "$RELEASE_RECORD_FILE"
       printf 'gradleFile=%s\n' "$GRADLE_FILE"
+      printf 'publicReleaseContext=%s\n' "$PUBLIC_RELEASE_CONTEXT"
+      printf 'expectedReleaseArtifactPath=%s\n' "$EXPECTED_RELEASE_ARTIFACT_PATH"
+      printf 'expectedReleaseArtifactType=%s\n' "$EXPECTED_RELEASE_ARTIFACT_TYPE"
+      printf 'expectedReleaseArtifactSha256=%s\n' "$EXPECTED_RELEASE_ARTIFACT_SHA256"
+      printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
       printf 'reason=%s\n' "$reason"
     } > "$REPORT_FILE"
   fi
@@ -56,7 +66,14 @@ TMP_FAILURES="$(mktemp)"
 trap 'rm -f "$TMP_FAILURES"' EXIT
 
 set +e
-python3 - "$RELEASE_RECORD_FILE" "$GRADLE_FILE" > "$TMP_FAILURES" <<'PY'
+python3 - \
+  "$RELEASE_RECORD_FILE" \
+  "$GRADLE_FILE" \
+  "$PUBLIC_RELEASE_CONTEXT" \
+  "$EXPECTED_RELEASE_ARTIFACT_PATH" \
+  "$EXPECTED_RELEASE_ARTIFACT_TYPE" \
+  "$EXPECTED_RELEASE_ARTIFACT_SHA256" \
+  "$EXPECTED_SIGNING_CERT_SHA256" > "$TMP_FAILURES" <<'PY'
 import hashlib
 import json
 import re
@@ -67,6 +84,11 @@ from pathlib import Path
 
 record_path = Path(sys.argv[1])
 gradle_path = Path(sys.argv[2])
+public_release_context = sys.argv[3] == "1"
+expected_artifact_path = sys.argv[4]
+expected_artifact_type = sys.argv[5]
+expected_artifact_sha256 = sys.argv[6].lower()
+expected_signing_cert_sha256 = sys.argv[7].lower()
 
 try:
     record = json.loads(record_path.read_text())
@@ -139,6 +161,12 @@ valid_channels = {
 }
 if release.get("targetChannel") not in valid_channels:
     failures.append("target-channel-invalid")
+if public_release_context and release.get("targetChannel") not in {
+    "open_testing",
+    "staged_production",
+    "full_production",
+}:
+    failures.append("public-release-target-channel-invalid")
 
 today = date.today()
 date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -174,10 +202,15 @@ if not isinstance(artifact, dict):
     artifact = {}
 
 artifact_type = artifact.get("type", "")
-artifact_path = Path(artifact.get("path", ""))
+artifact_path_value = artifact.get("path", "")
+artifact_path = Path(artifact_path_value)
 if artifact_type not in {"apk", "aab"}:
     failures.append("artifact-type-invalid")
-if not artifact.get("path"):
+if expected_artifact_type and artifact_type != expected_artifact_type:
+    failures.append("artifact-type-expected-mismatch")
+if public_release_context and artifact_type != "aab":
+    failures.append("public-release-artifact-type-not-aab")
+if not artifact_path_value:
     failures.append("artifact-path-missing")
 elif not artifact_path.is_file():
     failures.append("artifact-path-missing")
@@ -191,10 +224,16 @@ else:
     suffix_type = artifact_path.suffix.removeprefix(".")
     if artifact_type and suffix_type and suffix_type != artifact_type:
         failures.append("artifact-type-path-mismatch")
+if expected_artifact_path and artifact_path_value != expected_artifact_path:
+    failures.append("artifact-path-expected-mismatch")
+if expected_artifact_sha256 and artifact.get("sha256", "").lower() != expected_artifact_sha256:
+    failures.append("artifact-sha-expected-mismatch")
 
 signing_sha = artifact.get("signingCertificateSha256", "")
 if not re.fullmatch(r"[0-9a-fA-F]{64}", signing_sha):
     failures.append("signing-certificate-sha-invalid")
+elif expected_signing_cert_sha256 and signing_sha.lower() != expected_signing_cert_sha256:
+    failures.append("signing-certificate-expected-mismatch")
 
 reports = release.get("verificationReports")
 if not isinstance(reports, list) or not reports:

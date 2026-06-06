@@ -6830,6 +6830,39 @@ scripts/verify_local.sh
 - 通过：脚本单测覆盖 `VERIFY_RELEASE_RECORD=1` 时 release gate 对 pending
   record fail-closed。
 
+## 2026-06-06 Public release record artifact binding
+
+本轮覆盖项：
+
+- 使用只读多 Agent 审查 release gates，发现 `PUBLIC_RELEASE=1` 会扫描 signed AAB，
+  但 `scripts/verify_release_record.sh` 仍可接受记录中的内部渠道或另一个 APK/AAB。
+- `scripts/verify_release_gate.sh` 在 public profile 下向 release record verifier
+  传入 public context、最终 `RELEASE_AAB` 路径、AAB SHA-256 和
+  `EXPECTED_SIGNING_CERT_SHA256`。
+- `scripts/verify_release_record.sh` 在 public context 下要求 `targetChannel`
+  为 `open_testing`、`staged_production` 或 `full_production`，artifact type
+  必须为 `aab`，并且 artifact path、SHA-256、签名证书 SHA-256 必须与
+  release gate 期望值一致。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_record.sh scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 public context 拒绝 `internal_testing`。
+- 通过：脚本单测覆盖 public context 接受匹配的 public AAB record。
+- 通过：脚本单测覆盖 public context 拒绝 artifact path/SHA 与最终 AAB 不一致。
+
+仍阻塞正式 RC：
+
+- 需要 production signing、真实 final AAB 和 release owner 批准后的
+  `docs/release_record.json`。
+
 ## 2026-06-06 Store policy gate
 
 本轮覆盖项：

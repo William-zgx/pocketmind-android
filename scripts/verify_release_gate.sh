@@ -174,7 +174,20 @@ else
 fi
 
 if [[ "$VERIFY_RELEASE_RECORD" == "1" ]]; then
-  if ! scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
+  release_record_env=(
+    "PUBLIC_RELEASE_CONTEXT=$PUBLIC_RELEASE"
+    "EXPECTED_SIGNING_CERT_SHA256=$EXPECTED_SIGNING_CERT_SHA256"
+  )
+  if [[ "$PUBLIC_RELEASE" == "1" ]]; then
+    release_record_env+=(
+      "EXPECTED_RELEASE_ARTIFACT_PATH=$RELEASE_AAB"
+      "EXPECTED_RELEASE_ARTIFACT_TYPE=aab"
+    )
+    if [[ -f "$RELEASE_AAB" ]]; then
+      release_record_env+=("EXPECTED_RELEASE_ARTIFACT_SHA256=$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')")
+    fi
+  fi
+  if ! env "${release_record_env[@]}" scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
     write_gate_report failed
     exit 1
   fi

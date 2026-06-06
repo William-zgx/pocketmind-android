@@ -26,7 +26,10 @@ release ticket or PR.
   `VERIFY_RELEASE_RECORD=1 scripts/verify_release_gate.sh` passes. The gate
   checks the recorded Gradle version, Git commit, artifact checksum, signing
   certificate fingerprint, evidence files, unsupported capabilities, Agent
-  behavior summary, and resolved or accepted blockers.
+  behavior summary, and resolved or accepted blockers. For `PUBLIC_RELEASE=1`,
+  the record must use a public distribution channel and match the final AAB
+  path, artifact SHA-256, and production signing certificate SHA-256 passed to
+  the release gate.
 
 ## Versioning And Release Track
 

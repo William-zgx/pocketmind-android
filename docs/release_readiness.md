@@ -63,7 +63,9 @@ items below.
   certificate fingerprint, verification reports, and resolved or accepted
   blockers. `VERIFY_RELEASE_RECORD=1` verifies the record against the current
   Gradle version, a Git commit reachable from the current checkout, local
-  artifact, and evidence files.
+  artifact, and evidence files. `PUBLIC_RELEASE=1` additionally requires a
+  public distribution channel and binds the record to the final AAB path,
+  artifact SHA-256, and expected signing certificate SHA-256.
 - Fill `docs/store_policy_record.json` with approved store listing, data-safety
   answers, privacy policy URL, model download disclosure, Android permission
   purposes, and special-access disclosures. `VERIFY_STORE_POLICY=1` verifies
