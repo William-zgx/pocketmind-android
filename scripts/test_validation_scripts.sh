@@ -370,13 +370,16 @@ assert_report_contains "$ARTIFACT_DIR/release-mapping-empty.properties" "status=
 
 RELEASE_RECORD_ARTIFACT="$TMP_DIR/release-record.aab"
 RELEASE_RECORD_REPORT="$TMP_DIR/release-record-report.properties"
+RELEASE_RECORD_FAILED_REPORT="$TMP_DIR/release-record-failed-report.properties"
 RELEASE_RECORD_PENDING="$TMP_DIR/release-record-pending.json"
 RELEASE_RECORD_APPROVED="$TMP_DIR/release-record-approved.json"
 printf 'release artifact\n' > "$RELEASE_RECORD_ARTIFACT"
-printf 'status=passed\n' > "$RELEASE_RECORD_REPORT"
+printf 'status=passed\ntarget=local-verification\n' > "$RELEASE_RECORD_REPORT"
+printf 'status=failed\ntarget=local-verification\n' > "$RELEASE_RECORD_FAILED_REPORT"
 RELEASE_RECORD_ARTIFACT_SHA="$(shasum -a 256 "$RELEASE_RECORD_ARTIFACT" | awk '{print $1}')"
 RELEASE_RECORD_ARTIFACT_SIZE="$(wc -c < "$RELEASE_RECORD_ARTIFACT" | tr -d ' ')"
 RELEASE_RECORD_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_REPORT" | awk '{print $1}')"
+RELEASE_RECORD_FAILED_REPORT_SHA="$(shasum -a 256 "$RELEASE_RECORD_FAILED_REPORT" | awk '{print $1}')"
 RELEASE_RECORD_HEAD="$(git rev-parse HEAD)"
 RELEASE_RECORD_DATE="$(date +%F)"
 cat > "$RELEASE_RECORD_PENDING" <<'RELEASE_RECORD_PENDING_JSON'
@@ -484,6 +487,15 @@ expect_failure \
   "release record verifier rejects artifact sha mismatch" \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_BAD_SHA" --report "$ARTIFACT_DIR/release-record-bad-sha.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-bad-sha.properties" "status=failed"
+RELEASE_RECORD_FAILED_REPORT_JSON="$TMP_DIR/release-record-failed-report.json"
+sed \
+  -e 's#'"$RELEASE_RECORD_REPORT"'#'"$RELEASE_RECORD_FAILED_REPORT"'#' \
+  -e 's#'"$RELEASE_RECORD_REPORT_SHA"'#'"$RELEASE_RECORD_FAILED_REPORT_SHA"'#' \
+  "$RELEASE_RECORD_APPROVED" > "$RELEASE_RECORD_FAILED_REPORT_JSON"
+expect_failure \
+  "release record verifier rejects failed verification report" \
+  scripts/verify_release_record.sh --file "$RELEASE_RECORD_FAILED_REPORT_JSON" --report "$ARTIFACT_DIR/release-record-failed-report.properties"
+assert_report_contains "$ARTIFACT_DIR/release-record-failed-report.properties" "status=failed"
 
 STORE_POLICY_NOTICE="$TMP_DIR/store-privacy-notice.md"
 STORE_POLICY_MANIFEST="$TMP_DIR/AndroidManifest.xml"
@@ -686,6 +698,10 @@ mkdir -p "$TMP_DIR/validation-screenshots"
 for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
   printf 'fake screenshot %s\n' "$screenshot_name" > "$TMP_DIR/validation-screenshots/$screenshot_name.png"
 done
+mkdir -p "$TMP_DIR/validation-api-evidence"
+for api_level in 28 32 33 34 36; do
+  printf 'status=passed\napi_level=%s\n' "$api_level" > "$TMP_DIR/validation-api-evidence/api-$api_level.properties"
+done
 cat > "$VALIDATION_PENDING" <<'VALIDATION_PENDING_JSON'
 {
   "version": 1,
@@ -746,11 +762,11 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
     "cleanDevice": true
   },
   "apiMatrix": [
-    {"apiLevel": 28, "status": "passed", "evidence": "API 28 smoke passed."},
-    {"apiLevel": 32, "status": "passed", "evidence": "API 32 legacy storage path passed."},
-    {"apiLevel": 33, "status": "passed", "evidence": "API 33 media and notification path passed."},
-    {"apiLevel": 34, "status": "passed", "evidence": "API 34 selected visual media path passed."},
-    {"apiLevel": 36, "status": "passed", "evidence": "API 36 target behavior passed."}
+    {"apiLevel": 28, "status": "passed", "evidence": "API 28 smoke passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-28.properties"},
+    {"apiLevel": 32, "status": "passed", "evidence": "API 32 legacy storage path passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-32.properties"},
+    {"apiLevel": 33, "status": "passed", "evidence": "API 33 media and notification path passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-33.properties"},
+    {"apiLevel": 34, "status": "passed", "evidence": "API 34 selected visual media path passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-34.properties"},
+    {"apiLevel": 36, "status": "passed", "evidence": "API 36 target behavior passed.", "evidencePath": "$TMP_DIR/validation-api-evidence/api-36.properties"}
   ],
   "manualAcceptance": {
     "modelSetup": "passed",
@@ -828,6 +844,12 @@ expect_failure \
   "release validation verifier rejects incomplete api matrix" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_API_GAP" --report "$ARTIFACT_DIR/release-validation-api-gap.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-api-gap.properties" "status=failed"
+VALIDATION_API_MISSING_EVIDENCE="$TMP_DIR/release-validation-api-missing-evidence.json"
+sed 's#'"$TMP_DIR"'/validation-api-evidence/api-34.properties#'"$TMP_DIR"'/validation-api-evidence/missing-api-34.properties#' "$VALIDATION_APPROVED" > "$VALIDATION_API_MISSING_EVIDENCE"
+expect_failure \
+  "release validation verifier rejects missing api evidence file" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_API_MISSING_EVIDENCE" --report "$ARTIFACT_DIR/release-validation-api-missing-evidence.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-api-missing-evidence.properties" "status=failed"
 VALIDATION_UNSANITIZED_SCREENSHOT="$TMP_DIR/release-validation-unsanitized-screenshot.json"
 sed 's/\("name": "chat-home", "path": "[^"]*", "sanitized": \)true/\1false/' "$VALIDATION_APPROVED" > "$VALIDATION_UNSANITIZED_SCREENSHOT"
 expect_failure \

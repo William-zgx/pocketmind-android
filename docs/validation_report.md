@@ -15,6 +15,30 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Release validation API evidence hardening
+
+本轮覆盖项：
+
+- `scripts/verify_release_validation_record.sh` 要求 `apiMatrix` 中 API 28、32、33、
+  34、36 每一行除了 `status=passed` 和非空描述外，还必须提供存在的
+  `evidencePath` 文件。
+- `docs/release_validation_record.json` 模板同步新增每个 API 行的 `evidencePath`。
+- `scripts/test_validation_scripts.sh` 增加 approved record 的 API evidence 文件正例和
+  缺失 evidence file 的失败用例。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script self-tests。
+- 未执行模拟器：本轮只加固 release validation 证据脚本和文档模板，不改变 APK runtime
+  或 UI 行为。
+
 ## 2026-06-06 Capability test reference hardening
 
 本轮覆盖项：

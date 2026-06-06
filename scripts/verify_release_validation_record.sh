@@ -197,6 +197,11 @@ for entry in api_matrix:
         failures.append(f"api-{api_level}-not-passed")
     if not non_empty_string(entry.get("evidence")):
         failures.append(f"api-{api_level}-evidence-missing")
+    evidence_path = entry.get("evidencePath", "")
+    if not non_empty_string(evidence_path):
+        failures.append(f"api-{api_level}-evidence-path-missing")
+    elif not Path(evidence_path).is_file():
+        failures.append(f"api-{api_level}-evidence-file-missing")
 for missing in sorted(required_apis - seen_apis):
     failures.append(f"api-{missing}-missing")
 

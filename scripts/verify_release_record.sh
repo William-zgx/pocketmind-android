@@ -119,6 +119,18 @@ def git_success(*args):
     except Exception:
         return False
 
+def properties_for(path):
+    values = {}
+    try:
+        for raw_line in Path(path).read_text(errors="ignore").splitlines():
+            if "=" not in raw_line:
+                continue
+            key, value = raw_line.split("=", 1)
+            values[key] = value
+    except OSError:
+        pass
+    return values
+
 failures = []
 if record.get("version") != 1:
     failures.append("version-invalid")
@@ -252,9 +264,15 @@ for index, report in enumerate(reports):
         failures.append(f"verification-report-{index}-file-missing")
     report_sha = report.get("sha256", "")
     if report_path and Path(report_path).is_file():
-        actual_report_sha = hashlib.sha256(Path(report_path).read_bytes()).hexdigest()
+        report_file = Path(report_path)
+        actual_report_sha = hashlib.sha256(report_file.read_bytes()).hexdigest()
         if report_sha != actual_report_sha:
             failures.append(f"verification-report-{index}-sha-mismatch")
+        report_properties = properties_for(report_file)
+        if report_properties.get("status") != "passed":
+            failures.append(f"verification-report-{index}-status-not-passed")
+        if not report_properties.get("target"):
+            failures.append(f"verification-report-{index}-target-missing")
     elif not re.fullmatch(r"[0-9a-fA-F]{64}", report_sha):
         failures.append(f"verification-report-{index}-sha-invalid")
 

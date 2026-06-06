@@ -22,27 +22,32 @@
     {
       "apiLevel": 28,
       "status": "pending",
-      "evidence": ""
+      "evidence": "",
+      "evidencePath": ""
     },
     {
       "apiLevel": 32,
       "status": "pending",
-      "evidence": ""
+      "evidence": "",
+      "evidencePath": ""
     },
     {
       "apiLevel": 33,
       "status": "pending",
-      "evidence": ""
+      "evidence": "",
+      "evidencePath": ""
     },
     {
       "apiLevel": 34,
       "status": "pending",
-      "evidence": ""
+      "evidence": "",
+      "evidencePath": ""
     },
     {
       "apiLevel": 36,
       "status": "pending",
-      "evidence": ""
+      "evidence": "",
+      "evidencePath": ""
     }
   ],
   "manualAcceptance": {

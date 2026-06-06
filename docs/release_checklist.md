@@ -25,11 +25,11 @@ release ticket or PR.
 - [ ] `docs/release_record.json` is updated for the release candidate and
   `VERIFY_RELEASE_RECORD=1 scripts/verify_release_gate.sh` passes. The gate
   checks the recorded Gradle version, Git commit, artifact checksum, signing
-  certificate fingerprint, evidence files, unsupported capabilities, Agent
-  behavior summary, and resolved or accepted blockers. For `PUBLIC_RELEASE=1`,
-  the record must use a public distribution channel and match the final AAB
-  path, artifact SHA-256, and production signing certificate SHA-256 passed to
-  the release gate.
+  certificate fingerprint, `status=passed` verification evidence files,
+  unsupported capabilities, Agent behavior summary, and resolved or accepted
+  blockers. For `PUBLIC_RELEASE=1`, the record must use a public distribution
+  channel and match the final AAB path, artifact SHA-256, and production
+  signing certificate SHA-256 passed to the release gate.
 
 ## Versioning And Release Track
 
@@ -196,7 +196,8 @@ release ticket or PR.
 - [ ] Matrix covers at least: API 28 minimum behavior, API 32 legacy storage
   permission behavior, API 33 media/notification permissions, API 34 selected
   visual media access, API 36 target behavior, and one physical arm64 device
-  with realistic LiteRT-LM CPU/GPU fallback.
+  with realistic LiteRT-LM CPU/GPU fallback. Each API matrix row must include
+  an evidence file path that exists in the RC validation artifact bundle.
 - [ ] Matrix covers first install, upgrade install, local model download and
   verification, custom model import or custom URL rejection path, remote model
   HTTPS configuration, encrypted API key clear, session persistence, memory
