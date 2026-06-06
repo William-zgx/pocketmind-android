@@ -36,6 +36,11 @@ not automatically sent to a remote model. If the user manually types or pastes
 the same content into a normal remote-eligible message, that message can be
 sent.
 
+When the user explicitly sends images to a configured remote vision model, the
+image bytes are attached to that request, but the text prompt uses only a
+generic image count and support notice. It does not include attachment display
+names, MIME types, byte sizes, OCR text, or non-image attachment metadata.
+
 Remote transport requires HTTPS, except for local debug hosts such as
 `localhost`, `127.0.0.1`, and Android emulator `10.0.2.2`. When an API key is
 configured, the runtime sends it as an authorization credential to the

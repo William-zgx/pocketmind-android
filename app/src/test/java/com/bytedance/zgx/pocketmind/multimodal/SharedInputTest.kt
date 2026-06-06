@@ -133,6 +133,41 @@ class SharedInputTest {
     }
 
     @Test
+    fun remoteVisionPromptOmitsAttachmentMetadataAndOcr() {
+        val input = SharedInput(
+            text = "",
+            protectedSourceCount = 2,
+            attachments = listOf(
+                SharedAttachment(
+                    kind = SharedAttachmentKind.Image,
+                    mimeType = "image/png",
+                    displayName = "private-screen.png",
+                    sizeBytes = 120L,
+                    textPreview = SharedTextPreview(
+                        text = "private OCR text",
+                        truncated = false,
+                        source = SharedTextPreviewSource.ImageOcr,
+                    ),
+                    imageAttachment = ChatImageAttachment(
+                        mimeType = "image/png",
+                        dataUrl = "data:image/png;base64,AA==",
+                    ),
+                ),
+            ),
+        )
+
+        val prompt = input.toRemoteVisionPrompt()
+
+        assertTrue(prompt.contains("已附加 1 张图片"))
+        assertTrue(prompt.contains("不支持图片输入"))
+        assertTrue(prompt.contains("2 个非图片或分享来源已被保护"))
+        assertFalse(prompt.contains("private-screen.png"))
+        assertFalse(prompt.contains("image/png"))
+        assertFalse(prompt.contains("120"))
+        assertFalse(prompt.contains("private OCR text"))
+    }
+
+    @Test
     fun promptIncludesOfficeOpenXmlTextPreviewForDocumentAttachment() {
         val input = SharedInput(
             text = "请总结文档",

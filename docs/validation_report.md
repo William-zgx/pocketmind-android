@@ -15,6 +15,42 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Remote privacy boundary hardening
+
+本轮覆盖项：
+
+- 新增 `SharedInput.toRemoteVisionPrompt()`，远端视觉图片请求的文字 prompt 只记录图片数量
+  和不支持提示，不包含附件文件名、MIME、大小、OCR 或非图片元数据；图片 bytes 仍作为
+  `ChatImageAttachment` 直接交给视觉模型。
+- 远端初始 Chat 发送前增加 fail-closed 边界：`AssistantRoute.Chat` 若带
+  `memoryHits`、`deviceContext`，或把远端 prompt 改写成非用户输入，会本地失败并把诊断
+  消息标为 `LocalOnly`，不调用 remote runtime。
+- 隐私 notice 和 capability matrix 同步说明远端视觉 prompt 不携带附件元数据。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.multimodal.SharedInputTest' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeSendsSharedImageAttachmentToVisionRuntime' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteImageDraftWhenRemoteIsNotReadyDoesNotEnterLaterRemoteHistory' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeFailsClosedWhenRouteIncludesMemoryContext' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeFailsClosedWhenRouteRewritesPrompt' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeKeepsSemanticMemoryRuntimeButDoesNotSendMemoryContext'
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest' \
+  --tests 'com.bytedance.zgx.pocketmind.memory.MemoryQualityContractTest' \
+  --tests 'com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntimeTest'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：targeted shared-input / remote privacy JVM tests。
+- 通过：ViewModel、MemoryQualityContract、RemoteChatRuntime JVM tests。
+- 通过：local verification，包含 JVM、lint、debug/release 构建、`bundleRelease` 和 APK/AAB scan。
+- 未执行模拟器：本轮修改 ViewModel/multimodal privacy boundary 和 JVM 回归测试，不改变 Android UI 或系统交互。
+
 ## 2026-06-06 Release artifact integrity hardening
 
 本轮覆盖项：

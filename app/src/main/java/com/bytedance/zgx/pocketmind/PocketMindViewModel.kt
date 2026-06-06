@@ -1358,6 +1358,31 @@ class PocketMindViewModel(
                             }
                             return@launch
                         }
+                        if (useRemoteModel) {
+                            val boundaryFailure = remoteRouteBoundaryFailure(
+                                userInput = trimmed,
+                                route = route,
+                            )
+                            if (boundaryFailure != null) {
+                                activeModelRunId?.let { runId ->
+                                    assistantOrchestrator.failModelGeneration(runId, boundaryFailure)
+                                }
+                                _uiState.updateLastAssistantLocalOnly(boundaryFailure)
+                                persistActiveSessionFromUi()
+                                _uiState.update {
+                                    it.copy(
+                                        isBusy = false,
+                                        isGenerating = false,
+                                        isReady = remoteConfig.isConfigured,
+                                        pendingConfirmation = null,
+                                        memoryHits = emptyList(),
+                                        agentTraceRuns = loadAgentTraceRuns(),
+                                        statusText = "已阻止远程发送",
+                                    )
+                                }
+                                return@launch
+                            }
+                        }
 
                         val partial = StringBuilder()
                         var remoteToolObservation: AgentModelObservationResult? = null
@@ -1629,13 +1654,17 @@ class PocketMindViewModel(
 
     private fun stageSharedInputDraft(sharedInput: SharedInput, statusText: String) {
         if (sharedInput.isEmpty) return
-        val prompt = sharedInput.toPrompt()
-        if (prompt.isBlank()) return
         val imageAttachments = if (_uiState.value.inferenceMode == InferenceMode.Remote) {
             sharedInput.remoteImageAttachments()
         } else {
             emptyList()
         }
+        val prompt = if (imageAttachments.isNotEmpty()) {
+            sharedInput.toRemoteVisionPrompt()
+        } else {
+            sharedInput.toPrompt()
+        }
+        if (prompt.isBlank()) return
         _uiState.update {
             it.copy(
                 pendingSharedInputDraft = SharedInputDraft(
@@ -4194,6 +4223,20 @@ private fun SharedInput.isRemoteVisionSendable(): Boolean =
                 attachment.imageAttachment != null &&
                 attachment.textPreview == null
         }
+
+private fun remoteRouteBoundaryFailure(userInput: String, route: AssistantRoute.Chat): String? =
+    when {
+        route.memoryHits.isNotEmpty() ->
+            "远程发送已阻止：本次路由包含本地记忆上下文。请切换到本地模型，或重试不带本地记忆的请求。"
+
+        route.deviceContext != null ->
+            "远程发送已阻止：本次路由包含设备上下文。请切换到本地模型，或重试不带设备上下文的请求。"
+
+        route.promptForModel != userInput ->
+            "远程发送已阻止：本次路由修改了远程 prompt。请切换到本地模型，或重新发送原始请求。"
+
+        else -> null
+    }
 
 private fun ModelSelectionState.modelHealthForCurrentSelection(backend: BackendChoice): ModelHealth {
     val activeModel = installedModels.firstOrNull { model -> model.id == activeInstalledModelId }

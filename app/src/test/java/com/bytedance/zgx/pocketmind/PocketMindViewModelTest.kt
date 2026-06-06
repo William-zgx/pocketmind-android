@@ -36,6 +36,7 @@ import com.bytedance.zgx.pocketmind.device.DeviceContextToolReadinessState
 import com.bytedance.zgx.pocketmind.download.DownloadInfo
 import com.bytedance.zgx.pocketmind.download.ModelDownloadClient
 import com.bytedance.zgx.pocketmind.memory.EmbeddingRuntime
+import com.bytedance.zgx.pocketmind.memory.MemoryHit
 import com.bytedance.zgx.pocketmind.memory.MemoryRecallMode
 import com.bytedance.zgx.pocketmind.memory.MemoryRecordType
 import com.bytedance.zgx.pocketmind.memory.MemoryRecordStore
@@ -502,10 +503,15 @@ class PocketMindViewModelTest {
 
         val call = remoteRuntime.calls.single()
         assertTrue(call.prompt.contains("描述这张图"))
-        assertTrue(call.prompt.contains("screen.png"))
+        assertTrue(call.prompt.contains("已附加 1 张图片"))
         assertTrue(call.prompt.contains("不支持图片输入"))
+        assertFalse(call.prompt.contains("screen.png"))
+        assertFalse(call.prompt.contains("image/png"))
+        assertFalse(call.prompt.contains("12"))
         assertEquals("data:image/png;base64,AA==", call.imageAttachments.single().dataUrl)
-        assertTrue(sessionStore.messages.first().text.contains("screen.png"))
+        assertFalse(sessionStore.messages.first().text.contains("screen.png"))
+        assertFalse(sessionStore.messages.first().text.contains("image/png"))
+        assertFalse(sessionStore.messages.first().text.contains("12"))
         assertEquals(
             listOf(MessagePrivacy.RemoteEligible, MessagePrivacy.RemoteEligible),
             sessionStore.messages.map { it.privacy },
@@ -558,7 +564,10 @@ class PocketMindViewModelTest {
             listOf(MessagePrivacy.LocalOnly, MessagePrivacy.LocalOnly),
             sessionStore.messages.map { it.privacy },
         )
-        assertTrue(sessionStore.messages.first().text.contains("screen.png"))
+        assertTrue(sessionStore.messages.first().text.contains("已附加 1 张图片"))
+        assertFalse(sessionStore.messages.first().text.contains("screen.png"))
+        assertFalse(sessionStore.messages.first().text.contains("image/png"))
+        assertFalse(sessionStore.messages.first().text.contains("12"))
 
         viewModel.updateRemoteModelConfig(configuredRemoteModel())
         viewModel.sendMessage("普通远程问题")
@@ -2840,6 +2849,85 @@ class PocketMindViewModelTest {
         assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.READ_CLIPBOARD })
         assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.QUERY_CONTACTS })
         assertFalse(tools.any { spec -> spec.name == MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR })
+    }
+
+    @Test
+    fun remoteModeFailsClosedWhenRouteIncludesMemoryContext() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-memory-boundary",
+                promptForModel = "普通远程问题",
+                memoryHits = listOf(
+                    MemoryHit(
+                        id = "pref-secret",
+                        text = "用户偏好：secret local preference",
+                        score = 1f,
+                    ),
+                ),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(1, assistantRouter.failModelGenerationCallCount)
+        assertEquals("run-remote-memory-boundary", assistantRouter.lastFailedModelRunId)
+        assertEquals("已阻止远程发送", viewModel.uiState.value.statusText)
+        assertEquals(MessagePrivacy.RemoteEligible, sessionStore.messages.first().privacy)
+        assertEquals(MessagePrivacy.LocalOnly, sessionStore.messages.last().privacy)
+        assertTrue(sessionStore.messages.last().text.contains("本地记忆上下文"))
+        assertTrue(sessionStore.messages.none { message -> message.text.contains("secret local preference") })
+    }
+
+    @Test
+    fun remoteModeFailsClosedWhenRouteRewritesPrompt() = runTest(dispatcher) {
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-prompt-boundary",
+                promptForModel = "本地记忆：secret\n\n普通远程问题",
+                memoryHits = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(1, assistantRouter.failModelGenerationCallCount)
+        assertEquals("run-remote-prompt-boundary", assistantRouter.lastFailedModelRunId)
+        assertEquals("已阻止远程发送", viewModel.uiState.value.statusText)
+        assertEquals(MessagePrivacy.LocalOnly, sessionStore.messages.last().privacy)
+        assertTrue(sessionStore.messages.last().text.contains("修改了远程 prompt"))
+        assertTrue(sessionStore.messages.none { message -> message.text.contains("本地记忆：secret") })
     }
 
     @Test

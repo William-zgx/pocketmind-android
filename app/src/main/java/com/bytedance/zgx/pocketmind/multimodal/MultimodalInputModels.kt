@@ -88,6 +88,23 @@ data class SharedInput(
         }.trim()
     }
 
+    fun toRemoteVisionPrompt(): String {
+        val remoteImageCount = attachments.count { attachment -> attachment.imageAttachment != null }
+        return buildString {
+            if (remoteImageCount > 0) {
+                append("已附加 $remoteImageCount 张图片。请直接根据图片内容处理；如果当前模型或接口不支持图片输入，请明确说明不支持。")
+            }
+            if (protectedImageSourceCount > 0) {
+                if (isNotEmpty()) append("\n\n")
+                append("另有受保护图片未读取或发送。")
+            }
+            if (protectedSourceCount > 0) {
+                if (isNotEmpty()) append("\n\n")
+                append("另有 $protectedSourceCount 个非图片或分享来源已被保护，本次未读取或发送其文本、附件元数据、文本摘录或 OCR。")
+            }
+        }.trim()
+    }
+
     private companion object {
         const val MAX_ATTACHMENTS_IN_PROMPT = 5
     }

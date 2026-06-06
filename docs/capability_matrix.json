@@ -59,7 +59,7 @@
       "requiresLocalModel": false,
       "remoteEligible": true,
       "confirmationPolicy": "NotRequired",
-      "failureBehavior": "远程配置不支持图片输入时直接提示不支持，不强制 OCR。",
+      "failureBehavior": "远程配置不支持图片输入时直接提示不支持，不强制 OCR；远程视觉 prompt 不包含附件文件名、MIME、大小或 OCR。",
       "requiredTests": [
         "RemoteChatRuntimeTest",
         "PocketMindViewModelTest",
