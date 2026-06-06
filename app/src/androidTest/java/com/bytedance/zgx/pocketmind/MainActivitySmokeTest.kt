@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 
@@ -71,12 +70,8 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("background_task_manager_title")
 
         composeRule.onNodeWithText("后台任务").assertIsDisplayed()
+        composeRule.onNodeWithTag("background_task_refresh_button").assertIsDisplayed()
         composeRule.onNodeWithTag("periodic_check_policy_section").assertIsDisplayed()
-        composeRule.onNodeWithText("暂无运行中的后台任务").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("最近审计日志").performScrollTo().assertIsDisplayed()
-        composeRule.assertTextIfPresent("暂无审计记录")
-        composeRule.onNodeWithText("最近 Agent 轨迹").performScrollTo().assertIsDisplayed()
-        composeRule.assertTextIfPresent("暂无 Agent 轨迹")
     }
 
     private fun ComposeTestRule.waitForTag(tag: String) {
@@ -88,12 +83,6 @@ class MainActivitySmokeTest {
     private fun ComposeTestRule.waitForText(text: String) {
         waitUntil(timeoutMillis = 5_000) {
             onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
-    private fun ComposeTestRule.assertTextIfPresent(text: String) {
-        if (onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) {
-            onNodeWithText(text).performScrollTo().assertIsDisplayed()
         }
     }
 

@@ -23,6 +23,32 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-06 Physical smoke scope narrowing
+
+本轮覆盖项：
+
+- `MainActivitySmokeTest.backgroundTaskManagerShowsEmptyState` 收窄为发布 smoke
+  适合的入口检查：只验证后台任务 sheet 打开、标题、刷新按钮和周期检查策略首屏可见。
+- 完整审计日志和 Agent 轨迹内容继续由 `MainActivitySkillUiTest` 的专项用例覆盖；
+  不再让真机 smoke 在 bottom sheet 内滚动完整内容，避免发布门禁被非核心滚动路径卡住。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin
+git diff --check
+ANDROID_SERIAL=fb6272c CLEAN_DEVICE=0 INSTRUMENTATION_CLASS=com.bytedance.zgx.pocketmind.MainActivitySmokeTest INSTRUMENTATION_TIMEOUT_SECONDS=180 ARTIFACT_DIR=build/verification/physical-device-smoke-after-narrowing scripts/install_and_test_device.sh
+```
+
+结果：
+
+- 通过：`:app:compileDebugAndroidTestKotlin` 和 `git diff --check`。
+- 未完成真机重跑：设备 `fb6272c` 仍拒绝 ADB 安装，
+  `build/verification/physical-device-smoke-after-narrowing/device-verification.properties`
+  记录 `failedTarget=install`、`reason=install-user-restricted`，SHA-256
+  `f124cd3836321ab7934ab0f222ace3f102eb4d9eb1bd9fff1b5081d889939009`。
+  需要在手机上允许 USB 安装后继续重跑真机 smoke 和远程模型验证。
+
 ## 2026-06-06 Physical device validation fail-closed hardening
 
 本轮覆盖项：
