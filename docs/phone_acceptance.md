@@ -135,6 +135,10 @@ ANDROID_SERIAL=emulator-5554 scripts/verify_emulator.sh
 AVD_NAME=focus_agent_api36_arm64 scripts/verify_emulator.sh
 ```
 
+指定 `AVD_NAME` 且没有显式设置 `EMULATOR_ARGS` 时，脚本会用包含
+`-wipe-data`、`-no-window` 和 `-no-snapshot-save` 的默认参数启动模拟器，避免旧
+userdata 或快照状态污染验收。
+
 完整模拟器回归优先使用更严格的 artifact gate；它会强制 `CLEAN_DEVICE=1`，
 复用 emulator helper，并校验 `emulator-verification.properties`、
 嵌套 `device-verification.properties` 和当前 AndroidTest 源码数量：

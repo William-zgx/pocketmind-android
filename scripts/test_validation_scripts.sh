@@ -3340,6 +3340,22 @@ expect_success \
 assert_gradle_called
 grep -q "Starting emulator AVD: test-avd" <<<"$LAST_OUTPUT" ||
   fail "Expected emulator helper to enter AVD startup path"
+grep -q -- "-avd test-avd -wipe-data -no-window -no-audio -no-snapshot-save -no-boot-anim -gpu swiftshader_indirect" "$FAKE_EMULATOR_LOG" ||
+  fail "Expected emulator helper to start requested AVD with deterministic default emulator args"
+
+reset_logs
+expect_success \
+  "emulator helper honors explicit emulator args" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5556\tdevice' AVD_NAME="test-avd" \
+  EMULATOR_ARGS="-no-window -no-audio" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/verify_emulator.sh
+assert_gradle_called
+grep -q -- "-avd test-avd -no-window -no-audio" "$FAKE_EMULATOR_LOG" ||
+  fail "Expected emulator helper to pass explicit emulator args"
+if grep -q -- "-wipe-data" "$FAKE_EMULATOR_LOG"; then
+  fail "Explicit EMULATOR_ARGS should override default emulator args"
+fi
 
 reset_logs
 SAVED_ARTIFACT_DIR="$ARTIFACT_DIR"

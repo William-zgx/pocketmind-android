@@ -184,9 +184,8 @@ if [[ -n "${AVD_NAME:-}" ]]; then
   "$EMULATOR_BIN" -list-avds 2>/dev/null | grep -Fx -- "$AVD_NAME" >/dev/null ||
     fail requested-avd requested-avd-not-found "AVD_NAME=$AVD_NAME not found."
   EXTRA_EMULATOR_ARGS=()
-  if [[ -n "${EMULATOR_ARGS:-}" ]]; then
-    read -r -a EXTRA_EMULATOR_ARGS <<< "$EMULATOR_ARGS"
-  fi
+  EMULATOR_ARGS="${EMULATOR_ARGS:--wipe-data -no-window -no-audio -no-snapshot-save -no-boot-anim -gpu swiftshader_indirect}"
+  read -r -a EXTRA_EMULATOR_ARGS <<< "$EMULATOR_ARGS"
   EMULATOR_CMD=("$EMULATOR_BIN" -avd "$AVD_NAME")
   if [[ "${#EXTRA_EMULATOR_ARGS[@]}" -gt 0 ]]; then
     EMULATOR_CMD+=("${EXTRA_EMULATOR_ARGS[@]}")

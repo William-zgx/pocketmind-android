@@ -526,6 +526,11 @@ instrumentation flow:
 AVD_NAME=focus_agent_api36_arm64 scripts/verify_emulator.sh
 ```
 
+When `AVD_NAME` is set and `EMULATOR_ARGS` is not provided, the helper starts
+the AVD with deterministic headless defaults including `-wipe-data`,
+`-no-window`, and `-no-snapshot-save`. Set `EMULATOR_ARGS` explicitly only when
+you need a different launch profile.
+
 For release-candidate style emulator regression, use the stricter artifact
 gate. It forces `CLEAN_DEVICE=1`, runs the emulator helper, verifies both
 machine-readable reports, and fails if the runner reports fewer AndroidTest
