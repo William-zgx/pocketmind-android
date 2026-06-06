@@ -184,7 +184,9 @@ release ticket or PR.
   checking the public-distribution gate. The perf baseline must be from a
   non-emulator `arm64-v8a` device, match the current Gradle `versionName`, bind
   to the release artifact SHA-256, record non-zero measured timings, and use a
-  non-future UTC `recordedAt` within the accepted freshness window.
+  non-future UTC `recordedAt` within the accepted freshness window. If
+  `scripts/collect_perf_baseline.sh` fails, attach its `status=failed`
+  collector report with `failedTarget`, `reason`, and verifier report linkage.
 - [ ] `release-gate.properties` records `failedTarget` and `failedReason` for
   any failed gate run, so the release ticket can link the exact failing child
   report without guessing.

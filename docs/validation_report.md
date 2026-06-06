@@ -17,6 +17,38 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Perf baseline collector failure reason hardening
+
+本轮覆盖项：
+
+- `scripts/collect_perf_baseline.sh` 失败时会把 `OUT_FILE` 写成
+  `status=failed` 的 `perf-baseline-collector` 报告。
+- collector failed report 新增 `exit_code`、`failedTarget`、`reason`、
+  release artifact path/SHA、设备元数据、app/model/backend、verification report
+  和 verification reason。
+- 缺少必填环境变量、release artifact 不存在、ADB 无法读取且未手动提供设备元数据、
+  以及 `verify_perf_baseline.sh` 拒绝采集结果时，都会写机器可读失败原因。
+- 成功路径仍只记录真实输入的测量值，不发明 timing；失败路径不会写成可发布 baseline。
+- `scripts/test_validation_scripts.sh` 覆盖 missing env、missing artifact、emulator
+  serial 被 verifier 拒绝，以及成功采集路径。
+- `docs/release_checklist.md` 同步 collector failed report 字段要求。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_perf_baseline.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 perf collector failedTarget / reason 和
+  verificationReason 汇总。
+- 通过：`scripts/verify_local.sh`。
+- 未记录正式 RC perf baseline：当前未连接目标物理设备，也没有生产签名 release
+  artifact；不能用模拟器或手填假数据替代。
+
 ## 2026-06-06 Release signing failure reason hardening
 
 本轮覆盖项：

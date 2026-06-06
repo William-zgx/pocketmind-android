@@ -1715,6 +1715,88 @@ assert_report_contains "$ARTIFACT_DIR/signing-missing-aab.properties" "reason=un
 grep -q 'Release signing requires unsigned AAB' <<<"$LAST_OUTPUT" ||
   fail "Expected signing helper to require unsigned AAB before production signing"
 
+COLLECTED_PERF_MISSING_ENV="$ARTIFACT_DIR/collected-perf-missing-env.properties"
+expect_failure \
+  "perf baseline collector reports missing required env" \
+  env ADB="$TMP_DIR/missing-adb" \
+  OUT_FILE="$COLLECTED_PERF_MISSING_ENV" \
+  APP_VERSION=1.0 \
+  MODEL_ID=chat-e2b \
+  BACKEND=GPU \
+  FIRST_LAUNCH_INTERACTIVE_MS=1200 \
+  MODEL_LOAD_MS=3500 \
+  FIRST_TOKEN_MS=900 \
+  TOKENS_PER_SECOND=12.5 \
+  STOP_GENERATION_RECOVERY_MS=200 \
+  GPU_FALLBACK_STATUS=not-needed \
+  VISION_INPUT_MS=500 \
+  MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_PEAK_MB=512 \
+  OOM_OR_ANR_OBSERVED=false \
+  scripts/collect_perf_baseline.sh
+assert_report_contains "$COLLECTED_PERF_MISSING_ENV" "status=failed"
+assert_report_contains "$COLLECTED_PERF_MISSING_ENV" "target=perf-baseline-collector"
+assert_report_contains "$COLLECTED_PERF_MISSING_ENV" "failedTarget=environment"
+assert_report_contains "$COLLECTED_PERF_MISSING_ENV" "reason=missing-release-artifact"
+
+COLLECTED_PERF_MISSING_ARTIFACT="$ARTIFACT_DIR/collected-perf-missing-artifact.properties"
+expect_failure \
+  "perf baseline collector reports missing release artifact" \
+  env ADB="$TMP_DIR/missing-adb" \
+  OUT_FILE="$COLLECTED_PERF_MISSING_ARTIFACT" \
+  RELEASE_ARTIFACT="$TMP_DIR/missing-release-artifact.apk" \
+  ANDROID_SERIAL=device-a \
+  DEVICE_MODEL="Pixel Test" \
+  ANDROID_API=36 \
+  ABI=arm64-v8a \
+  APP_VERSION=1.0 \
+  MODEL_ID=chat-e2b \
+  BACKEND=GPU \
+  FIRST_LAUNCH_INTERACTIVE_MS=1200 \
+  MODEL_LOAD_MS=3500 \
+  FIRST_TOKEN_MS=900 \
+  TOKENS_PER_SECOND=12.5 \
+  STOP_GENERATION_RECOVERY_MS=200 \
+  GPU_FALLBACK_STATUS=not-needed \
+  VISION_INPUT_MS=500 \
+  MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_PEAK_MB=512 \
+  OOM_OR_ANR_OBSERVED=false \
+  scripts/collect_perf_baseline.sh
+assert_report_contains "$COLLECTED_PERF_MISSING_ARTIFACT" "status=failed"
+assert_report_contains "$COLLECTED_PERF_MISSING_ARTIFACT" "failedTarget=input-artifact"
+assert_report_contains "$COLLECTED_PERF_MISSING_ARTIFACT" "reason=release-artifact-missing"
+
+COLLECTED_PERF_EMULATOR="$ARTIFACT_DIR/collected-perf-emulator.properties"
+expect_failure \
+  "perf baseline collector reports verifier rejection reason" \
+  env ADB="$TMP_DIR/missing-adb" \
+  OUT_FILE="$COLLECTED_PERF_EMULATOR" \
+  RELEASE_ARTIFACT="$SAFE_APK" \
+  ANDROID_SERIAL=emulator-5554 \
+  DEVICE_MODEL="Pixel Test" \
+  ANDROID_API=36 \
+  ABI=arm64-v8a \
+  APP_VERSION=1.0 \
+  MODEL_ID=chat-e2b \
+  BACKEND=GPU \
+  FIRST_LAUNCH_INTERACTIVE_MS=1200 \
+  MODEL_LOAD_MS=3500 \
+  FIRST_TOKEN_MS=900 \
+  TOKENS_PER_SECOND=12.5 \
+  STOP_GENERATION_RECOVERY_MS=200 \
+  GPU_FALLBACK_STATUS=not-needed \
+  VISION_INPUT_MS=500 \
+  MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_PEAK_MB=512 \
+  OOM_OR_ANR_OBSERVED=false \
+  scripts/collect_perf_baseline.sh
+assert_report_contains "$COLLECTED_PERF_EMULATOR" "status=failed"
+assert_report_contains "$COLLECTED_PERF_EMULATOR" "failedTarget=perf-baseline-verification"
+assert_report_contains "$COLLECTED_PERF_EMULATOR" "reason=device-serial-is-emulator"
+assert_report_contains "$COLLECTED_PERF_EMULATOR" "verificationReport=$COLLECTED_PERF_EMULATOR.verification.properties"
+assert_report_contains "$COLLECTED_PERF_EMULATOR" "verificationReason=device-serial-is-emulator"
+
 COLLECTED_PERF="$ARTIFACT_DIR/collected-perf.properties"
 expect_success \
   "perf baseline collector writes verifiable record from measured inputs" \

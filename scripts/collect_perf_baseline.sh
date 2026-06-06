@@ -5,6 +5,58 @@ OUT_FILE="${OUT_FILE:-build/verification/rc/perf-baseline.properties}"
 RELEASE_ARTIFACT="${RELEASE_ARTIFACT:-}"
 ANDROID_SERIAL="${ANDROID_SERIAL:-}"
 STATUS="${STATUS:-passed}"
+VERIFY_REPORT_FILE="${VERIFY_REPORT_FILE:-${OUT_FILE}.verification.properties}"
+FAILED_TARGET=""
+FAILURE_REASON=""
+device_serial="$ANDROID_SERIAL"
+device_model="${DEVICE_MODEL:-}"
+android_api="${ANDROID_API:-}"
+abi="${ABI:-}"
+
+report_value() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+  awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$file"
+}
+
+write_failure_report() {
+  local exit_code="$1"
+  mkdir -p "$(dirname "$OUT_FILE")"
+  {
+    printf 'status=failed\n'
+    printf 'exit_code=%s\n' "$exit_code"
+    printf 'target=perf-baseline-collector\n'
+    printf 'failedTarget=%s\n' "${FAILED_TARGET:-}"
+    printf 'reason=%s\n' "${FAILURE_REASON:-unexpected-collector-failure}"
+    printf 'releaseArtifact=%s\n' "$RELEASE_ARTIFACT"
+    if [[ -f "$RELEASE_ARTIFACT" ]]; then
+      printf 'releaseArtifactSha256=%s\n' "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')"
+    fi
+    printf 'androidSerialInput=%s\n' "$ANDROID_SERIAL"
+    printf 'deviceSerial=%s\n' "${device_serial:-}"
+    printf 'deviceModel=%s\n' "${device_model:-}"
+    printf 'androidApi=%s\n' "${android_api:-}"
+    printf 'abi=%s\n' "${abi:-}"
+    printf 'appVersion=%s\n' "${APP_VERSION:-}"
+    printf 'modelId=%s\n' "${MODEL_ID:-}"
+    printf 'backend=%s\n' "${BACKEND:-}"
+    printf 'verificationReport=%s\n' "$VERIFY_REPORT_FILE"
+    printf 'verificationReason=%s\n' "$(report_value "$VERIFY_REPORT_FILE" reason)"
+    printf 'recordedAt=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  } > "$OUT_FILE"
+  echo "Perf baseline collection report: $OUT_FILE"
+}
+
+trap 'status=$?; if [[ "$status" -ne 0 ]]; then write_failure_report "$status"; fi; exit "$status"' EXIT
+
+fail() {
+  FAILED_TARGET="$1"
+  FAILURE_REASON="$2"
+  shift 2
+  echo "$*" >&2
+  exit 1
+}
 
 usage() {
   cat >&2 <<'USAGE'
@@ -26,6 +78,10 @@ USAGE
 require_env() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
+    local reason
+    reason="$(printf '%s' "$name" | tr '[:upper:]_' '[:lower:]-')"
+    FAILED_TARGET="environment"
+    FAILURE_REASON="missing-$reason"
     echo "Missing required environment variable: $name" >&2
     usage
     exit 1
@@ -48,8 +104,7 @@ require_env MEMORY_PEAK_MB
 require_env OOM_OR_ANR_OBSERVED
 
 if [[ ! -f "$RELEASE_ARTIFACT" ]]; then
-  echo "Release artifact is missing: $RELEASE_ARTIFACT" >&2
-  exit 1
+  fail input-artifact release-artifact-missing "Release artifact is missing: $RELEASE_ARTIFACT"
 fi
 
 ADB="${ADB:-adb}"
@@ -58,11 +113,6 @@ if [[ -n "$ANDROID_SERIAL" ]]; then
 else
   ADB_CMD=("$ADB")
 fi
-
-device_serial="$ANDROID_SERIAL"
-device_model="${DEVICE_MODEL:-}"
-android_api="${ANDROID_API:-}"
-abi="${ABI:-}"
 
 if command -v "$ADB" >/dev/null 2>&1; then
   device_serial="${device_serial:-$("${ADB_CMD[@]}" get-serialno 2>/dev/null || true)}"
@@ -75,8 +125,9 @@ require_value() {
   local name="$1"
   local value="$2"
   if [[ -z "$value" ]]; then
-    echo "Missing $name; provide it via environment when adb cannot read the device." >&2
-    exit 1
+    local reason
+    reason="$(printf '%s' "$name" | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]')"
+    fail device-metadata "$reason-missing" "Missing $name; provide it via environment when adb cannot read the device."
   fi
 }
 
@@ -109,8 +160,13 @@ mkdir -p "$(dirname "$OUT_FILE")"
   printf 'recordedAt=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 } > "$OUT_FILE"
 
-scripts/verify_perf_baseline.sh \
+if ! scripts/verify_perf_baseline.sh \
   --file "$OUT_FILE" \
-  --artifact-sha256 "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')"
+  --artifact-sha256 "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')" \
+  --report "$VERIFY_REPORT_FILE"; then
+  verifier_reason="$(report_value "$VERIFY_REPORT_FILE" reason)"
+  [[ -n "$verifier_reason" ]] || verifier_reason="perf-baseline-verification-failed"
+  fail perf-baseline-verification "$verifier_reason" "Collected perf baseline did not pass verification."
+fi
 
 echo "Perf baseline written to $OUT_FILE"
