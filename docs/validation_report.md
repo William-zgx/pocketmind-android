@@ -17,6 +17,52 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Model license metadata source candidate hardening
+
+本轮覆盖项：
+
+- `scripts/collect_model_license_metadata.sh` 新增 `REPORT_FILE` 输出，成功和失败都会记录
+  `target=model-license-metadata-collector`、`failedTarget`、`reason`、输入文件、API
+  base URL 和 model count。
+- metadata collector 从 Hugging Face API 的 `siblings` 中提取 license、notice、terms、
+  model-card、README 等候选来源，写入
+  `docs/model_license_metadata.json.licenseSourceCandidates`。
+- `scripts/test_validation_scripts.sh` 使用本地 fake Hugging Face API 覆盖成功采集、
+  source candidate 写入，以及缺少 review 文件时的机器可读失败报告。
+- 实际刷新了 `docs/model_license_metadata.json`，四个推荐模型均记录了 pinned revision
+  下的 README 候选来源。
+- 当前 `docs/model_license_review.json` 仍为 `pending_manual_review` /
+  `not_approved`；候选来源只服务人工审核，不替代 legal/release approval。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_model_license_metadata.sh scripts/verify_model_license_review.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+REPORT_FILE=build/verification/model-license-metadata-collector.properties scripts/collect_model_license_metadata.sh
+scripts/verify_model_license_review.sh --report build/verification/model-license-current.properties
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" scripts/verify_local.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" AVD_NAME=focus_agent_api36_arm64 EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=300 scripts/regression_emulator.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 collector success report、
+  `licenseSourceCandidates` 写入和 missing review failure report。
+- 通过：真实 Hugging Face metadata 刷新；
+  `build/verification/model-license-metadata-collector.properties` 记录
+  `status=passed`、`modelCount=4`。
+- 预期失败：`scripts/verify_model_license_review.sh --report
+  build/verification/model-license-current.properties` 返回
+  `status=failed`，原因是四个模型尚未完成人工审批、redistribution approval、具体
+  license source、reviewer、evidence 和 review date。
+- 通过：`scripts/verify_local.sh`。
+- 通过：真实模拟器回归 `focus_agent_api36_arm64` / `emulator-5554`，API 36，
+  `arm64-v8a`，28 个 AndroidTest 全部通过；
+  `build/verification/regression-emulator-20260606-182722/regression-emulator.properties`
+  记录 `status=passed`、`failedTarget=`、`reason=`，SHA-256 为
+  `9ec70151511c741701e9e53bb924e3671b990bd921273d7c11da6a3560fdfa51`。
+
 ## 2026-06-06 Perf baseline collector failure reason hardening
 
 本轮覆盖项：

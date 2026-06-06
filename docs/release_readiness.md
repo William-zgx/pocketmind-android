@@ -37,6 +37,9 @@ items below.
   single public read-only evidence calls and all-public evidence batches can
   execute without confirmation, while mixed private/action/side-effect batches
   fail closed before any tool runs.
+- Hugging Face model metadata collection now records concrete model-card,
+  license, notice, terms, or README source candidates plus a machine-readable
+  collector report. The output remains metadata-only and is not legal approval.
 - Latest local gate for the current working tree passed
   `scripts/verify_local.sh`, including JVM tests, lint, debug/androidTest APK
   assembly, release assembly, and APK content checks; see
@@ -48,7 +51,7 @@ items below.
 - Current release-candidate emulator regression passed with
   `scripts/regression_emulator.sh` on `focus_agent_api36_arm64` /
   `emulator-5554` (API 36, `arm64-v8a`):
-  `build/verification/regression-emulator-20260606-175158/regression-emulator.properties`
+  `build/verification/regression-emulator-20260606-182722/regression-emulator.properties`
   records `status=passed`, nested emulator/device reports passed, and
   `actual_android_test_count=28` matching the 28 AndroidTest source count.
 
@@ -88,9 +91,10 @@ items below.
   `docs/model_manifest.md`, `docs/model_license_review.json`, and the release
   checklist. `VERIFY_MODEL_URLS=1` checks URL/content metadata only; it does
   not establish license readiness. `scripts/collect_model_license_metadata.sh`
-  derives the model list from `docs/model_manifest.md` and can refresh Hugging
-  Face model-card metadata in `docs/model_license_metadata.json`, but it does
-  not replace legal/release approval. `VERIFY_MODEL_LICENSES=1` runs
+  derives the model list from `docs/model_manifest.md`, refreshes Hugging Face
+  model-card metadata in `docs/model_license_metadata.json`, and records
+  `licenseSourceCandidates` for reviewer follow-up, but it does not replace
+  legal/release approval. `VERIFY_MODEL_LICENSES=1` runs
   `scripts/verify_model_license_review.sh` and requires approved review records
   aligned with the current manifest, metadata, license source, and metadata
   collection date.

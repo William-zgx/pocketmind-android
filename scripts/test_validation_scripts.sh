@@ -1266,6 +1266,65 @@ cat > "$MODEL_LICENSE_PENDING" <<'MODEL_LICENSE_PENDING_JSON'
   ]
 }
 MODEL_LICENSE_PENDING_JSON
+MODEL_LICENSE_FAKE_API_ROOT="$TMP_DIR/model-license-fake-api"
+mkdir -p "$MODEL_LICENSE_FAKE_API_ROOT/example"
+cat > "$MODEL_LICENSE_FAKE_API_ROOT/example/chat-e2b" <<'MODEL_LICENSE_CHAT_API_JSON'
+{
+  "sha": "chat-current-api-sha",
+  "lastModified": "2026-06-05T00:00:00.000Z",
+  "gated": false,
+  "tags": ["license:apache-2.0"],
+  "cardData": {"license": "apache-2.0"},
+  "siblings": [
+    {"rfilename": "README.md"},
+    {"rfilename": "LICENSE"},
+    {"rfilename": "model.litertlm"}
+  ]
+}
+MODEL_LICENSE_CHAT_API_JSON
+cat > "$MODEL_LICENSE_FAKE_API_ROOT/example/memory-embedding-300m" <<'MODEL_LICENSE_MEMORY_API_JSON'
+{
+  "sha": "memory-current-api-sha",
+  "lastModified": "2026-06-05T00:00:00.000Z",
+  "gated": false,
+  "tags": ["license:apache-2.0"],
+  "cardData": {"license": "apache-2.0"},
+  "siblings": [
+    {"rfilename": "README.md"},
+    {"rfilename": "NOTICE.txt"},
+    {"rfilename": "memory.litertlm"}
+  ]
+}
+MODEL_LICENSE_MEMORY_API_JSON
+MODEL_LICENSE_COLLECTED="$TMP_DIR/model-license-collected.json"
+expect_success \
+  "model license metadata collector records source candidates" \
+  env REVIEW_FILE="$MODEL_LICENSE_PENDING" \
+  MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  OUT_FILE="$MODEL_LICENSE_COLLECTED" \
+  REPORT_FILE="$ARTIFACT_DIR/model-license-collector.properties" \
+  MODEL_LICENSE_API_BASE_URL="file://$MODEL_LICENSE_FAKE_API_ROOT" \
+  scripts/collect_model_license_metadata.sh
+assert_report_contains "$ARTIFACT_DIR/model-license-collector.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/model-license-collector.properties" "target=model-license-metadata-collector"
+assert_report_contains "$ARTIFACT_DIR/model-license-collector.properties" "modelCount=2"
+grep -q '"licenseSourceCandidates"' "$MODEL_LICENSE_COLLECTED" ||
+  fail "Expected collected model license metadata to include source candidates"
+grep -q 'https://huggingface.co/example/chat-e2b/blob/chat-revision-a/README.md' "$MODEL_LICENSE_COLLECTED" ||
+  fail "Expected collected metadata to include chat README license source candidate"
+grep -q 'https://huggingface.co/example/memory-embedding-300m/blob/memory-revision-a/NOTICE.txt' "$MODEL_LICENSE_COLLECTED" ||
+  fail "Expected collected metadata to include memory NOTICE license source candidate"
+expect_failure \
+  "model license metadata collector reports missing review file" \
+  env REVIEW_FILE="$TMP_DIR/missing-model-license-review.json" \
+  MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  OUT_FILE="$TMP_DIR/model-license-missing-review-collected.json" \
+  REPORT_FILE="$ARTIFACT_DIR/model-license-collector-missing-review.properties" \
+  MODEL_LICENSE_API_BASE_URL="file://$MODEL_LICENSE_FAKE_API_ROOT" \
+  scripts/collect_model_license_metadata.sh
+assert_report_contains "$ARTIFACT_DIR/model-license-collector-missing-review.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/model-license-collector-missing-review.properties" "failedTarget=input-file"
+assert_report_contains "$ARTIFACT_DIR/model-license-collector-missing-review.properties" "reason=missing-review-file"
 expect_failure \
   "model license verifier rejects incomplete review records" \
   env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_PENDING" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \

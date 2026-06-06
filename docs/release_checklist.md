@@ -153,6 +153,12 @@ release ticket or PR.
   source must point to a concrete license, notice, terms, or model-card file
   such as a `blob`, `raw`, or `resolve` URL; the repository homepage is not
   acceptable as a license source.
+- [ ] `scripts/collect_model_license_metadata.sh` is run with `REPORT_FILE`
+  before manual model review. Attach the collector report and confirm
+  `docs/model_license_metadata.json` includes `licenseSourceCandidates` for
+  Hugging Face-hosted models. These candidates are reviewer input only; they do
+  not approve redistribution and do not replace the concrete license source
+  recorded in `docs/model_license_review.json`.
 - [ ] `docs/model_license_review.json` is updated from pending to approved
   records before broad distribution, and `VERIFY_MODEL_LICENSES=1
   scripts/verify_release_gate.sh` passes for the release candidate. The gate

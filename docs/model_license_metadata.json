@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recordedAt": "2026-06-05T17:54:12Z",
+  "recordedAt": "2026-06-06T10:26:09Z",
   "source": "Hugging Face model API",
   "policy": "Metadata collection is not legal approval; docs/model_license_review.json remains the release gate.",
   "models": [
@@ -16,6 +16,9 @@
         "apache-2.0"
       ],
       "cardLicense": "apache-2.0",
+      "licenseSourceCandidates": [
+        "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/a4a831c060880f3733135ad22f10e0e9f758f45d/README.md"
+      ],
       "manualReviewStatus": "pending_manual_review",
       "redistributionDecision": "not_approved",
       "metadataOnly": true
@@ -32,6 +35,9 @@
         "apache-2.0"
       ],
       "cardLicense": "apache-2.0",
+      "licenseSourceCandidates": [
+        "https://huggingface.co/kontextdev/embeddinggemma-300m-litertlm/blob/96fa469293abd2da72b46aeeafea3bb571468dfe/README.md"
+      ],
       "manualReviewStatus": "pending_manual_review",
       "redistributionDecision": "not_approved",
       "metadataOnly": true
@@ -48,6 +54,9 @@
         "gemma"
       ],
       "cardLicense": "gemma",
+      "licenseSourceCandidates": [
+        "https://huggingface.co/litert-community/functiongemma-mobile-actions_q8_ekv1024.litertlm/blob/82d0f654a6270c518d16c600edce3136221b3347/README.md"
+      ],
       "manualReviewStatus": "pending_manual_review",
       "redistributionDecision": "not_approved",
       "metadataOnly": true
@@ -64,6 +73,9 @@
         "apache-2.0"
       ],
       "cardLicense": "apache-2.0",
+      "licenseSourceCandidates": [
+        "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/blob/65ce5ba80d8790d66ef11d82d7d079a06f3fef97/README.md"
+      ],
       "manualReviewStatus": "pending_manual_review",
       "redistributionDecision": "not_approved",
       "metadataOnly": true
