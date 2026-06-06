@@ -23,6 +23,50 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Product positioning and CI emulator regression wiring
+
+本轮覆盖项：
+
+- README 首段收敛为“隐私优先的随身 AI 助手”：本地可用、远程多模态可选、
+  设备动作必须确认执行。
+- 能力矩阵新增 `productPositioning` 和 `targetUserJob`，让产品主线进入机器可读
+  release contract，而不是只停留在文档描述。
+- 模型管理页把“信任”页签调整为“隐私”，新增“为什么装它”和 App 内隐私说明入口；
+  同步补充远程模型发送边界和本地模型下载理由。
+- 动作确认页新增“数据去向”区块：外部 App/系统页面动作说明不会自动完成外部操作，
+  本地读取说明结果默认 LocalOnly，提醒/后台任务说明默认留在本机。
+- 麦克风入口的 accessibility/就近说明明确：使用系统语音转写，结果只进入输入框，
+  不自动发送，不读取本地音频文件。
+- `.github/workflows/android.yml` 新增 `emulator-regression` job，在
+  `workflow_dispatch` 和 weekly `schedule` 事件中创建 API 36 arm64 AVD 并运行
+  `scripts/regression_emulator.sh`。
+- CI job 上传 `android-emulator-regression-evidence`，包含
+  `regression-emulator.properties`、嵌套 emulator/device report、instrumentation
+  output、截图/UI/logcat artifact 和 emulator log。
+- `docs/release_checklist.md` 明确 RC 必须绑定通过的 CI emulator regression job，
+  或记录 CI 不可用原因并链接等价本地 `scripts/regression_emulator.sh` 报告。
+
+验证命令：
+
+```bash
+git diff --check
+ruby -e 'require "yaml"; YAML.load_file(".github/workflows/android.yml"); puts "workflow yaml parsed"'
+bash -n scripts/regression_emulator.sh scripts/verify_emulator.sh scripts/install_and_test_device.sh
+./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：本地 whitespace、workflow YAML parse、相关 shell syntax 检查。
+- 通过：`PocketMindScreenDisplayTest` 覆盖产品定位、App 内隐私说明入口、远程发送边界、
+  本地模型下载理由、动作确认数据去向、麦克风就近说明和信任/删除控制文案。
+- 通过：`scripts/verify_local.sh`，覆盖 validation script self-tests、JVM tests、lint、
+  debug/androidTest APK assembly、release APK/AAB assembly 和 Android artifact scan。
+- 未执行 GitHub Actions macOS runner：本地只能验证 workflow 配置和脚本入口；实际
+  `emulator-regression` job 需要在 GitHub Actions 上通过后，才能作为 CI connected
+  Android test evidence。
+
 ## 2026-06-07 Core emulator regression refresh
 
 本轮覆盖项：

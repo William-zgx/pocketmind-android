@@ -1,8 +1,14 @@
 # PocketMind Android
 
-PocketMind Android is a local-first Android chat app for running LiteRT-LM
-models on device. It can download recommended `.litertlm` models, import a
-model from local storage, and stream offline answers directly on the phone.
+PocketMind Android is a privacy-first pocket AI assistant: it can run local
+LiteRT-LM models on device, optionally use a user-configured remote multimodal
+model, and only executes device actions after explicit confirmation.
+
+The reason to install PocketMind is not "another chatbot". It is a phone-side
+assistant for private, everyday context: basic questions can work locally after
+a model is downloaded or imported, remote image/chat support is opt-in, and
+contacts, calendar, screen, media, reminders, sharing, and app-opening actions
+stay behind local permission and confirmation gates.
 
 The project is built with Kotlin, Jetpack Compose, Android Gradle Plugin, and
 Google AI Edge LiteRT-LM.

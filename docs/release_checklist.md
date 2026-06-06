@@ -184,6 +184,12 @@ release ticket or PR.
 ## Build Verification
 
 - [ ] `scripts/verify_local.sh` passes on a clean checkout.
+- [ ] The GitHub Actions `emulator-regression` job has passed for the release
+  candidate SHA, or the release ticket records why CI emulator execution was
+  unavailable and links an equivalent local `scripts/regression_emulator.sh`
+  report. The CI job must upload `android-emulator-regression-evidence` with
+  `regression-emulator.properties`, nested emulator/device reports,
+  instrumentation output, screenshot/UI/logcat artifacts, and the emulator log.
 - [ ] `VERIFY_MODEL_URLS=1 scripts/verify_local.sh` is run when model URL
   availability/provenance needs fresh evidence. License readiness is still
   reviewed manually.

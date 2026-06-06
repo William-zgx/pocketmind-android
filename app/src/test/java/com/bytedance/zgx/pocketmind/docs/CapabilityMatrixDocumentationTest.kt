@@ -18,6 +18,12 @@ class CapabilityMatrixDocumentationTest {
             documented.getJSONObject(index).getString("capabilityId")
         }
 
+        assertEquals(CapabilityMatrix.productPositioning, json.getString("productPositioning"))
+        assertEquals(CapabilityMatrix.targetUserJob, json.getString("targetUserJob"))
+        assertTrue(json.getString("productPositioning").contains("隐私优先"))
+        assertTrue(json.getString("productPositioning").contains("必须确认执行"))
+        assertTrue(json.getString("targetUserJob").contains("本地上下文留在本机"))
+
         assertEquals(
             CapabilityMatrix.productDescriptors.map { descriptor -> descriptor.capabilityId },
             documentedIds,

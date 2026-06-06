@@ -8,6 +8,7 @@ import com.bytedance.zgx.pocketmind.ModelHealth
 import com.bytedance.zgx.pocketmind.ModelHealthState
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
+import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +26,23 @@ class PocketMindScreenDisplayTest {
 
     @Test
     fun trustBoundaryCopyNamesLocalRemotePermissionAndDeletionControls() {
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("隐私优先"))
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("本地可用"))
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("远程多模态可选"))
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("必须确认执行"))
+        assertTrue(PRODUCT_POSITIONING_SHORT_TEXT.contains("隐私优先"))
+        assertTrue(PRODUCT_POSITIONING_SHORT_TEXT.contains("随身 AI 助手"))
+        assertTrue(PRODUCT_LOCAL_VALUE_TEXT.contains("基础问答"))
+        assertTrue(PRODUCT_REMOTE_VALUE_TEXT.contains("图片"))
+        assertTrue(PRODUCT_ACTION_VALUE_TEXT.contains("确认或取消"))
+        assertTrue(PRIVACY_POLICY_ENTRY_TEXT.contains("App 内隐私说明入口"))
+        assertTrue(PRIVACY_POLICY_ENTRY_TEXT.contains("Play Data safety"))
+        assertTrue(REMOTE_MODE_DISCLOSURE_TEXT.contains("可远程发送的对话上下文"))
+        assertTrue(MODEL_DOWNLOAD_RATIONALE_TEXT.contains("离线可用"))
+        assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("系统语音转写"))
+        assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("只进入输入框"))
+        assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("不自动发送"))
+        assertTrue(VOICE_INPUT_PRIVACY_DESCRIPTION.contains("不读取本地音频文件"))
         assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("留在本机"))
         assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("LocalOnly"))
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("对话上下文"))
@@ -54,6 +72,22 @@ class PocketMindScreenDisplayTest {
         assertEquals(1, packageRows.size)
         assertEquals("目标包", packageRows.single().label)
         assertEquals("com.example.target", packageRows.single().value)
+    }
+
+    @Test
+    fun actionDataBoundaryNamesExternalLocalAndBackgroundDestinations() {
+        val externalRows = actionDataBoundaryDisplayRows(MobileActionFunctions.SHARE_TEXT)
+        assertTrue(externalRows.joinToString().contains("外部 App"))
+        assertTrue(externalRows.joinToString().contains("未确认结果前宣称已完成"))
+
+        val localRows = actionDataBoundaryDisplayRows(MobileActionFunctions.READ_CLIPBOARD)
+        assertTrue(localRows.joinToString().contains("本机内容"))
+        assertTrue(localRows.joinToString().contains("LocalOnly"))
+        assertTrue(localRows.joinToString().contains("不会自动发送给远程模型"))
+
+        val reminderRows = actionDataBoundaryDisplayRows(MobileActionFunctions.SCHEDULE_REMINDER)
+        assertTrue(reminderRows.joinToString().contains("后台任务"))
+        assertTrue(reminderRows.joinToString().contains("默认留在本机"))
     }
 
     @Test

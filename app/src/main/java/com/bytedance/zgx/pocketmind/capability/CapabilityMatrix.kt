@@ -42,6 +42,11 @@ data class CapabilityDescriptor(
 )
 
 object CapabilityMatrix {
+    const val productPositioning: String =
+        "隐私优先的随身 AI 助手：本地可用，远程多模态可选，设备动作必须确认执行。"
+    const val targetUserJob: String =
+        "在手机上处理私人日常问答、记忆、图片/文件输入和受确认保护的设备动作，同时默认把本地上下文留在本机。"
+
     fun toolDescriptors(registry: ToolRegistry = ToolRegistry()): List<CapabilityDescriptor> =
         registry.specs().map { spec -> spec.toCapabilityDescriptor() }
 

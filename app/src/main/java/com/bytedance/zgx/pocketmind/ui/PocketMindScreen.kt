@@ -133,6 +133,7 @@ import com.bytedance.zgx.pocketmind.SetupTier
 import com.bytedance.zgx.pocketmind.SpecialAccessRequirement
 import com.bytedance.zgx.pocketmind.runtimePermissionRequirementsFor
 import com.bytedance.zgx.pocketmind.specialAccessRequirementsFor
+import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckConstraints
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckPolicySummary
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
@@ -547,6 +548,14 @@ private fun ChatTopBar(
                         text = "PocketMind",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        modifier = Modifier.testTag("app_positioning_subtitle"),
+                        text = PRODUCT_POSITIONING_SHORT_TEXT,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1013,6 +1022,7 @@ private fun ActionDraftSheet(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             testTag = "action_summary_text",
         )
+        ActionDataBoundary(functionName = draft.functionName)
         if (draft.parameters.isNotEmpty()) {
             Column(
                 modifier = Modifier.testTag("action_parameters"),
@@ -1096,6 +1106,31 @@ private fun ActionDraftSheet(
             onClick = onDismiss,
         ) {
             Text("取消")
+        }
+    }
+}
+
+@Composable
+private fun ActionDataBoundary(functionName: String) {
+    val rows = remember(functionName) { actionDataBoundaryDisplayRows(functionName) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("action_data_boundary"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "数据去向",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
+        rows.forEach { row ->
+            Text(
+                text = row,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -1309,7 +1344,7 @@ private fun ModelManagerSheet(
     onDismiss: () -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(0) }
-    val tabs = listOf("当前", "模型", "远程", "高级", "信任")
+    val tabs = listOf("当前", "模型", "远程", "高级", "隐私")
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1464,7 +1499,7 @@ private fun ModelInventoryPanel(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SectionTitle(
                 text = "推荐模型",
-                subtitle = "缺少或文件不完整时，可在这里单独补装对应能力。",
+                subtitle = MODEL_DOWNLOAD_RATIONALE_TEXT,
             )
             state.basicSetupModels.forEach { model ->
                 RecommendedModelCard(
@@ -1746,7 +1781,7 @@ private fun RemoteModelPanel(
                 SectionTitle(
                     modifier = Modifier.weight(1f),
                     text = "远程模型",
-                    subtitle = "兼容 /v1/chat/completions；远程模式会发送当前对话上下文。",
+                    subtitle = REMOTE_MODE_DISCLOSURE_TEXT,
                 )
                 Switch(
                     modifier = Modifier.testTag("remote_mode_switch"),
@@ -1867,8 +1902,31 @@ private fun TrustBoundaryPanel(state: ChatUiState) {
         PanelSurface {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SectionTitle(
-                    text = "数据边界",
-                    subtitle = "正式使用前，用户应该能直接看懂什么留在本机、什么会发到远程。",
+                    text = "为什么装它",
+                    subtitle = PRODUCT_POSITIONING_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Storage,
+                    title = "本地可用",
+                    body = PRODUCT_LOCAL_VALUE_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Cloud,
+                    title = "远程多模态可选",
+                    body = PRODUCT_REMOTE_VALUE_TEXT,
+                )
+                TrustBoundaryRow(
+                    icon = Icons.Filled.Settings,
+                    title = "动作确认执行",
+                    body = PRODUCT_ACTION_VALUE_TEXT,
+                )
+            }
+        }
+        PanelSurface {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle(
+                    text = "隐私说明",
+                    subtitle = PRIVACY_POLICY_ENTRY_TEXT,
                 )
                 TrustBoundaryRow(
                     icon = Icons.Filled.Storage,
@@ -2681,6 +2739,33 @@ private fun AuditEventSummary.auditTimeLabel(): String =
 internal const val REMOTE_ATTACHMENT_PROTECTION_NOTICE =
     "远程模型模式下，主动选择的图片会直接发送给远程视觉模型；其他附件和分享文本不会读取正文、文本摘录或 OCR 摘录。若模型或接口不支持图片，会直接提示不支持。"
 
+internal const val PRODUCT_POSITIONING_TEXT =
+    "隐私优先的随身 AI 助手：本地可用，远程多模态可选，设备动作必须确认执行。"
+
+internal const val PRODUCT_POSITIONING_SHORT_TEXT =
+    "隐私优先的随身 AI 助手"
+
+internal const val PRODUCT_LOCAL_VALUE_TEXT =
+    "下载或导入本地模型后，基础问答可在手机上运行；会话、记忆和本地工具结果默认留在本机。"
+
+internal const val PRODUCT_REMOTE_VALUE_TEXT =
+    "远程模型只在你配置并切换后使用；主动选择的图片可发送给远程视觉模型，不支持图片时直接提示不支持。"
+
+internal const val PRODUCT_ACTION_VALUE_TEXT =
+    "联系人、日历、系统页面、分享、提醒和屏幕相关能力都先展示用途、权限和风险，再由你确认或取消。"
+
+internal const val PRIVACY_POLICY_ENTRY_TEXT =
+    "这一页是 App 内隐私说明入口；公开发布前仍需把同一口径同步到外部隐私政策和 Play Data safety。"
+
+internal const val REMOTE_MODE_DISCLOSURE_TEXT =
+    "兼容 /v1/chat/completions；远程模式只发送可远程发送的对话上下文，主动选择的图片会随请求发送。"
+
+internal const val MODEL_DOWNLOAD_RATIONALE_TEXT =
+    "本地模型让基础问答离线可用；缺少或文件不完整时，可在这里单独补装对应能力。"
+
+internal const val VOICE_INPUT_PRIVACY_DESCRIPTION =
+    "语音输入；使用系统语音转写，结果只进入输入框，不自动发送，不读取本地音频文件"
+
 internal const val TRUST_LOCAL_BOUNDARY_TEXT =
     "会话、长期记忆、设备上下文和本地工具结果默认留在本机；切到远程模型时，本地隐私消息和 LocalOnly 工具结果不会进入远程历史。"
 
@@ -2773,6 +2858,59 @@ internal fun actionParameterDisplayRows(
         )
     }
 }
+
+internal fun actionDataBoundaryDisplayRows(functionName: String): List<String> =
+    when (functionName) {
+        MobileActionFunctions.COMPOSE_EMAIL,
+        MobileActionFunctions.CREATE_CALENDAR_EVENT,
+        MobileActionFunctions.CREATE_CONTACT_DRAFT,
+        MobileActionFunctions.SHARE_TEXT,
+        -> listOf(
+            "确认后会把草稿或分享内容交给外部 App；目标 App 的后续处理由你继续确认。",
+            "PocketMind 只能记录外部界面已打开，不能在未确认结果前宣称已完成。",
+        )
+
+        MobileActionFunctions.OPEN_WIFI_SETTINGS,
+        MobileActionFunctions.OPEN_USAGE_ACCESS_SETTINGS,
+        MobileActionFunctions.OPEN_FLASHLIGHT_SETTINGS,
+        MobileActionFunctions.OPEN_DEEP_LINK,
+        MobileActionFunctions.OPEN_APP_INTENT,
+        MobileActionFunctions.OPEN_APP_DEEP_TARGET,
+        MobileActionFunctions.SEARCH_MAPS,
+        -> listOf(
+            "确认后会打开系统设置、链接、地图或目标 App；不会自动完成外部页面里的操作。",
+            "如果外部界面需要继续处理，返回后由你确认结果。",
+        )
+
+        MobileActionFunctions.QUERY_CONTACTS,
+        MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
+        MobileActionFunctions.QUERY_RECENT_FILES,
+        MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR,
+        MobileActionFunctions.READ_RECENT_IMAGE_OCR,
+        MobileActionFunctions.READ_CURRENT_SCREEN_TEXT,
+        MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR,
+        MobileActionFunctions.QUERY_FOREGROUND_APP,
+        MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS,
+        MobileActionFunctions.READ_CLIPBOARD,
+        -> listOf(
+            "确认后只读取本次动作需要的本机内容或权限范围内摘要。",
+            "读取结果默认 LocalOnly，不会自动发送给远程模型。",
+        )
+
+        MobileActionFunctions.SCHEDULE_REMINDER,
+        MobileActionFunctions.CONFIGURE_PERIODIC_CHECK,
+        MobileActionFunctions.CANCEL_REMINDER,
+        MobileActionFunctions.QUERY_BACKGROUND_TASKS,
+        -> listOf(
+            "确认后只在本机创建、修改、取消或查询提醒与后台任务。",
+            "提醒正文和后台任务状态默认留在本机。",
+        )
+
+        else -> listOf(
+            "确认后只按本次动作使用必要参数；取消不会执行。",
+            "如需外部 App 或系统继续处理，会在结果页让你确认完成状态。",
+        )
+    }
 
 internal fun actionLinkDomain(rawValue: String): String? {
     val host = runCatching { URI(rawValue.trim()).host }
@@ -4065,7 +4203,7 @@ private fun ComposerVoiceButton(
         modifier = Modifier
             .testTag("composer_voice_button")
             .semantics {
-                contentDescription = "语音输入"
+                contentDescription = VOICE_INPUT_PRIVACY_DESCRIPTION
             },
         onClick = onClick,
         enabled = enabled,
