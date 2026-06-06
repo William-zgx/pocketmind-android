@@ -337,6 +337,41 @@ class ToolRegistryTest {
     }
 
     @Test
+    fun remoteToolExposureRequiresExplicitReviewedAllowlist() {
+        val publicEvidenceTools = registry.specs()
+            .filter { spec -> spec.isPublicEvidenceBatchEligible() }
+            .map { spec -> spec.name }
+        val remotePlanningTools = registry.specs()
+            .filter { spec -> spec.isRemoteModelPlanningEligible() }
+            .map { spec -> spec.name }
+
+        assertEquals(
+            listOf(MobileActionFunctions.WEB_SEARCH),
+            publicEvidenceTools,
+        )
+        assertEquals(
+            listOf(
+                MobileActionFunctions.OPEN_WIFI_SETTINGS,
+                MobileActionFunctions.OPEN_USAGE_ACCESS_SETTINGS,
+                MobileActionFunctions.SEARCH_MAPS,
+                MobileActionFunctions.WEB_SEARCH,
+                MobileActionFunctions.COMPOSE_EMAIL,
+                MobileActionFunctions.CREATE_CALENDAR_EVENT,
+                MobileActionFunctions.CREATE_CONTACT_DRAFT,
+                MobileActionFunctions.OPEN_FLASHLIGHT_SETTINGS,
+                MobileActionFunctions.SCHEDULE_REMINDER,
+                MobileActionFunctions.CONFIGURE_PERIODIC_CHECK,
+                MobileActionFunctions.SHARE_TEXT,
+                MobileActionFunctions.OPEN_DEEP_LINK,
+                MobileActionFunctions.OPEN_APP_INTENT,
+                MobileActionFunctions.OPEN_APP_DEEP_TARGET,
+                MobileActionFunctions.CANCEL_REMINDER,
+            ),
+            remotePlanningTools,
+        )
+    }
+
+    @Test
     fun recentNotificationSchemaRejectsUnsupportedMaxCount() {
         val rejection = registry.validate(
             ToolRequest(

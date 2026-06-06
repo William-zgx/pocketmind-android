@@ -15,6 +15,28 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Remote tool exposure allowlist hardening
+
+本轮覆盖项：
+
+- `ToolRegistryTest.remoteToolExposureRequiresExplicitReviewedAllowlist` 锁定远端公共证据工具
+  和远端模型规划工具的完整工具名清单。
+- 新增工具若要暴露给远程模型，必须显式修改 allowlist contract test；不能只靠
+  `isRemoteModelPlanningEligible()` 派生规则静默进入远端工具 snapshot。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.tool.ToolRegistryTest.remoteToolExposureRequiresExplicitReviewedAllowlist' \
+  --tests 'com.bytedance.zgx.pocketmind.tool.ToolRegistryTest.publicEvidenceBatchEligibilityOnlyAllowsSafePublicReadOnlyTools'
+```
+
+结果：
+
+- 通过：targeted ToolRegistry JVM tests。
+- 未执行模拟器：本轮只新增工具暴露 contract test，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Memory disabled task-state suppression
 
 本轮覆盖项：
