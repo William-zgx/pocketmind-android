@@ -15,6 +15,36 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Model license source specificity hardening
+
+本轮覆盖项：
+
+- `scripts/verify_model_license_review.sh` 不再接受 Hugging Face repository root
+  作为 approved review 的 license source。
+- Hugging Face license source 必须指向同一 manifest repository 下的具体文件 URL，
+  例如 `blob`、`raw` 或 `resolve` 路径中的 README、LICENSE、NOTICE、terms 或 model card。
+- `scripts/test_validation_scripts.sh` 将 approved fixture 改为具体 README blob URL，并新增
+  repository root 失败用例。
+- `docs/release_checklist.md` 同步该门禁要求。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_model_license_review.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+scripts/verify_model_license_review.sh --report build/verification/model-license-current.properties
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖具体 Hugging Face source 正例、错误 repository
+  负例和 repository root 负例。
+- 当前 `docs/model_license_review.json` 仍按预期未通过；失败原因包含每个 pending 模型的
+  `license-source-not-concrete`，仍需人工补具体 license/model-card source、license name、
+  redistribution decision、attribution notice、reviewer 和 review date。
+- 未执行模拟器：本轮只加固 model license review 脚本、测试 fixture 和文档，不改变 APK
+  runtime 或 UI 行为。
+
 ## 2026-06-06 Release validation manual evidence hardening
 
 本轮覆盖项：

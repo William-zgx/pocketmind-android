@@ -1094,7 +1094,7 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
       "upstreamRevision": "chat-revision-a",
       "status": "approved",
       "licenseName": "Apache-2.0",
-      "licenseUrl": "https://huggingface.co/example/chat-e2b",
+      "licenseUrl": "https://huggingface.co/example/chat-e2b/blob/chat-revision-a/README.md",
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
@@ -1106,7 +1106,7 @@ cat > "$MODEL_LICENSE_APPROVED" <<'MODEL_LICENSE_APPROVED_JSON'
       "upstreamRevision": "memory-revision-a",
       "status": "approved",
       "licenseName": "Apache-2.0",
-      "licenseUrl": "https://huggingface.co/example/memory-embedding-300m",
+      "licenseUrl": "https://huggingface.co/example/memory-embedding-300m/blob/memory-revision-a/README.md",
       "redistributionDecision": "approved",
       "attributionNotice": "Include Apache-2.0 notice.",
       "reviewer": "Model Reviewer",
@@ -1121,12 +1121,19 @@ expect_success \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-approved.properties" "status=passed"
 MODEL_LICENSE_SOURCE_MISMATCH="$TMP_DIR/model-license-source-mismatch.json"
-sed 's#https://huggingface.co/example/chat-e2b#https://huggingface.co/example/wrong-model#' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_SOURCE_MISMATCH"
+sed 's#https://huggingface.co/example/chat-e2b/blob/chat-revision-a/README.md#https://huggingface.co/example/wrong-model/blob/chat-revision-a/README.md#' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_SOURCE_MISMATCH"
 expect_failure \
   "model license verifier rejects Hugging Face license source for a different repository" \
   env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_SOURCE_MISMATCH" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-source-mismatch.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-source-mismatch.properties" "status=failed"
+MODEL_LICENSE_REPO_ROOT="$TMP_DIR/model-license-repo-root.json"
+sed 's#https://huggingface.co/example/chat-e2b/blob/chat-revision-a/README.md#https://huggingface.co/example/chat-e2b#' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_REPO_ROOT"
+expect_failure \
+  "model license verifier rejects Hugging Face repository root as license source" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_REPO_ROOT" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" MODEL_MANIFEST_FILE="$MODEL_LICENSE_MANIFEST" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-repo-root.properties"
+assert_report_contains_text "$ARTIFACT_DIR/model-license-repo-root.properties" "chat-e2b-license-source-not-concrete"
 MODEL_LICENSE_STALE_REVIEW="$TMP_DIR/model-license-stale-review.json"
 sed 's/2026-06-06/2026-06-04/g' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_STALE_REVIEW"
 expect_failure \

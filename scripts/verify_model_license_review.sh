@@ -66,6 +66,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 review_path = Path(sys.argv[1])
 metadata_path = Path(sys.argv[2])
@@ -100,6 +101,25 @@ def repo_from_huggingface_url(url):
     if len(parts) < 2:
         return ""
     return "/".join(parts[:2])
+
+def is_concrete_huggingface_license_source(url):
+    if not isinstance(url, str) or not url.startswith("https://huggingface.co/"):
+        return False
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if path_parts[:2] == ["api", "models"]:
+        path_parts = path_parts[2:]
+    if len(path_parts) <= 2:
+        return False
+    file_parts = path_parts[2:]
+    if file_parts[0] not in {"blob", "resolve", "raw"}:
+        return False
+    if len(file_parts) < 3:
+        return False
+    filename = file_parts[-1].lower()
+    source_path = "/".join(file_parts[2:]).lower()
+    license_markers = ("license", "licence", "copying", "notice", "readme", "model_card", "model-card", "terms")
+    return any(marker in filename or marker in source_path for marker in license_markers)
 
 def parse_manifest(path):
     models = []
@@ -247,6 +267,8 @@ for entry in review_models:
         source_repo = repo_from_huggingface_url(license_source)
         if source_repo != manifest_entry["repository"]:
             failures.append(f"{model_id or 'unknown'}-license-source-repository-mismatch")
+        if not is_concrete_huggingface_license_source(license_source):
+            failures.append(f"{model_id or 'unknown'}-license-source-not-concrete")
 
     if not entry.get("attributionNotice"):
         failures.append(f"{model_id or 'unknown'}-attribution-notice-missing")
