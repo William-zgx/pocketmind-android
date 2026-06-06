@@ -15,6 +15,28 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Remote image draft not-ready privacy hardening
+
+本轮覆盖项：
+
+- `sendPendingSharedInput()` 在模型或远程配置未就绪时，保存的 shared-input 用户消息强制标记
+  `LocalOnly`，即使原 draft 是带图片的 `RemoteEligible`。
+- 新增回归：远程视觉图片 draft 创建后，如果远程配置变为未就绪，发送失败留下的历史不会进入
+  后续远程请求。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteImageDraftWhenRemoteIsNotReadyDoesNotEnterLaterRemoteHistory'
+```
+
+结果：
+
+- 通过：targeted ViewModel JVM test。
+- 未执行模拟器：本轮只修改 ViewModel 未就绪分支和 JVM 回归测试，不改变 Android UI
+  控件或平台交互。
+
 ## 2026-06-06 Release validation API evidence hardening
 
 本轮覆盖项：

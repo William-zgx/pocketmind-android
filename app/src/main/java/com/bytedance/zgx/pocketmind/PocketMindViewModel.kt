@@ -1737,7 +1737,7 @@ class PocketMindViewModel(
                 _uiState.value.messages + ChatMessage(
                     role = MessageRole.User,
                     text = message,
-                    privacy = draft.privacy,
+                    privacy = MessagePrivacy.LocalOnly,
                 ) + ChatMessage(
                     role = MessageRole.Assistant,
                     text = "已接收分享内容。请先准备模型后再发送，当前只会读取受限文本、JSON/XML/YAML/RTF/PDF/Office 文档摘录、OCR 摘录和附件元数据。",
