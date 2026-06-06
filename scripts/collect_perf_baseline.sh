@@ -6,6 +6,7 @@ RELEASE_ARTIFACT="${RELEASE_ARTIFACT:-}"
 ANDROID_SERIAL="${ANDROID_SERIAL:-}"
 STATUS="${STATUS:-passed}"
 VERIFY_REPORT_FILE="${VERIFY_REPORT_FILE:-${OUT_FILE}.verification.properties}"
+PERFORMANCE_KEY="${PERFORMANCE_KEY:-}"
 FAILED_TARGET=""
 FAILURE_REASON=""
 device_serial="$ANDROID_SERIAL"
@@ -65,6 +66,7 @@ Usage:
   RELEASE_ARTIFACT=app-release-signed.apk \
   ANDROID_SERIAL=<device> \
   APP_VERSION=<versionName> MODEL_ID=chat-e2b BACKEND=GPU \
+  PERFORMANCE_KEY=firstLaunch \
   FIRST_LAUNCH_INTERACTIVE_MS=... MODEL_LOAD_MS=... FIRST_TOKEN_MS=... \
   TOKENS_PER_SECOND=... STOP_GENERATION_RECOVERY_MS=... GPU_FALLBACK_STATUS=... \
   VISION_INPUT_MS=... MEMORY_SEARCH_5K_MS=... MEMORY_PEAK_MB=... \
@@ -160,11 +162,16 @@ mkdir -p "$(dirname "$OUT_FILE")"
   printf 'recordedAt=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 } > "$OUT_FILE"
 
-if ! scripts/verify_perf_baseline.sh \
-  --file "$OUT_FILE" \
-  --artifact-sha256 "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')" \
-  --app-version "$APP_VERSION" \
-  --report "$VERIFY_REPORT_FILE"; then
+verify_args=(
+  --file "$OUT_FILE"
+  --artifact-sha256 "$(shasum -a 256 "$RELEASE_ARTIFACT" | awk '{print $1}')"
+  --app-version "$APP_VERSION"
+  --report "$VERIFY_REPORT_FILE"
+)
+if [[ -n "$PERFORMANCE_KEY" ]]; then
+  verify_args+=(--performance-key "$PERFORMANCE_KEY")
+fi
+if ! scripts/verify_perf_baseline.sh "${verify_args[@]}"; then
   verifier_reason="$(report_value "$VERIFY_REPORT_FILE" reason)"
   [[ -n "$verifier_reason" ]] || verifier_reason="perf-baseline-verification-failed"
   fail perf-baseline-verification "$verifier_reason" "Collected perf baseline did not pass verification."

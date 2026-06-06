@@ -293,7 +293,18 @@ def non_empty_string(value):
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-def is_valid_evidence(value):
+def properties_for(path):
+    props = {}
+    with Path(path).open() as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n")
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            props[key] = value
+    return props
+
+def is_valid_evidence(flow, value):
     if not isinstance(value, dict):
         return False
     if value.get("status") != "passed":
@@ -305,7 +316,19 @@ def is_valid_evidence(value):
     evidence_path = value.get("evidencePath", "")
     if not non_empty_string(evidence_path) or not Path(evidence_path).is_file():
         return False
+    evidence_path = Path(evidence_path)
     if value.get("evidenceSha256") != sha(evidence_path):
+        return False
+    props = properties_for(evidence_path)
+    if props.get("status") != "passed":
+        return False
+    if props.get("target") != "release-flow":
+        return False
+    if props.get("flowKey") != flow:
+        return False
+    if props.get("candidateOnly", "").lower() in {"true", "1", "yes"}:
+        return False
+    if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         return False
     recorded_date = value.get("date", "")
     if not non_empty_string(recorded_date) or not date_pattern.match(recorded_date):
@@ -320,7 +343,7 @@ def is_valid_evidence(value):
 passed = []
 pending = []
 for flow in required:
-    if is_valid_evidence(flows.get(flow)):
+    if is_valid_evidence(flow, flows.get(flow)):
         passed.append(flow)
     else:
         pending.append(flow)

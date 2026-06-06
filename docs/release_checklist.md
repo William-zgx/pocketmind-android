@@ -270,6 +270,10 @@ release ticket or PR.
   report with `status=passed`, `target=manual-acceptance`, a `manualKey` that
   matches the record key, and `manualAcceptance=true`; lightweight status-only
   manual evidence files are not accepted.
+- [ ] Manual acceptance evidence is generated from explicit owner sign-off, for
+  example `OWNER="<reviewer>" MANUAL_ACCEPTANCE_ALL=1
+  scripts/record_manual_acceptance_evidence.sh`; partial runs must remain
+  failed until every required manual key is accepted.
 - [ ] Every `flowMatrix` evidence file is a formal release flow report with
   `status=passed`, `target=release-flow`, a `flowKey` that matches the record
   key, and `releaseFlowPassed=true`; candidate-only or lightweight status-only

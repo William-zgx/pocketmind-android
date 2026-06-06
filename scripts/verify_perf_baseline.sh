@@ -5,6 +5,7 @@ BASELINE_FILE=""
 REPORT_FILE=""
 EXPECTED_ARTIFACT_SHA256=""
 EXPECTED_APP_VERSION=""
+PERFORMANCE_KEY="${PERFORMANCE_KEY:-}"
 MAX_RECORD_AGE_DAYS="${MAX_RECORD_AGE_DAYS:-30}"
 
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,10 @@ while [[ $# -gt 0 ]]; do
       EXPECTED_APP_VERSION="${2:?missing app version}"
       shift 2
       ;;
+    --performance-key)
+      PERFORMANCE_KEY="${2:?missing performance key}"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1" >&2
       exit 2
@@ -41,6 +46,7 @@ write_report() {
     {
       printf 'status=%s\n' "$status"
       printf 'target=perf-baseline\n'
+      printf 'performanceKey=%s\n' "$PERFORMANCE_KEY"
       printf 'reason=%s\n' "$reason"
       printf 'baselineFile=%s\n' "${BASELINE_FILE:-}"
       if [[ -n "${BASELINE_FILE:-}" && -f "$BASELINE_FILE" ]]; then

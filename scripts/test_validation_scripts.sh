@@ -416,6 +416,8 @@ grep -q 'scripts/capture_release_screenshots.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include capture_release_screenshots.sh in shell syntax checks"
 grep -q 'scripts/collect_release_flow_matrix_evidence.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_release_flow_matrix_evidence.sh in shell syntax checks"
+grep -q 'scripts/record_manual_acceptance_evidence.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include record_manual_acceptance_evidence.sh in shell syntax checks"
 grep -q 'scripts/verify_upgrade_install_emulator.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_upgrade_install_emulator.sh in shell syntax checks"
 grep -q 'releaseFlowPassed=false' scripts/verify_upgrade_install_emulator.sh ||
@@ -557,6 +559,18 @@ expect_success \
   "perf baseline verifier accepts matching artifact sha" \
   scripts/verify_perf_baseline.sh --file "$VALID_PERF" --artifact-sha256 "$VALID_PERF_SHA" --report "$ARTIFACT_DIR/perf-sha.properties"
 assert_report_contains "$ARTIFACT_DIR/perf-sha.properties" "expectedArtifactSha256=$VALID_PERF_SHA"
+expect_success \
+  "perf baseline verifier records performance key" \
+  scripts/verify_perf_baseline.sh \
+    --file "$VALID_PERF" \
+    --artifact-sha256 "$VALID_PERF_SHA" \
+    --app-version 0.1.0 \
+    --performance-key firstLaunch \
+    --report "$ARTIFACT_DIR/perf-first-launch.properties"
+assert_report_contains "$ARTIFACT_DIR/perf-first-launch.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/perf-first-launch.properties" "performanceKey=firstLaunch"
+assert_report_contains "$ARTIFACT_DIR/perf-first-launch.properties" "expectedArtifactSha256=$VALID_PERF_SHA"
+assert_report_contains "$ARTIFACT_DIR/perf-first-launch.properties" "expectedAppVersion=0.1.0"
 
 INVALID_PERF="$TMP_DIR/perf-baseline-invalid.properties"
 printf 'status=failed\n' > "$INVALID_PERF"
@@ -1894,7 +1908,15 @@ for flow_key in \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
   remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
   mediaProjectionCancellation; do
-  printf 'status=passed\nflow=%s\n' "$flow_key" > "$FLOW_CANDIDATE_EVIDENCE_DIR/$flow_key.properties"
+  {
+    printf 'status=passed\n'
+    printf 'target=release-flow\n'
+    printf 'flowKey=%s\n' "$flow_key"
+    printf 'releaseFlowPassed=true\n'
+    printf 'owner=QA\n'
+    printf 'date=%s\n' "$VALIDATION_DATE"
+    printf 'summary=%s release flow was explicitly approved.\n' "$flow_key"
+  } > "$FLOW_CANDIDATE_EVIDENCE_DIR/$flow_key.properties"
 done
 python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_EMULATOR_REPORT" "$FLOW_CANDIDATE_EMULATOR_SHA" "$FLOW_CANDIDATE_EVIDENCE_DIR" "$VALIDATION_DATE" <<'PY'
 import hashlib
@@ -1957,6 +1979,30 @@ expect_success \
     --report "$ARTIFACT_DIR/release-flow-candidate-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "passedRecordFlows=firstInstall,upgradeInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
+FLOW_CANDIDATE_WEAK_EVIDENCE="$TMP_DIR/flow-candidate-weak-evidence.properties"
+FLOW_CANDIDATE_RECORD_WEAK_EVIDENCE="$TMP_DIR/flow-candidate-record-weak-evidence.json"
+printf 'status=passed\nflow=firstInstall\n' > "$FLOW_CANDIDATE_WEAK_EVIDENCE"
+python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_RECORD_WEAK_EVIDENCE" "$FLOW_CANDIDATE_WEAK_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+evidence = Path(sys.argv[3])
+record["flowMatrix"]["firstInstall"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["firstInstall"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release flow matrix collector rejects weak structured flow evidence" \
+  scripts/collect_release_flow_matrix_evidence.sh \
+    --file "$FLOW_CANDIDATE_RECORD_WEAK_EVIDENCE" \
+    --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-weak-evidence" \
+    --report "$ARTIFACT_DIR/release-flow-candidate-weak-evidence.properties"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-weak-evidence.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-weak-evidence.properties" "failedTarget=flow-matrix"
+assert_report_contains_text "$ARTIFACT_DIR/release-flow-candidate-weak-evidence.properties" "pendingRecordFlows=firstInstall"
 python3 - "$FLOW_CANDIDATE_RECORD_APPROVED" "$FLOW_CANDIDATE_RECORD_BAD_SHA" <<'PY'
 import json
 import sys
@@ -1975,6 +2021,44 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "failedTarget=source-regression"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-bad-sha.properties" "reason=emulator-regression-report-sha-mismatch"
+
+expect_failure \
+  "manual acceptance evidence recorder requires owner" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/manual-acceptance-missing-owner" \
+  MANUAL_ACCEPTANCE_ALL=1 scripts/record_manual_acceptance_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-missing-owner/manual-acceptance-evidence.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-missing-owner/manual-acceptance-evidence.properties" "reason=missing-owner"
+expect_failure \
+  "manual acceptance evidence recorder reports pending keys" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/manual-acceptance-partial" \
+  OWNER="QA" MANUAL_ACCEPTANCE_KEYS="modelSetup,toolConfirmation" \
+  scripts/record_manual_acceptance_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-acceptance-evidence.properties" "status=failed"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-acceptance-evidence.properties" "reason=missing-required-manual-keys"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-acceptance-evidence.properties" "acceptedManualKeys=modelSetup,toolConfirmation"
+assert_report_contains_text "$ARTIFACT_DIR/manual-acceptance-partial/manual-acceptance-evidence.properties" "pendingManualKeys="
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-modelSetup.properties" "target=manual-acceptance"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-modelSetup.properties" "manualKey=modelSetup"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-partial/manual-modelSetup.properties" "manualAcceptance=true"
+expect_success \
+  "manual acceptance evidence recorder writes all formal evidence" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/manual-acceptance-full" \
+  OWNER="QA" MANUAL_ACCEPTANCE_ALL=1 VALIDATION_DATE="$VALIDATION_DATE" \
+  scripts/record_manual_acceptance_evidence.sh
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-acceptance-evidence.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-acceptance-evidence.properties" "target=manual-acceptance-evidence"
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-acceptance-evidence.properties" "pendingManualKeys="
+for manual_key in \
+  modelSetup remoteModePrivacy toolConfirmation permissions backgroundReminders sharing \
+  multimodalEntryPoints voiceInput filePicker mediaProjection remoteSinglePublicEvidence \
+  remoteMultiEvidenceComparison mixedPrivateActionBatchFailClosed; do
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "status=passed"
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "target=manual-acceptance"
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "manualKey=$manual_key"
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "manualAcceptance=true"
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "owner=QA"
+  assert_report_contains "$ARTIFACT_DIR/manual-acceptance-full/manual-$manual_key.properties" "date=$VALIDATION_DATE"
+done
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
 FAKE_MATRIX_REGRESSION="$TMP_DIR/fake-matrix-regression"
