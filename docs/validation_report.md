@@ -15,6 +15,28 @@
 `regression-emulator.properties` 为准；只有该文件包含 `status=passed` 时，才能把完整模拟器回归记录为通过。`emulator-verification.properties` 和嵌套
 `device-verification.properties` 是配套证据，不替代完整回归结论。
 
+## 2026-06-06 Capability test reference hardening
+
+本轮覆盖项：
+
+- `CapabilityMatrixDocumentationTest` 将 required test class 存在性校验从
+  product capabilities 扩展到 `CapabilityMatrix.allDescriptors()`，覆盖产品能力和
+  `ToolRegistry` 派生的全部工具能力。
+- 目的：能力矩阵中的 `requiredTests` 不能只是非空字符串；拼错、删除或漂移的测试类名会在
+  release gate 默认 contract tests 中失败。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest'
+```
+
+结果：
+
+- 通过：capability matrix contract JVM test。
+- 未执行模拟器：本轮只加固文档/代码 contract test，不改变 APK runtime 或 UI 行为。
+
 ## 2026-06-06 Tool capability matrix materialization
 
 本轮覆盖项：

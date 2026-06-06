@@ -77,15 +77,15 @@ class CapabilityMatrixDocumentationTest {
     }
 
     @Test
-    fun productCapabilityRequiredTestsReferenceExistingTestClasses() {
+    fun capabilityRequiredTestsReferenceExistingTestClasses() {
         val testClasses = buildTestClassIndex(repoRoot())
-        val missingClasses = CapabilityMatrix.productDescriptors
+        val missingClasses = CapabilityMatrix.allDescriptors()
             .flatMap { descriptor -> descriptor.requiredTests }
             .distinct()
             .filterNot { className -> className in testClasses }
 
         assertTrue(
-            "Product capability required test classes must exist: $missingClasses",
+            "Capability required test classes must exist: $missingClasses",
             missingClasses.isEmpty(),
         )
     }
