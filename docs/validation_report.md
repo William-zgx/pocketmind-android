@@ -6482,7 +6482,7 @@ scripts/regression_emulator.sh
   `docs/privacy_notice.md` SHA 的 review 状态；当前状态为
   `pending_manual_review`，用于阻塞 public RC。
 - 新增 `scripts/verify_privacy_review.sh`，校验 review 文件、notice 路径、notice
-  SHA、三方 reviewer、review date 与 approved decision。
+  SHA、三方 reviewer、approved decision，以及真实且不晚于当前日期的 review date。
 - `scripts/verify_release_gate.sh` 新增 `VERIFY_PRIVACY_REVIEW=1`，public gate
   开启后会要求隐私 review 完成。
 
@@ -6502,6 +6502,7 @@ scripts/verify_release_gate.sh
 结果：
 
 - 通过：脚本单测覆盖 pending privacy review 失败、approved 当前 notice 成功。
+- 通过：脚本单测覆盖 privacy review 未来日期失败。
 - 通过：release gate 集成负向验证；`VERIFY_PRIVACY_REVIEW=1` 时，当前 pending
   `docs/privacy_review.json` 生成
   `build/verification/release-gate-privacy-negative/privacy-review.properties`
@@ -6602,7 +6603,8 @@ scripts/sign_release_artifacts.sh
   `docs/model_license_review.json` 与 `docs/model_license_metadata.json`。
 - 校验项包括：metadata 对齐的模型 ID、`status=approved`、
   `redistributionDecision=approved`、license 名称、HTTPS license URL 或本地 license
-  文件路径、attribution/notice、reviewer、`YYYY-MM-DD` review date。
+  文件路径、attribution/notice、reviewer、真实且不晚于当前日期的
+  `YYYY-MM-DD` review date。
 - `scripts/verify_release_gate.sh` 的 `VERIFY_MODEL_LICENSES=1` 不再使用 grep，
   改为调用结构化 license review verifier。
 
@@ -6622,6 +6624,7 @@ scripts/verify_release_gate.sh
 
 - 通过：脚本单测覆盖 incomplete model license review 失败。
 - 通过：脚本单测覆盖 metadata-aligned approved review 成功。
+- 通过：脚本单测覆盖 privacy review 和 model license review 的未来日期失败。
 - 通过：release gate 集成负向验证；当前 pending
   `docs/model_license_review.json` 会生成
   `build/verification/release-gate-model-license-negative/model-license-review.properties`
@@ -6630,3 +6633,25 @@ scripts/verify_release_gate.sh
 仍阻塞正式 RC：
 
 - 需要人工完成所有推荐模型的 license / redistribution / attribution review。
+
+## 2026-06-06 Review date validity gates
+
+本轮覆盖项：
+
+- `scripts/verify_privacy_review.sh` 的 `reviewDate` 校验升级为真实
+  `YYYY-MM-DD` 日期，且不得晚于当前日期。
+- `scripts/verify_model_license_review.sh` 的 `reviewDate` 校验同样升级为真实
+  `YYYY-MM-DD` 日期，且不得晚于当前日期。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 privacy review 的未来日期失败。
+- 通过：脚本单测覆盖 model license review 的未来日期失败。
+- 通过：`scripts/verify_local.sh`。

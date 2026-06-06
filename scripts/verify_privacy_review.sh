@@ -55,7 +55,9 @@ set +e
 python3 - "$REVIEW_FILE" "$NOTICE_FILE" > "$TMP_FAILURES" <<'PY'
 import hashlib
 import json
+import re
 import sys
+from datetime import date
 from pathlib import Path
 
 review_path = Path(sys.argv[1])
@@ -77,6 +79,8 @@ if not isinstance(reviews, list):
     reviews = []
 
 required_roles = {"release", "security", "legal"}
+date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+today = date.today()
 seen_roles = set()
 for entry in reviews:
     if not isinstance(entry, dict):
@@ -88,8 +92,19 @@ for entry in reviews:
         failures.append(f"{role or 'unknown'}-decision-not-approved")
     if not entry.get("reviewer"):
         failures.append(f"{role or 'unknown'}-reviewer-missing")
-    if not entry.get("reviewDate"):
+    review_date = entry.get("reviewDate", "")
+    if not review_date:
         failures.append(f"{role or 'unknown'}-review-date-missing")
+    elif not date_pattern.match(review_date):
+        failures.append(f"{role or 'unknown'}-review-date-invalid")
+    else:
+        try:
+            parsed_date = date.fromisoformat(review_date)
+        except ValueError:
+            failures.append(f"{role or 'unknown'}-review-date-invalid")
+        else:
+            if parsed_date > today:
+                failures.append(f"{role or 'unknown'}-review-date-in-future")
 
 for role in sorted(required_roles - seen_roles):
     failures.append(f"{role}-review-missing")

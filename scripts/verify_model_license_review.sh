@@ -56,6 +56,7 @@ python3 - "$REVIEW_FILE" "$METADATA_FILE" <<'PY' > "$TMP_FAILURES"
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 review_path = Path(sys.argv[1])
@@ -98,6 +99,7 @@ for entry in metadata_models:
 review_ids = []
 seen_ids = set()
 date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+today = date.today()
 for entry in review_models:
     if not isinstance(entry, dict):
         failures.append("review-entry-invalid")
@@ -132,6 +134,14 @@ for entry in review_models:
         failures.append(f"{model_id or 'unknown'}-review-date-missing")
     elif not date_pattern.match(review_date):
         failures.append(f"{model_id or 'unknown'}-review-date-invalid")
+    else:
+        try:
+            parsed_date = date.fromisoformat(review_date)
+        except ValueError:
+            failures.append(f"{model_id or 'unknown'}-review-date-invalid")
+        else:
+            if parsed_date > today:
+                failures.append(f"{model_id or 'unknown'}-review-date-in-future")
 
 if metadata_ids and review_ids != metadata_ids:
     failures.append("review-model-ids-do-not-match-metadata")

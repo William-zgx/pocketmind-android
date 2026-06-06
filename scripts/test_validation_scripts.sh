@@ -385,6 +385,13 @@ expect_success \
   env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_APPROVED" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
   scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/privacy-review-approved.properties" "status=passed"
+PRIVACY_REVIEW_FUTURE="$TMP_DIR/privacy-review-future.json"
+sed 's/2026-06-06/2999-01-01/g' "$PRIVACY_REVIEW_APPROVED" > "$PRIVACY_REVIEW_FUTURE"
+expect_failure \
+  "privacy review verifier rejects future review dates" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_FUTURE" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-future.properties"
+assert_report_contains "$ARTIFACT_DIR/privacy-review-future.properties" "status=failed"
 
 MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
 MODEL_LICENSE_PENDING="$TMP_DIR/model-license-pending.json"
@@ -458,6 +465,13 @@ expect_success \
   env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_APPROVED" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
   scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/model-license-approved.properties" "status=passed"
+MODEL_LICENSE_FUTURE="$TMP_DIR/model-license-future.json"
+sed 's/2026-06-06/2999-01-01/g' "$MODEL_LICENSE_APPROVED" > "$MODEL_LICENSE_FUTURE"
+expect_failure \
+  "model license verifier rejects future review dates" \
+  env MODEL_LICENSE_REVIEW_FILE="$MODEL_LICENSE_FUTURE" MODEL_LICENSE_METADATA_FILE="$MODEL_LICENSE_METADATA" \
+  scripts/verify_model_license_review.sh --report "$ARTIFACT_DIR/model-license-future.properties"
+assert_report_contains "$ARTIFACT_DIR/model-license-future.properties" "status=failed"
 
 SAFE_APK="$TMP_DIR/safe.apk"
 SAFE_AAB="$TMP_DIR/safe.aab"

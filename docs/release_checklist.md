@@ -128,7 +128,7 @@ release ticket or PR.
   scripts/verify_release_gate.sh` passes for the release candidate. The gate
   runs `scripts/verify_model_license_review.sh`, requiring all model IDs to
   match `docs/model_license_metadata.json` and include approved redistribution,
-  attribution or notice, reviewer, and review date fields.
+  attribution or notice, reviewer, and a valid non-future review date.
 - [ ] README License wording distinguishes app code from third-party model
   artifacts.
 - [ ] No API keys, bearer tokens, private model endpoints, raw prompts, or
