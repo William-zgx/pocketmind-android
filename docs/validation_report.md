@@ -6754,3 +6754,34 @@ scripts/verify_local.sh
 - 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用 `verifyStorePolicy=1`。
 - 通过：脚本单测覆盖 `VERIFY_STORE_POLICY=1` 时 release gate 对 pending
   record fail-closed。
+
+## 2026-06-06 Release operations gate
+
+本轮覆盖项：
+
+- 新增 `docs/release_operations_record.json`，把 crash/ANR monitoring owner、
+  Android Vitals 信号源、首 24 小时 watcher、分阶段 rollout 阈值、RC
+  crash/ANR smoke 结果和 rollback 计划收敛为机器可读记录。
+- 新增 `scripts/verify_release_operations_record.sh`，校验 operations record
+  已 approved，包含 Android Vitals、有效 crash-free/ANR 阈值、无 launch/install
+  crash、无 crash loop、无 fatal native LiteRT-LM failure、无可复现 ANR、完整
+  rollback criteria、Play versionCode 策略、模型 manifest 回滚路径和数据兼容说明。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_RELEASE_OPERATIONS=1`；
+  `PUBLIC_RELEASE=1` profile 会自动开启 release operations gate。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 pending release operations 失败。
+- 通过：脚本单测覆盖 approved initial-release operations 成功。
+- 通过：脚本单测覆盖 missing Android Vitals 和 future review date 失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用
+  `verifyReleaseOperations=1`。
+- 通过：脚本单测覆盖 `VERIFY_RELEASE_OPERATIONS=1` 时 release gate 对 pending
+  record fail-closed。

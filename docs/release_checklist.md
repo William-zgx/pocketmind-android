@@ -213,6 +213,12 @@ release ticket or PR.
 - [ ] Crash-free and ANR thresholds for staged rollout are written in the
   release record, with a named person watching the first 24 hours after each
   rollout step.
+- [ ] `docs/release_operations_record.json` is updated and approved, then
+  `VERIFY_RELEASE_OPERATIONS=1 scripts/verify_release_gate.sh` passes. The gate
+  checks Android Vitals coverage, crash/ANR smoke status, rollout watcher,
+  rollout thresholds, previous known-good metadata or initial-release
+  exemption, rollback criteria, Play version-code policy, model manifest
+  rollback path, and data compatibility notes.
 
 ## Rollback
 

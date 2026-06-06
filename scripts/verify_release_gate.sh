@@ -20,6 +20,8 @@ VERIFY_RELEASE_RECORD="${VERIFY_RELEASE_RECORD:-0}"
 RELEASE_RECORD_FILE="${RELEASE_RECORD_FILE:-docs/release_record.json}"
 VERIFY_STORE_POLICY="${VERIFY_STORE_POLICY:-0}"
 STORE_POLICY_FILE="${STORE_POLICY_FILE:-docs/store_policy_record.json}"
+VERIFY_RELEASE_OPERATIONS="${VERIFY_RELEASE_OPERATIONS:-0}"
+OPERATIONS_RECORD_FILE="${OPERATIONS_RECORD_FILE:-docs/release_operations_record.json}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
@@ -33,6 +35,7 @@ mkdir -p "$ARTIFACT_DIR"
 if [[ "$PUBLIC_RELEASE" == "1" ]]; then
   VERIFY_RELEASE_RECORD=1
   VERIFY_STORE_POLICY=1
+  VERIFY_RELEASE_OPERATIONS=1
   VERIFY_MODEL_LICENSES=1
   VERIFY_PRIVACY_REVIEW=1
   REQUIRE_AAB=1
@@ -51,6 +54,8 @@ write_gate_report() {
     printf 'releaseRecordFile=%s\n' "$RELEASE_RECORD_FILE"
     printf 'verifyStorePolicy=%s\n' "$VERIFY_STORE_POLICY"
     printf 'storePolicyFile=%s\n' "$STORE_POLICY_FILE"
+    printf 'verifyReleaseOperations=%s\n' "$VERIFY_RELEASE_OPERATIONS"
+    printf 'operationsRecordFile=%s\n' "$OPERATIONS_RECORD_FILE"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
@@ -189,6 +194,20 @@ else
     printf 'reason=VERIFY_STORE_POLICY-not-enabled\n'
     printf 'storePolicyFile=%s\n' "$STORE_POLICY_FILE"
   } > "$ARTIFACT_DIR/store-policy-record.properties"
+fi
+
+if [[ "$VERIFY_RELEASE_OPERATIONS" == "1" ]]; then
+  if ! scripts/verify_release_operations_record.sh --file "$OPERATIONS_RECORD_FILE" --report "$ARTIFACT_DIR/release-operations-record.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=release-operations-record\n'
+    printf 'reason=VERIFY_RELEASE_OPERATIONS-not-enabled\n'
+    printf 'operationsRecordFile=%s\n' "$OPERATIONS_RECORD_FILE"
+  } > "$ARTIFACT_DIR/release-operations-record.properties"
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then

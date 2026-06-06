@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "policy": "Public release builds require VERIFY_RELEASE_OPERATIONS=1 and an approved crash/ANR monitoring plus rollback record.",
+  "status": "pending_operations_review",
+  "monitoring": {
+    "owner": "",
+    "signalSources": [],
+    "first24HoursWatcher": "",
+    "crashFreeRateThresholdPercent": 0,
+    "anrRateThresholdPercent": 0,
+    "privacyReviewedForCrashSdk": true
+  },
+  "crashAnrSmoke": {
+    "window": "",
+    "track": "",
+    "noLaunchCrash": false,
+    "noInstallCrash": false,
+    "noCrashLoop": false,
+    "noFatalNativeLiteRtLmFailure": false,
+    "noReproducibleAnr": false,
+    "failureEvidencePolicy": ""
+  },
+  "rollback": {
+    "owner": "",
+    "decisionChannel": "",
+    "criteria": [
+      "install failure",
+      "crash loop",
+      "model download verification failure",
+      "privacy boundary failure",
+      "critical tool execution regression"
+    ],
+    "firstStagedRolloutAction": "",
+    "playVersionCodePolicy": "",
+    "modelManifestRollbackPath": "",
+    "userDataCompatibility": "",
+    "previousKnownGood": {
+      "status": "unknown",
+      "versionCode": 0,
+      "versionName": "",
+      "gitCommit": "",
+      "artifactPath": "",
+      "artifactSha256": "",
+      "releaseNotes": ""
+    }
+  },
+  "review": {
+    "reviewer": "",
+    "reviewDate": ""
+  }
+}

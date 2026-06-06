@@ -267,6 +267,8 @@ grep -q 'scripts/verify_release_record.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_record.sh in shell syntax checks"
 grep -q 'scripts/verify_store_policy_record.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_store_policy_record.sh in shell syntax checks"
+grep -q 'scripts/verify_release_operations_record.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_release_operations_record.sh in shell syntax checks"
 grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_mapping.sh' scripts/verify_local.sh ||
@@ -538,6 +540,88 @@ expect_failure \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_EXTRA_PERMISSION" --report "$ARTIFACT_DIR/store-policy-permission-mismatch.properties"
 assert_report_contains "$ARTIFACT_DIR/store-policy-permission-mismatch.properties" "status=failed"
+
+OPERATIONS_PENDING="$TMP_DIR/release-operations-pending.json"
+OPERATIONS_APPROVED="$TMP_DIR/release-operations-approved.json"
+OPERATIONS_DATE="$(date +%F)"
+cat > "$OPERATIONS_PENDING" <<'OPERATIONS_PENDING_JSON'
+{
+  "version": 1,
+  "status": "pending_operations_review"
+}
+OPERATIONS_PENDING_JSON
+expect_failure \
+  "release operations verifier rejects pending records" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_PENDING" --report "$ARTIFACT_DIR/release-operations-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/release-operations-pending.properties" "status=failed"
+cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
+{
+  "version": 1,
+  "status": "approved",
+  "monitoring": {
+    "owner": "Release Owner",
+    "signalSources": ["Android Vitals", "Internal dogfood feedback"],
+    "first24HoursWatcher": "Launch Watcher",
+    "crashFreeRateThresholdPercent": 99.5,
+    "anrRateThresholdPercent": 1.0,
+    "privacyReviewedForCrashSdk": true
+  },
+  "crashAnrSmoke": {
+    "window": "2026-06-06 internal smoke",
+    "track": "internal_testing",
+    "noLaunchCrash": true,
+    "noInstallCrash": true,
+    "noCrashLoop": true,
+    "noFatalNativeLiteRtLmFailure": true,
+    "noReproducibleAnr": true,
+    "failureEvidencePolicy": "Attach logcat, tombstones, and ANR traces for any failure; state no crash or ANR when none were observed."
+  },
+  "rollback": {
+    "owner": "Release Owner",
+    "decisionChannel": "#pocketmind-release",
+    "criteria": [
+      "install failure",
+      "crash loop",
+      "model download verification failure",
+      "privacy boundary failure",
+      "critical tool execution regression"
+    ],
+    "firstStagedRolloutAction": "Halt rollout, keep collecting Android Vitals and user reports, then decide whether to resume, replace, or ship a fixed build.",
+    "playVersionCodePolicy": "Any replacement artifact must use a higher versionCode; Play cannot ordinary-update users to a lower versionCode.",
+    "modelManifestRollbackPath": "Revert model download metadata when supported; otherwise ship a fixed APK with a higher versionCode.",
+    "userDataCompatibility": "Room migrations are forward-only, so downgrade is unsupported unless explicitly tested.",
+    "previousKnownGood": {
+      "status": "not_applicable_initial_release",
+      "versionCode": 0,
+      "versionName": "",
+      "gitCommit": "",
+      "artifactPath": "",
+      "artifactSha256": "",
+      "releaseNotes": "Initial release has no previous production artifact."
+    }
+  },
+  "review": {
+    "reviewer": "Release Reviewer",
+    "reviewDate": "$OPERATIONS_DATE"
+  }
+}
+OPERATIONS_APPROVED_JSON
+expect_success \
+  "release operations verifier accepts approved initial-release record" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/release-operations-approved.properties" "status=passed"
+OPERATIONS_NO_VITALS="$TMP_DIR/release-operations-no-vitals.json"
+sed 's/"Android Vitals", //' "$OPERATIONS_APPROVED" > "$OPERATIONS_NO_VITALS"
+expect_failure \
+  "release operations verifier requires Android Vitals source" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_NO_VITALS" --report "$ARTIFACT_DIR/release-operations-no-vitals.properties"
+assert_report_contains "$ARTIFACT_DIR/release-operations-no-vitals.properties" "status=failed"
+OPERATIONS_FUTURE="$TMP_DIR/release-operations-future.json"
+sed 's/"reviewDate": "'"$OPERATIONS_DATE"'"/"reviewDate": "2999-01-01"/' "$OPERATIONS_APPROVED" > "$OPERATIONS_FUTURE"
+expect_failure \
+  "release operations verifier rejects future review dates" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_FUTURE" --report "$ARTIFACT_DIR/release-operations-future.properties"
+assert_report_contains "$ARTIFACT_DIR/release-operations-future.properties" "status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
@@ -821,6 +905,7 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "publicRelease=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseRecord=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyStorePolicy=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseOperations=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyPrivacyReview=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
@@ -873,6 +958,17 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-store-policy-gate/store-policy-record.properties" "status=failed"
+expect_failure \
+  "release gate requires approved operations record when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-operations-gate" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_RELEASE_OPERATIONS=1 \
+  OPERATIONS_RECORD_FILE="$OPERATIONS_PENDING" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-operations-gate/release-operations-record.properties" "status=failed"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh
