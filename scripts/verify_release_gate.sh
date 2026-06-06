@@ -18,6 +18,8 @@ VERIFY_MODEL_LICENSES="${VERIFY_MODEL_LICENSES:-0}"
 VERIFY_PRIVACY_REVIEW="${VERIFY_PRIVACY_REVIEW:-0}"
 VERIFY_RELEASE_RECORD="${VERIFY_RELEASE_RECORD:-0}"
 RELEASE_RECORD_FILE="${RELEASE_RECORD_FILE:-docs/release_record.json}"
+VERIFY_STORE_POLICY="${VERIFY_STORE_POLICY:-0}"
+STORE_POLICY_FILE="${STORE_POLICY_FILE:-docs/store_policy_record.json}"
 REQUIRE_AAB="${REQUIRE_AAB:-0}"
 REQUIRE_SIGNED_ARTIFACT="${REQUIRE_SIGNED_ARTIFACT:-0}"
 VERIFY_RELEASE_MAPPING="${VERIFY_RELEASE_MAPPING:-0}"
@@ -30,6 +32,7 @@ mkdir -p "$ARTIFACT_DIR"
 
 if [[ "$PUBLIC_RELEASE" == "1" ]]; then
   VERIFY_RELEASE_RECORD=1
+  VERIFY_STORE_POLICY=1
   VERIFY_MODEL_LICENSES=1
   VERIFY_PRIVACY_REVIEW=1
   REQUIRE_AAB=1
@@ -46,6 +49,8 @@ write_gate_report() {
     printf 'publicRelease=%s\n' "$PUBLIC_RELEASE"
     printf 'verifyReleaseRecord=%s\n' "$VERIFY_RELEASE_RECORD"
     printf 'releaseRecordFile=%s\n' "$RELEASE_RECORD_FILE"
+    printf 'verifyStorePolicy=%s\n' "$VERIFY_STORE_POLICY"
+    printf 'storePolicyFile=%s\n' "$STORE_POLICY_FILE"
     printf 'verifyModelLicenses=%s\n' "$VERIFY_MODEL_LICENSES"
     printf 'verifyPrivacyReview=%s\n' "$VERIFY_PRIVACY_REVIEW"
     printf 'requireAab=%s\n' "$REQUIRE_AAB"
@@ -170,6 +175,20 @@ else
     printf 'reason=VERIFY_RELEASE_RECORD-not-enabled\n'
     printf 'recordFile=%s\n' "$RELEASE_RECORD_FILE"
   } > "$ARTIFACT_DIR/release-record.properties"
+fi
+
+if [[ "$VERIFY_STORE_POLICY" == "1" ]]; then
+  if ! scripts/verify_store_policy_record.sh --file "$STORE_POLICY_FILE" --report "$ARTIFACT_DIR/store-policy-record.properties"; then
+    write_gate_report failed
+    exit 1
+  fi
+else
+  {
+    printf 'status=skipped\n'
+    printf 'target=store-policy-record\n'
+    printf 'reason=VERIFY_STORE_POLICY-not-enabled\n'
+    printf 'storePolicyFile=%s\n' "$STORE_POLICY_FILE"
+  } > "$ARTIFACT_DIR/store-policy-record.properties"
 fi
 
 if [[ "$VERIFY_MODEL_LICENSES" == "1" ]]; then

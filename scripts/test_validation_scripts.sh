@@ -265,6 +265,8 @@ grep -q 'scripts/verify_privacy_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_privacy_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_record.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_record.sh in shell syntax checks"
+grep -q 'scripts/verify_store_policy_record.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include verify_store_policy_record.sh in shell syntax checks"
 grep -q 'scripts/verify_model_license_review.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_model_license_review.sh in shell syntax checks"
 grep -q 'scripts/verify_release_mapping.sh' scripts/verify_local.sh ||
@@ -427,6 +429,115 @@ expect_failure \
   "release record verifier rejects artifact sha mismatch" \
   scripts/verify_release_record.sh --file "$RELEASE_RECORD_BAD_SHA" --report "$ARTIFACT_DIR/release-record-bad-sha.properties"
 assert_report_contains "$ARTIFACT_DIR/release-record-bad-sha.properties" "status=failed"
+
+STORE_POLICY_NOTICE="$TMP_DIR/store-privacy-notice.md"
+STORE_POLICY_MANIFEST="$TMP_DIR/AndroidManifest.xml"
+STORE_POLICY_PENDING="$TMP_DIR/store-policy-pending.json"
+STORE_POLICY_APPROVED="$TMP_DIR/store-policy-approved.json"
+printf 'PocketMind store privacy notice\n' > "$STORE_POLICY_NOTICE"
+STORE_POLICY_NOTICE_SHA="$(shasum -a 256 "$STORE_POLICY_NOTICE" | awk '{print $1}')"
+cat > "$STORE_POLICY_MANIFEST" <<'STORE_POLICY_MANIFEST_XML'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+</manifest>
+STORE_POLICY_MANIFEST_XML
+cat > "$STORE_POLICY_PENDING" <<'STORE_POLICY_PENDING_JSON'
+{
+  "version": 1,
+  "status": "pending_policy_review"
+}
+STORE_POLICY_PENDING_JSON
+expect_failure \
+  "store policy verifier rejects pending records" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_PENDING" --report "$ARTIFACT_DIR/store-policy-pending.properties"
+assert_report_contains "$ARTIFACT_DIR/store-policy-pending.properties" "status=failed"
+cat > "$STORE_POLICY_APPROVED" <<STORE_POLICY_APPROVED_JSON
+{
+  "version": 1,
+  "status": "approved",
+  "privacyNoticePath": "$STORE_POLICY_NOTICE",
+  "privacyNoticeSha256": "$STORE_POLICY_NOTICE_SHA",
+  "appListing": {
+    "appName": "PocketMind",
+    "shortDescription": "Local-first AI assistant.",
+    "fullDescription": "PocketMind is a local-first personal AI assistant for internal testing. It stores user sessions locally, protects private context with confirmation, and clearly separates optional remote model calls from local-only data.",
+    "category": "Productivity",
+    "contactEmail": "release@example.com",
+    "privacyPolicyUrl": "https://example.com/privacy"
+  },
+  "dataSafety": {
+    "userDataCollected": true,
+    "userDataShared": true,
+    "encryptedInTransit": true,
+    "userDeletable": true,
+    "optionalRemoteModelEndpoints": true,
+    "externalRecipients": [
+      "User-configured remote model endpoints",
+      "Recommended and custom model download hosts",
+      "Android system or destination apps opened by confirmed external intents"
+    ],
+    "noFirstPartyAnalyticsUpload": true,
+    "localStorageDisclosed": true,
+    "remoteModelCallsDisclosed": true,
+    "modelDownloadsDisclosed": true,
+    "androidPermissionsDisclosed": true
+  },
+  "modelDownloads": {
+    "describedAsLargeOptionalAssets": true,
+    "declaresNotBundledInApk": true
+  },
+  "permissions": [
+    {
+      "name": "android.permission.INTERNET",
+      "purpose": "Connects only to user-configured remote model endpoints and model download hosts."
+    },
+    {
+      "name": "android.permission.RECORD_AUDIO",
+      "purpose": "Lets the user dictate text through explicit voice input before sending."
+    }
+  ],
+  "specialAccessDisclosures": [
+    {
+      "name": "UsageAccess",
+      "purpose": "Used only after confirmation to summarize the current foreground app."
+    },
+    {
+      "name": "AccessibilityService",
+      "purpose": "Used only after confirmation to read current-screen text nodes."
+    },
+    {
+      "name": "MediaProjection",
+      "purpose": "Used only after confirmation for one-shot current screenshot OCR."
+    }
+  ],
+  "review": {
+    "reviewer": "Store Reviewer",
+    "reviewDate": "$(date +%F)"
+  }
+}
+STORE_POLICY_APPROVED_JSON
+expect_success \
+  "store policy verifier accepts approved manifest-aligned record" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_APPROVED" --report "$ARTIFACT_DIR/store-policy-approved.properties"
+assert_report_contains "$ARTIFACT_DIR/store-policy-approved.properties" "status=passed"
+STORE_POLICY_BAD_SHA="$TMP_DIR/store-policy-bad-sha.json"
+sed 's/"privacyNoticeSha256": "'"$STORE_POLICY_NOTICE_SHA"'"/"privacyNoticeSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_BAD_SHA"
+expect_failure \
+  "store policy verifier rejects privacy notice sha mismatch" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_SHA" --report "$ARTIFACT_DIR/store-policy-bad-sha.properties"
+assert_report_contains "$ARTIFACT_DIR/store-policy-bad-sha.properties" "status=failed"
+STORE_POLICY_EXTRA_PERMISSION="$TMP_DIR/store-policy-extra-permission.json"
+sed 's/"name": "android.permission.RECORD_AUDIO"/"name": "android.permission.READ_CONTACTS"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_EXTRA_PERMISSION"
+expect_failure \
+  "store policy verifier rejects manifest permission mismatch" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_EXTRA_PERMISSION" --report "$ARTIFACT_DIR/store-policy-permission-mismatch.properties"
+assert_report_contains "$ARTIFACT_DIR/store-policy-permission-mismatch.properties" "status=failed"
 
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
@@ -709,6 +820,7 @@ expect_failure \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "publicRelease=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyReleaseRecord=1"
+assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyStorePolicy=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyPrivacyReview=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "verifyModelLicenses=1"
 assert_report_contains "$ARTIFACT_DIR/public-release-missing-cert/release-gate.properties" "requireAab=1"
@@ -748,6 +860,19 @@ expect_failure \
   VERIFY_CONTRACT_TESTS=0 \
   scripts/verify_release_gate.sh
 assert_report_contains "$ARTIFACT_DIR/release-record-gate/release-record.properties" "status=failed"
+expect_failure \
+  "release gate requires approved store policy when enabled" \
+  env ARTIFACT_DIR="$ARTIFACT_DIR/release-store-policy-gate" \
+  PERF_BASELINE_FILE="$VALID_GATE_PERF" \
+  RELEASE_APK="$SAFE_APK" \
+  RELEASE_AAB="$TMP_DIR/missing.aab" \
+  VERIFY_STORE_POLICY=1 \
+  STORE_POLICY_FILE="$STORE_POLICY_PENDING" \
+  PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" \
+  MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  VERIFY_CONTRACT_TESTS=0 \
+  scripts/verify_release_gate.sh
+assert_report_contains "$ARTIFACT_DIR/release-store-policy-gate/store-policy-record.properties" "status=failed"
 expect_failure \
   "signing helper requires private keystore environment" \
   scripts/sign_release_artifacts.sh

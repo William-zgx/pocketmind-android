@@ -106,6 +106,11 @@ release ticket or PR.
   Accessibility, notifications, calendar/contact reads, media reads, voice
   input, document/share input, external navigation, and reminders are requested
   only for user-confirmed flows.
+- [ ] `docs/store_policy_record.json` is updated and approved, then
+  `VERIFY_STORE_POLICY=1 scripts/verify_release_gate.sh` passes. The gate
+  checks store listing fields, privacy policy URL, Data safety answers, model
+  download disclosure, manifest permission purposes, special-access
+  disclosures, and the current privacy notice SHA.
 
 ## Screenshots
 

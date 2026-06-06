@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "policy": "Public release builds require VERIFY_STORE_POLICY=1 and an approved store policy record.",
+  "status": "pending_policy_review",
+  "privacyNoticePath": "docs/privacy_notice.md",
+  "privacyNoticeSha256": "",
+  "appListing": {
+    "appName": "PocketMind",
+    "shortDescription": "",
+    "fullDescription": "",
+    "category": "",
+    "contactEmail": "",
+    "privacyPolicyUrl": ""
+  },
+  "dataSafety": {
+    "userDataCollected": true,
+    "userDataShared": true,
+    "encryptedInTransit": true,
+    "userDeletable": true,
+    "optionalRemoteModelEndpoints": true,
+    "externalRecipients": [
+      "User-configured remote model endpoints",
+      "Recommended and custom model download hosts",
+      "Android system or destination apps opened by confirmed external intents"
+    ],
+    "noFirstPartyAnalyticsUpload": true,
+    "localStorageDisclosed": true,
+    "remoteModelCallsDisclosed": true,
+    "modelDownloadsDisclosed": true,
+    "androidPermissionsDisclosed": true
+  },
+  "modelDownloads": {
+    "describedAsLargeOptionalAssets": false,
+    "declaresNotBundledInApk": true
+  },
+  "permissions": [
+    {
+      "name": "android.permission.INTERNET",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.RECORD_AUDIO",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_CALENDAR",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_CONTACTS",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_EXTERNAL_STORAGE",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_MEDIA_IMAGES",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_MEDIA_VIDEO",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.READ_MEDIA_AUDIO",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.POST_NOTIFICATIONS",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.RECEIVE_BOOT_COMPLETED",
+      "purpose": ""
+    },
+    {
+      "name": "android.permission.PACKAGE_USAGE_STATS",
+      "purpose": ""
+    }
+  ],
+  "specialAccessDisclosures": [
+    {
+      "name": "UsageAccess",
+      "purpose": ""
+    },
+    {
+      "name": "AccessibilityService",
+      "purpose": ""
+    },
+    {
+      "name": "MediaProjection",
+      "purpose": ""
+    }
+  ],
+  "review": {
+    "reviewer": "",
+    "reviewDate": ""
+  }
+}

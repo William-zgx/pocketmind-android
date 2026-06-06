@@ -14,10 +14,11 @@ items below.
 - Manual release checklist added for store metadata, screenshots,
   privacy/license review, signing, test gates, and rollback planning.
 - Machine-readable release gates now cover capability matrix drift,
-  release record completeness, privacy scanning, privacy notice review records,
-  APK/AAB artifact scanning, model license review records, RC perf-baseline
-  verification, artifact SHA matching, and optional public release enforcement
-  for signed artifacts plus AAB presence and release mapping output.
+  release record completeness, store policy/data-safety disclosure, privacy
+  scanning, privacy notice review records, APK/AAB artifact scanning, model
+  license review records, RC perf-baseline verification, artifact SHA matching,
+  and optional public release enforcement for signed artifacts plus AAB
+  presence and release mapping output.
 - Recommended downloads are registered only after SHA-256 verification.
 - Legacy recommended files are registered as `LegacyUnverified` and verified
   asynchronously before they can become active.
@@ -62,6 +63,10 @@ items below.
   blockers. `VERIFY_RELEASE_RECORD=1` verifies the record against the current
   Gradle version, a Git commit reachable from the current checkout, local
   artifact, and evidence files.
+- Fill `docs/store_policy_record.json` with approved store listing, data-safety
+  answers, privacy policy URL, model download disclosure, Android permission
+  purposes, and special-access disclosures. `VERIFY_STORE_POLICY=1` verifies
+  the record against the current privacy notice SHA and Android manifest.
 - For all four recommended model downloads, manually verify the upstream model
   license name, license URL or file path, redistribution rights, attribution or
   notice requirements, reviewer, and review date. Record the result in
@@ -92,5 +97,6 @@ items below.
 - For public distribution, run the release gate with
   `PUBLIC_RELEASE=1 EXPECTED_SIGNING_CERT_SHA256=<production upload cert>` after
   production signing and bundle generation are complete. `PUBLIC_RELEASE=1`
-  enables release record, privacy review, model license, AAB, signed-artifact,
-  and certificate fingerprint checks, plus release mapping verification.
+  enables release record, store policy, privacy review, model license, AAB,
+  signed-artifact, and certificate fingerprint checks, plus release mapping
+  verification.

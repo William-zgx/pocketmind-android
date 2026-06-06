@@ -6724,3 +6724,33 @@ scripts/verify_local.sh
 - 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用 `verifyReleaseRecord=1`。
 - 通过：脚本单测覆盖 `VERIFY_RELEASE_RECORD=1` 时 release gate 对 pending
   record fail-closed。
+
+## 2026-06-06 Store policy gate
+
+本轮覆盖项：
+
+- 新增 `docs/store_policy_record.json`，把 Store listing、Data safety、隐私
+  policy URL、模型下载说明、Android manifest 权限用途和 Usage
+  Access/Accessibility/MediaProjection 特殊访问披露收敛为机器可读记录。
+- 新增 `scripts/verify_store_policy_record.sh`，校验 store policy 已
+  approved，隐私 notice SHA 与当前文件一致，manifest 权限与记录完全一致，
+  且每个权限/特殊访问都有用途说明。
+- `scripts/verify_release_gate.sh` 新增 `VERIFY_STORE_POLICY=1`；
+  `PUBLIC_RELEASE=1` profile 会自动开启 store policy gate。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：脚本单测覆盖 pending store policy 失败。
+- 通过：脚本单测覆盖 approved store policy 成功。
+- 通过：脚本单测覆盖 privacy notice SHA mismatch 和 manifest permission
+  mismatch 失败。
+- 通过：脚本单测覆盖 `PUBLIC_RELEASE=1` 自动启用 `verifyStorePolicy=1`。
+- 通过：脚本单测覆盖 `VERIFY_STORE_POLICY=1` 时 release gate 对 pending
+  record fail-closed。
