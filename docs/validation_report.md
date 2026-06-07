@@ -10825,6 +10825,54 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 - 本轮只覆盖外部结果确认 sheet 的 UI 写回；真实外部 App 内部操作结果仍只能由用户补录，
   App 不应自动推断。
 - Godel 审计指出语音 `SpeechRecognizer.onResults()` 到 composer 输入框还缺 UI 自动化证据；
-  该项仍是下一条建议补齐的核心链路。
+  该项已在后续 `Voice transcript draft composer UI contract` 补齐。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。
+
+## 2026-06-07 Voice transcript draft composer UI contract
+
+本轮覆盖项：
+
+- `PocketMindVoiceInputConsentUiTest` 新增 `voiceTranscriptDraftFillsComposerOnceWithoutSending`。
+- 测试先在 `composer_input` 输入已有文本，再注入
+  `ChatUiState.voiceInputDraft = VoiceInputDraft(id = 42, text = "  语音转写结果  ")`。
+- 测试断言输入框最终为 `已有内容\n语音转写结果`，证明 UI 层会清理转写文本并追加到
+  composer，而不是直接发送。
+- 测试断言 `onVoiceInputConsumed(42)` 只触发一次，并且 `onSendMessage` 未触发；
+  强化语音转写“只生成草稿、不自动发送”的产品边界。
+- `PocketMindVoiceInputConsentUiTest` 抽出共用 `PocketMindScreen` helper，
+  保留原有语音显著同意弹窗覆盖。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.voiceTranscriptDraftIsOneShotAndDoesNotSendMessage'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=0 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.PocketMindVoiceInputConsentUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/voice-transcript-draft-ui-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：Debug AndroidTest Kotlin 编译。
+- 通过：JVM `voiceTranscriptDraftIsOneShotAndDoesNotSendMessage`，覆盖转写清洗、
+  draft 消费、不新增消息、不触发远程模型或工具。
+- 通过：API 36 emulator `PocketMindVoiceInputConsentUiTest` 2/2：
+  `voiceButtonRequiresAppConsentBeforeStartingVoiceInput`、
+  `voiceTranscriptDraftFillsComposerOnceWithoutSending`。
+- 通过：`scripts/verify_emulator.sh` 生成
+  `build/verification/voice-transcript-draft-ui-current/device-verification.properties`，
+  记录 `status=passed`、`instrumentation_test_count=2`、
+  `instrumentation_class=com.bytedance.zgx.pocketmind.PocketMindVoiceInputConsentUiTest`。
+
+剩余风险：
+
+- 本轮证明 `voiceInputDraft` 进入 composer；真实系统 `SpeechRecognizer` 服务可用性、
+  语言识别质量、永久拒绝后设置页恢复仍属于真机/手工验收或后续专项设备测试。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
