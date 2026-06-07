@@ -108,6 +108,8 @@ class CapabilityMatrixDocumentationTest {
         assertTrue(voice.dataAccessed.contains("麦克风音频"))
         assertTrue(voice.dataAccessed.contains("Android 系统语音识别"))
         assertTrue(voice.dataAccessed.contains("不保存音频文件"))
+        assertTrue(voice.consentBoundary.contains("App 内同意"))
+        assertTrue(voice.consentBoundary.contains("确认后才请求麦克风权限"))
         val action = CapabilityMatrix.sensitiveCapabilityDisclosures.single {
             it.capabilityId == "confirmed_device_actions"
         }

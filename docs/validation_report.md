@@ -23,6 +23,39 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Voice input prominent consent gate
+
+本轮覆盖项：
+
+- 语音输入从“点击麦克风后直接进入系统权限/收音流程”改为先展示 App 内明确同意弹窗；
+  用户点“同意并开启语音输入”后才会请求麦克风权限或开始收音。
+- 语音入口近场文案同步说明：系统语音转写、只进入输入框、不自动发送、不读取本地音频文件、
+  开启前先确认。
+- Capability Matrix 和 `docs/capability_matrix.json` 同步把 `voice_transcript_input`
+  标记为需要确认，并把 `PocketMindVoiceInputConsentUiTest` 纳入必测用例。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest \
+  --tests com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.voicePermissionFailureClearsCaptureAndCanRecoverWithoutSending' \
+  :app:compileDebugAndroidTestKotlin
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/voice-input-consent-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.PocketMindVoiceInputConsentUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM tests，覆盖展示文案、Capability Matrix/JSON 合同和语音权限失败恢复。
+- 通过：AndroidTest Kotlin 编译。
+- 通过：API 36 arm64 `PocketMindVoiceInputConsentUiTest`，
+  `build/verification/voice-input-consent-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=1`。
+
 ## 2026-06-07 Memory-disabled controls and remote send disclosure
 
 本轮覆盖项：

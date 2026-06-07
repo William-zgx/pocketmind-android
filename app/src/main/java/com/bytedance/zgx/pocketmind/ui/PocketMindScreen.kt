@@ -3092,7 +3092,13 @@ internal const val MODEL_DOWNLOAD_RATIONALE_TEXT =
     "本地模型让基础问答离线可用；基础对话模型约 2.4 GB，缺少、下载失败或文件不完整时可在这里补装，也可以先配置远程模型。"
 
 internal const val VOICE_INPUT_PRIVACY_DESCRIPTION =
-    "语音输入；使用系统语音转写，结果只进入输入框，不自动发送，不读取本地音频文件"
+    "语音输入；使用系统语音转写，结果只进入输入框，不自动发送，不读取本地音频文件；开启前会先确认"
+
+internal const val VOICE_INPUT_PERMISSION_DISCLOSURE_TITLE =
+    "开启语音输入"
+
+internal const val VOICE_INPUT_PERMISSION_DISCLOSURE_BODY =
+    "语音会交由 Android 系统语音识别服务处理；PocketMind 不保存音频文件，转写结果只进入输入框，不会自动发送。确认后才会请求麦克风权限或开始收音。"
 
 internal const val TRUST_LOCAL_BOUNDARY_TEXT =
     "会话、长期记忆、设备上下文和本地工具结果默认留在本机；切到远程模型时，本地隐私消息和 LocalOnly 工具结果不会进入远程历史。"
@@ -4321,6 +4327,7 @@ private fun Composer(
     val inputEnabled = state.isReady && !state.isBusy
     val attachmentEnabled = !state.isBusy
     val voiceEnabled = !state.isBusy && !state.voiceCapture.isActive
+    var showVoicePermissionDisclosure by rememberSaveable { mutableStateOf(false) }
     val actionIsStop = state.isGenerating
     val composerEdge = MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
     val hasPendingSharedInput = state.pendingSharedInputDraft != null
@@ -4423,7 +4430,7 @@ private fun Composer(
                     ) {
                         ComposerVoiceButton(
                             enabled = voiceEnabled,
-                            onClick = onStartVoiceInput,
+                            onClick = { showVoicePermissionDisclosure = true },
                         )
                         ComposerModelButton(
                             enabled = !state.isBusy,
@@ -4451,7 +4458,7 @@ private fun Composer(
                     )
                     ComposerVoiceButton(
                         enabled = voiceEnabled,
-                        onClick = onStartVoiceInput,
+                        onClick = { showVoicePermissionDisclosure = true },
                     )
                     ComposerModelButton(
                         enabled = !state.isBusy,
@@ -4467,6 +4474,49 @@ private fun Composer(
             }
         }
     }
+    if (showVoicePermissionDisclosure) {
+        VoiceInputPermissionDisclosureDialog(
+            enabled = voiceEnabled,
+            onConfirm = {
+                showVoicePermissionDisclosure = false
+                onStartVoiceInput()
+            },
+            onDismiss = {
+                showVoicePermissionDisclosure = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun VoiceInputPermissionDisclosureDialog(
+    enabled: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("voice_permission_disclosure_dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text(VOICE_INPUT_PERMISSION_DISCLOSURE_TITLE) },
+        text = { Text(VOICE_INPUT_PERMISSION_DISCLOSURE_BODY) },
+        confirmButton = {
+            TextButton(
+                modifier = Modifier.testTag("voice_permission_consent_button"),
+                enabled = enabled,
+                onClick = onConfirm,
+            ) {
+                Text("同意并开启语音输入")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.testTag("voice_permission_cancel_button"),
+                onClick = onDismiss,
+            ) {
+                Text("取消")
+            }
+        },
+    )
 }
 
 @Composable

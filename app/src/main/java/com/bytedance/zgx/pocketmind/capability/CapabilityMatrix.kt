@@ -127,9 +127,13 @@ object CapabilityMatrix {
                 privacyLevel = CapabilityPrivacyLevel.UserProvided,
                 requiresLocalModel = false,
                 remoteEligible = true,
-                confirmationPolicy = ConfirmationPolicy.NotRequired,
+                confirmationPolicy = ConfirmationPolicy.Required,
                 failureBehavior = "语音识别失败或权限拒绝时只更新本地状态，不读取音频文件或自动发送消息。",
-                requiredTests = listOf("PocketMindViewModelTest", "MainActivitySmokeTest"),
+                requiredTests = listOf(
+                    "PocketMindViewModelTest",
+                    "MainActivitySmokeTest",
+                    "PocketMindVoiceInputConsentUiTest",
+                ),
                 ownerAgent = CapabilityOwnerAgent.Multimodal,
             ),
             CapabilityDescriptor(
@@ -218,10 +222,15 @@ object CapabilityMatrix {
                 capabilityId = "voice_transcript_input",
                 displayName = "语音输入和麦克风",
                 dataAccessed = "实时麦克风音频交由 Android 系统语音识别服务处理；PocketMind 不读取本地音频文件、不保存音频文件，转写结果只进入输入框且不自动发送。",
-                consentBoundary = "用户点击语音按钮并通过系统语音交互提供内容；发送仍需要用户显式点击。",
+                consentBoundary = "用户点击语音按钮后必须先在 App 内同意语音输入说明；确认后才请求麦克风权限或开始收音，发送仍需要用户显式点击。",
                 remoteBoundary = "转写文本只有在用户确认远程发送预览后才可进入远程请求。",
                 revokeOrClearControl = "可取消语音输入、删除输入框草稿，并在 Android 设置中撤销麦克风权限。",
-                requiredTests = listOf("PocketMindViewModelTest", "PocketMindScreenDisplayTest", "MainActivityAdaptiveUiTest"),
+                requiredTests = listOf(
+                    "PocketMindViewModelTest",
+                    "PocketMindScreenDisplayTest",
+                    "MainActivityAdaptiveUiTest",
+                    "PocketMindVoiceInputConsentUiTest",
+                ),
             ),
             SensitiveCapabilityDisclosure(
                 capabilityId = "share_and_file_picker_input",
