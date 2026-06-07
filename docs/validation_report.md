@@ -23,6 +23,32 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Remote network failure retry recovery
+
+本轮覆盖项：
+
+- 扩展 `PocketMindViewModelTest.remoteNetworkFailureShowsReadableFailureAndFailsTrace`：
+  远程模型网络失败后，UI 必须恢复为非 busy、非 generating、仍可用 remote ready 状态，
+  并清空 `pendingRemoteSendDisclosure`。
+- 同一测试继续模拟第二次远程发送：先重新出现远程发送确认，确认后 remote runtime
+  成功返回 `远程回复`，且不会再次调用 `failModelGeneration`。
+- 测试 fake `RecordingRemoteChatRuntime.failure` 改为可在用例内解除，用来证明失败后可恢复，
+  不是只证明失败文案存在。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteNetworkFailureShowsReadableFailureAndFailsTrace'
+```
+
+结果：
+
+- 通过：targeted JVM 测试覆盖远程网络失败后的 UI 解锁、确认 sheet 清理、二次确认发送和成功回复。
+- 未执行：本轮不跑模拟器或真机；模拟器 API 36 完整回归仍以
+  `build/verification/product-contract-regression-current/regression-emulator.properties`
+  的 51/51 结果为当前完整自动回归证据。
+
 ## 2026-06-07 Product positioning and first-run model recovery
 
 本轮覆盖项：

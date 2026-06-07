@@ -4300,6 +4300,28 @@ class PocketMindViewModelTest {
         assertFalse(sessionStore.messages.last().text.contains("IOException"))
         assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
         assertEquals(readableFailure, viewModel.uiState.value.modelHealth.failureReason)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertFalse(viewModel.uiState.value.isGenerating)
+        assertTrue(viewModel.uiState.value.isReady)
+        assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
+
+        remoteRuntime.failure = null
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertEquals("远程发送待确认", viewModel.uiState.value.statusText)
+        assertEquals(1, remoteRuntime.calls.size)
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals(2, remoteRuntime.calls.size)
+        assertEquals("普通远程问题", remoteRuntime.calls.last().prompt)
+        assertEquals("就绪 · 远程", viewModel.uiState.value.statusText)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertFalse(viewModel.uiState.value.isGenerating)
+        assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertTrue(sessionStore.messages.last().text.contains("远程回复"))
+        assertEquals(1, assistantRouter.failModelGenerationCallCount)
     }
 
     @Test
@@ -6983,7 +7005,7 @@ class PocketMindViewModelTest {
     private class RecordingRemoteChatRuntime(
         private val events: List<RemoteChatEvent> = listOf(RemoteChatEvent.TextDelta("远程回复")),
         private val eventBatches: List<List<RemoteChatEvent>> = emptyList(),
-        private val failure: Throwable? = null,
+        var failure: Throwable? = null,
         private val hangDuringSend: Boolean = false,
     ) : RemoteChatRuntime {
         val calls = mutableListOf<RemoteCall>()
