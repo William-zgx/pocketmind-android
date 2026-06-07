@@ -28,6 +28,7 @@ EMULATOR_LOG="${ARTIFACT_DIR}/emulator.log"
 
 MAIN_COPY_TEXT="${MAIN_COPY_TEXT:-隐私优先的随身 AI 助手}"
 FORBIDDEN_FIRST_RUN_TEXT="${FORBIDDEN_FIRST_RUN_TEXT:-离线基础问答可选下载}"
+FIRST_RUN_SKIP_LABEL="${FIRST_RUN_SKIP_LABEL:-先跳过}"
 MODEL_MANAGER_BUTTON_LABEL="${MODEL_MANAGER_BUTTON_LABEL:-模型管理}"
 MODEL_MANAGER_EXPECTED_TEXT="${MODEL_MANAGER_EXPECTED_TEXT:-选择本地离线或可选远程；远程发送和设备动作仍会先确认。}"
 SELECTED_SERIAL=""
@@ -39,6 +40,7 @@ FAILURE_REASON=""
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STARTED_EMULATOR=0
 FIRST_RUN_SETUP_VISIBLE=""
+FIRST_RUN_SETUP_SKIPPED=""
 MAIN_SHELL_COPY_VISIBLE=""
 MODEL_MANAGER_CLICK_OPENED=""
 
@@ -65,6 +67,7 @@ write_report() {
     echo "logcat_file=$LOGCAT_FILE"
     echo "emulator_log=$EMULATOR_LOG"
     echo "first_run_setup_visible=${FIRST_RUN_SETUP_VISIBLE:-}"
+    echo "first_run_setup_skipped=${FIRST_RUN_SETUP_SKIPPED:-}"
     echo "main_shell_copy_visible=${MAIN_SHELL_COPY_VISIBLE:-}"
     echo "model_manager_click_opened=${MODEL_MANAGER_CLICK_OPENED:-}"
   } > "$REPORT_FILE"
@@ -269,9 +272,19 @@ capture_artifacts
 [[ -s "$WINDOW_DUMP_FILE" ]] || fail evidence window-dump-missing "Fresh start UI dump was not captured."
 if grep -Fq "$FORBIDDEN_FIRST_RUN_TEXT" "$WINDOW_DUMP_FILE"; then
   FIRST_RUN_SETUP_VISIBLE="true"
-  fail ui first-run-setup-visible "Fresh start still shows $FORBIDDEN_FIRST_RUN_TEXT."
+  tap_clickable_node_by_label "$FIRST_RUN_SKIP_LABEL" "$WINDOW_DUMP_FILE"
+  sleep 2
+  capture_artifacts
+  [[ -s "$WINDOW_DUMP_FILE" ]] || fail evidence window-dump-missing-after-first-run-skip "Fresh start UI dump after first-run skip was not captured."
+  if grep -Fq "$FORBIDDEN_FIRST_RUN_TEXT" "$WINDOW_DUMP_FILE"; then
+    FIRST_RUN_SETUP_SKIPPED="false"
+    fail ui first-run-setup-skip-failed "Tapping $FIRST_RUN_SKIP_LABEL did not dismiss $FORBIDDEN_FIRST_RUN_TEXT."
+  fi
+  FIRST_RUN_SETUP_SKIPPED="true"
+else
+  FIRST_RUN_SETUP_VISIBLE="false"
+  FIRST_RUN_SETUP_SKIPPED="not-needed"
 fi
-FIRST_RUN_SETUP_VISIBLE="false"
 if ! grep -Fq "$MAIN_COPY_TEXT" "$WINDOW_DUMP_FILE"; then
   MAIN_SHELL_COPY_VISIBLE="false"
   fail ui main-shell-copy-missing "Fresh start UI dump is missing $MAIN_COPY_TEXT."

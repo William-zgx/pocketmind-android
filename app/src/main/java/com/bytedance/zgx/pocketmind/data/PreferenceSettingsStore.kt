@@ -26,6 +26,10 @@ class PreferenceSettingsStore(context: Context) : SettingsStore, ActiveSessionSt
         writeBoolean(Keys.FIRST_RUN_DISMISSED, true)
     }
 
+    fun setSetupDismissedForTesting(dismissed: Boolean) {
+        writeBoolean(Keys.FIRST_RUN_DISMISSED, dismissed)
+    }
+
     override fun isMemoryEnabled(): Boolean =
         readBoolean(Keys.MEMORY_ENABLED, true)
 

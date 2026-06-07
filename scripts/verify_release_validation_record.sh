@@ -520,6 +520,11 @@ def validate_flow_evidence(key, evidence_path):
     if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{prefix}-release-flow-not-passed")
     required_true_fields = {
+        "firstInstall": {
+            "firstRunSetupVisibleCovered": "first-run-setup-visibility-missing",
+            "firstRunDefaultChatModelSelected": "first-run-default-chat-model-missing",
+            "firstRunSkipReachesMainShell": "first-run-skip-main-shell-missing",
+        },
         "localModelDownloadVerification": {
             "localModelDownloadVerified": "model-download-verification-missing",
             "modelSha256VerificationCovered": "model-sha-verification-missing",

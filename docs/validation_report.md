@@ -23,6 +23,59 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 First-run setup and skip gate
+
+本轮覆盖项：
+
+- 新用户、无本地模型且无远程配置时，`showFirstRunSetup` 从真实 first-run 设置读取，
+  不再写死为 false；首次启动会展示离线基础问答下载/跳过路径。
+- 已跳过、已有远程配置或保存远程配置后不再重新弹 first-run；开始下载、导入或校验
+  本地模型成功后也会收起 first-run。
+- 新增 API 36 模拟器 UI 用例，覆盖 first-run 默认选中聊天模型、下载按钮可见、
+  点击“先跳过”后回到主界面。
+- `verify_fresh_start_main_shell_emulator.sh` 不再把可跳过的 first-run 引导当失败；
+  release flow evidence 为 `firstInstall` 新增 first-run 可见、默认聊天模型和跳过后主界面字段。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupShowsSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupKeepsSetupDismissedWhenNoLocalOrRemoteModelIsAvailable' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startupDoesNotReopenSetupWhenRemoteModelIsConfigured' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.savingRemoteConfigDismissesFreshSetup'
+./gradlew :app:compileDebugAndroidTestKotlin
+scripts/test_validation_scripts.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/first-run-setup-ui-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityFirstRunSetupUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/fresh-start-first-run-skip-current \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+bash scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/first-run-main-smoke-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM first-run 合同测试。
+- 通过：AndroidTest 编译和 validation script self-tests。
+- 通过：API 36 arm64 first-run UI 用例，
+  `build/verification/first-run-setup-ui-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=1`。
+- 通过：fresh-start main shell helper，
+  `build/verification/fresh-start-first-run-skip-current/fresh-start-main-shell.properties`
+  记录 `status=passed`、`main_shell_copy_visible=true`、`model_manager_click_opened=true`。
+- 通过：`scripts/verify_local.sh`，包含 JVM tests、lint、debug/androidTest APK、
+  release APK/AAB 组装和 artifact scan。
+- 通过：API 36 arm64 `MainActivitySmokeTest`，
+  `build/verification/first-run-main-smoke-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=6`。
+
 ## 2026-06-07 No-model main shell entry polish
 
 本轮覆盖项：

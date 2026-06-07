@@ -361,7 +361,7 @@ class PocketMindViewModelTest {
     }
 
     @Test
-    fun startupDoesNotShowSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
+    fun startupShowsSetupOnFreshInstallWhenNoLocalOrRemoteModelIsAvailable() = runTest(dispatcher) {
         val viewModel = createViewModel(
             modelRepository = FakeModelRepository(activeModelPath = null),
             remoteStore = FakeRemoteModelStore(
@@ -374,7 +374,7 @@ class PocketMindViewModelTest {
         viewModel.restoreStartupState(skipModelRuntimeWork = true)
         advanceUntilIdle()
 
-        assertFalse(viewModel.uiState.value.showFirstRunSetup)
+        assertTrue(viewModel.uiState.value.showFirstRunSetup)
         assertFalse(viewModel.uiState.value.isReady)
         assertEquals(
             NO_MODEL_READY_STATUS_TEXT,
@@ -412,7 +412,7 @@ class PocketMindViewModelTest {
                 mode = InferenceMode.Remote,
                 config = configuredRemoteModel(),
             ),
-            firstRunStore = FakeFirstRunSetupStore(setupDismissed = true),
+            firstRunStore = FakeFirstRunSetupStore(setupDismissed = false),
         )
 
         viewModel.restoreStartupState(skipModelRuntimeWork = true)
@@ -421,6 +421,27 @@ class PocketMindViewModelTest {
         assertFalse(viewModel.uiState.value.showFirstRunSetup)
         assertTrue(viewModel.uiState.value.isReady)
         assertEquals("远程模型已就绪", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun savingRemoteConfigDismissesFreshSetup() = runTest(dispatcher) {
+        val firstRunStore = FakeFirstRunSetupStore(setupDismissed = false)
+        val viewModel = createViewModel(
+            modelRepository = FakeModelRepository(activeModelPath = null),
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Local,
+                config = RemoteModelConfig(),
+            ),
+            firstRunStore = firstRunStore,
+        )
+
+        assertTrue(viewModel.uiState.value.showFirstRunSetup)
+
+        viewModel.updateRemoteModelConfig(configuredRemoteModel())
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.showFirstRunSetup)
+        assertTrue(firstRunStore.isSetupDismissed())
     }
 
     @Test

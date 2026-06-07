@@ -694,6 +694,7 @@ class PocketMindViewModel(
 
             result.fold(
                 onSuccess = { path ->
+                    firstRunSetupRepository.markSetupDismissed()
                     updateModelState(modelRepository.currentState())
                     _uiState.update {
                         it.copy(
@@ -704,6 +705,7 @@ class PocketMindViewModel(
                             downloadedBytes = 0L,
                             totalBytes = 0L,
                             statusText = "模型已导入",
+                            showFirstRunSetup = false,
                         )
                     }
                     loadModel()
@@ -803,7 +805,11 @@ class PocketMindViewModel(
                         it.copy(
                             remoteModelConfig = normalized,
                             pendingRemoteSendDisclosure = null,
+                            showFirstRunSetup = if (normalized.isConfigured) false else it.showFirstRunSetup,
                         )
+                    }
+                    if (normalized.isConfigured) {
+                        firstRunSetupRepository.markSetupDismissed()
                     }
                     if (_uiState.value.inferenceMode == InferenceMode.Remote) {
                         updateRemoteReadiness("远程模型")
@@ -3196,6 +3202,7 @@ class PocketMindViewModel(
             return
         }
 
+        firstRunSetupRepository.markSetupDismissed()
         activeDownloadId = downloadId
         modelRepository.savePendingDownload(downloadId, source)
         _uiState.update {
@@ -3207,6 +3214,7 @@ class PocketMindViewModel(
                 totalBytes = 0L,
                 statusText = "模型下载中",
                 isReady = false,
+                showFirstRunSetup = false,
             )
         }
         monitorDownload(downloadId, target, source)
@@ -3384,6 +3392,7 @@ class PocketMindViewModel(
                     ModelVerificationStatus.VerifiedRecommended
                 },
             )
+            firstRunSetupRepository.markSetupDismissed()
             updateModelState(modelRepository.currentState())
             _uiState.update {
                 it.copy(
@@ -3393,6 +3402,7 @@ class PocketMindViewModel(
                     downloadedBytes = 0L,
                     totalBytes = 0L,
                     statusText = "模型校验通过",
+                    showFirstRunSetup = false,
                 )
             }
             continueSetupDownloadOrLoad(source)
@@ -3536,6 +3546,7 @@ class PocketMindViewModel(
         val inferenceMode = remoteModelRepository.loadMode()
         val remoteConfig = remoteModelRepository.loadConfig()
         val hasUsableEndpoint = hasStartupModelEndpoint(modelState, remoteConfig)
+        val showFirstRunSetup = !firstRunSetupRepository.isSetupDismissed() && !hasUsableEndpoint
         memoryRepository.enabled = memoryEnabled
         syncTaskStateMemories(memoryEnabled = memoryEnabled)
         syncSemanticMemoryRuntime()
@@ -3548,7 +3559,7 @@ class PocketMindViewModel(
             remoteModelConfig = remoteConfig,
             backend = backend,
             modelHealth = modelState.modelHealthForCurrentSelection(backend),
-            showFirstRunSetup = false,
+            showFirstRunSetup = showFirstRunSetup,
             memoryEnabled = memoryEnabled,
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
             semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),

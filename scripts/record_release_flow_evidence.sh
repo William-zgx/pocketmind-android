@@ -94,6 +94,11 @@ fail() {
 write_flow_contract_fields() {
   local flow="$1"
   case "$flow" in
+    firstInstall)
+      printf 'firstRunSetupVisibleCovered=true\n'
+      printf 'firstRunDefaultChatModelSelected=true\n'
+      printf 'firstRunSkipReachesMainShell=true\n'
+      ;;
     remoteHttpsConfiguration)
       printf 'remoteNetworkFailureRecoveryCovered=true\n'
       printf 'remoteUnconfiguredModelFailureCovered=true\n'

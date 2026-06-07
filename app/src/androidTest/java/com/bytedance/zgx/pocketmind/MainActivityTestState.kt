@@ -30,6 +30,16 @@ internal fun resetMainActivityPersistentState(
     PocketMindDatabase.get(context).clearAllTables()
 }
 
+internal fun resetMainActivityFreshInstallState(context: Context) {
+    val settingsStore = PreferenceSettingsStore(context)
+    settingsStore.saveInferenceMode(InferenceMode.Local)
+    settingsStore.saveRemoteConfig(RemoteModelConfig())
+    settingsStore.saveActiveSessionId("")
+    settingsStore.setSetupDismissedForTesting(false)
+    FirstRunSetupRepository(settingsStore).setMemoryEnabled(true)
+    PocketMindDatabase.get(context).clearAllTables()
+}
+
 internal fun mainActivitySkipStartupIntent(context: Context): Intent =
     Intent(context, MainActivity::class.java).apply {
         putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)

@@ -252,7 +252,28 @@ FAKE_LIVE_REMOTE_SEND_UI
 FAKE_LIVE_REMOTE_CONFIRM_UI
         ;;
       /sdcard/pocketmind-fresh-start.xml)
-        if [[ -n "${FAKE_FRESH_START_UI_TEXT:-}" ]]; then
+        if [[ "${FAKE_FRESH_START_SHOW_FIRST_RUN_ONCE:-0}" == "1" || "${FAKE_FRESH_START_SHOW_STUCK_FIRST_RUN:-0}" == "1" ]]; then
+          fresh_start_tap_count="$(grep -c 'input tap' "${FAKE_ADB_LOG:?}" 2>/dev/null || true)"
+          if [[ "${FAKE_FRESH_START_SHOW_STUCK_FIRST_RUN:-0}" == "1" || "$fresh_start_tap_count" == "0" ]]; then
+            cat > "$destination" <<'FAKE_FRESH_START_FIRST_RUN_UI'
+<hierarchy>
+  <node text="PocketMind" enabled="true" clickable="false" bounds="[76,150][303,223]" />
+  <node text="隐私优先的随身 AI 助手" enabled="true" clickable="false" bounds="[76,226][303,275]" />
+  <node text="离线基础问答可选下载" enabled="true" clickable="false" bounds="[94,600][778,691]" />
+  <node text="先跳过" enabled="true" clickable="true" bounds="[80,1800][500,1900]" />
+</hierarchy>
+FAKE_FRESH_START_FIRST_RUN_UI
+          else
+            cat > "$destination" <<'FAKE_FRESH_START_AFTER_SKIP_UI'
+<hierarchy>
+  <node text="PocketMind" enabled="true" clickable="false" bounds="[76,150][303,223]" />
+  <node text="隐私优先的随身 AI 助手" enabled="true" clickable="false" bounds="[76,226][303,275]" />
+  <node content-desc="模型管理" enabled="true" clickable="true" bounds="[471,149][597,275]" />
+  <node text="开始和 PocketMind 对话" enabled="true" clickable="false" bounds="[94,600][778,691]" />
+</hierarchy>
+FAKE_FRESH_START_AFTER_SKIP_UI
+          fi
+        elif [[ -n "${FAKE_FRESH_START_UI_TEXT:-}" ]]; then
           printf '<hierarchy><node text="%s" /></hierarchy>\n' "$FAKE_FRESH_START_UI_TEXT" > "$destination"
         else
           cat > "$destination" <<'FAKE_FRESH_START_UI'
@@ -457,6 +478,11 @@ assert_report_contains_text() {
 write_model_release_flow_contract_fixture() {
   local flow="$1"
   case "$flow" in
+    firstInstall)
+      printf 'firstRunSetupVisibleCovered=true\n'
+      printf 'firstRunDefaultChatModelSelected=true\n'
+      printf 'firstRunSkipReachesMainShell=true\n'
+      ;;
     remoteHttpsConfiguration)
       printf 'remoteNetworkFailureRecoveryCovered=true\n'
       printf 'remoteUnconfiguredModelFailureCovered=true\n'
@@ -1974,6 +2000,9 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-target-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-evidence-key-mismatch"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-release-flow-not-passed"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-first-run-setup-visibility-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-first-run-default-chat-model-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-flow.properties" "flow-firstInstall-first-run-skip-main-shell-missing"
 VALIDATION_WEAK_LOCAL_MODEL_FLOW="$TMP_DIR/release-validation-weak-local-model-flow.json"
 VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-local-model-download.properties"
 cat > "$VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE" <<'VALIDATION_WEAK_LOCAL_MODEL_FLOW_EVIDENCE_PROPERTIES'
@@ -2791,6 +2820,9 @@ assert_report_contains_text "$ARTIFACT_DIR/release-flow-candidate-pending.proper
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "generatedCandidateFlows=firstInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,privacyAndDataControls,remindersAfterReboot,shareAndPickerInput,voiceInput,adaptiveUi,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "candidateOnly=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "releaseFlowPassed=false"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "firstRunSetupVisibleCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "firstRunDefaultChatModelSelected=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "firstRunSkipReachesMainShell=true"
 for generated_flow_key in \
   firstInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
@@ -3063,6 +3095,9 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.pro
 assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "flowKey=firstInstall"
 assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "releaseFlowPassed=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "candidateOnly=false"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "firstRunSetupVisibleCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "firstRunDefaultChatModelSelected=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-partial/flow-firstInstall.properties" "firstRunSkipReachesMainShell=true"
 expect_success \
   "release flow evidence recorder writes all formal evidence" \
   env ARTIFACT_DIR="$ARTIFACT_DIR/release-flow-full" \
@@ -4524,6 +4559,20 @@ grep -q -- "-s emulator-5554 shell input tap 534 212" "$FAKE_ADB_LOG" ||
 assert_report_contains_text "$ARTIFACT_DIR/model-manager.xml" "选择本地离线或可选远程"
 
 reset_logs
+expect_success \
+  "fresh start main shell helper skips first-run setup then validates main shell" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
+  FAKE_FRESH_START_SHOW_FIRST_RUN_ONCE=1 \
+  GRADLE_CMD="$FAKE_GRADLE" \
+  scripts/verify_fresh_start_main_shell_emulator.sh
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=passed"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_skipped=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "main_shell_copy_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_manager_click_opened=true"
+
+reset_logs
 expect_failure \
   "fresh start main shell helper rejects model manager click with no response" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
@@ -4539,16 +4588,17 @@ assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_
 
 reset_logs
 expect_failure \
-  "fresh start main shell helper rejects first-run setup page" \
+  "fresh start main shell helper rejects stuck first-run setup page" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' \
-  FAKE_FRESH_START_UI_TEXT="离线基础问答可选下载" \
+  FAKE_FRESH_START_SHOW_STUCK_FIRST_RUN=1 \
   GRADLE_CMD="$FAKE_GRADLE" \
   scripts/verify_fresh_start_main_shell_emulator.sh
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "failedTarget=ui"
-assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "reason=first-run-setup-visible"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "reason=first-run-setup-skip-failed"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_visible=true"
+assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "first_run_setup_skipped=false"
 
 reset_logs
 LIVE_REMOTE_TEST_TOKEN="$TMP_DIR/live-remote-token-from-env"

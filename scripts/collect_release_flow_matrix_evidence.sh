@@ -162,7 +162,7 @@ fail() {
 flow_summary() {
   case "$1" in
     firstInstall)
-      printf 'Clean API 36 emulator regression covers first-run setup dismissal, chat shell rendering, model manager entry, session controls, and background task empty state.'
+      printf 'Clean API 36 emulator regression covers first-run setup visibility, default chat-model selection, first-run skip, chat shell rendering, model manager entry, session controls, and background task empty state.'
       ;;
     localModelDownloadVerification)
       printf 'API 36 emulator regression covers custom .litertlm DownloadManager handoff; repository tests cover recommended model verification metadata, trusted model surfaces, insufficient-storage download failure, and failure-state UI contracts.'
@@ -213,6 +213,7 @@ flow_source_files() {
   case "$1" in
     firstInstall)
       printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityFirstRunSetupUiTest.kt \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySmokeTest.kt
       ;;
     localModelDownloadVerification)
@@ -301,6 +302,11 @@ flow_source_files() {
 write_flow_contract_fields() {
   local flow="$1"
   case "$flow" in
+    firstInstall)
+      printf 'firstRunSetupVisibleCovered=true\n'
+      printf 'firstRunDefaultChatModelSelected=true\n'
+      printf 'firstRunSkipReachesMainShell=true\n'
+      ;;
     localModelDownloadVerification)
       printf 'localModelDownloadVerified=true\n'
       printf 'modelSha256VerificationCovered=true\n'
@@ -525,6 +531,11 @@ def is_valid_evidence(flow, value):
     if props.get("releaseFlowPassed", "").lower() not in {"true", "1", "yes"}:
         return False
     required_true_fields = {
+        "firstInstall": [
+            "firstRunSetupVisibleCovered",
+            "firstRunDefaultChatModelSelected",
+            "firstRunSkipReachesMainShell",
+        ],
         "localModelDownloadVerification": [
             "localModelDownloadVerified",
             "modelSha256VerificationCovered",
