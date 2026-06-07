@@ -23,6 +23,47 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Media/file permission UI anchors
+
+本轮覆盖项：
+
+- `MainActivityRuntimePermissionUiTest` 新增最近图片 OCR 和最近图片文件摘要确认页覆盖：
+  确认页必须展示动作标题、最小读取范围、系统权限说明、LocalOnly 数据边界，并且取消后不执行工具。
+- `MainActivityAdaptiveUiTest` 锁定远程模式 composer 附近的附件保护提示：
+  主动选择图片才会发送给远程视觉模型，其他附件/分享文本不会读取正文或 OCR。
+- Capability Matrix 和 `docs/capability_matrix.json` 把新增 UI 证据挂入
+  `share_and_file_picker_input`、`contacts_calendar_reads`、`media_and_recent_ocr`
+  和 `accessibility_current_screen_text` 的 required tests。
+- `CapabilityMatrixDocumentationTest` 新增敏感能力到 UI/test anchor 的显式映射校验，
+  不再只证明 required test class 存在。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest \
+  --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest \
+  :app:compileDebugAndroidTestKotlin
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/media-permission-ui-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=300 scripts/verify_emulator.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/remote-attachment-notice-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityAdaptiveUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=300 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM tests 和 AndroidTest Kotlin 编译。
+- 通过：API 36 arm64 `MainActivityRuntimePermissionUiTest`，
+  `build/verification/media-permission-ui-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=5`。
+- 通过：API 36 arm64 `MainActivityAdaptiveUiTest`，
+  `build/verification/remote-attachment-notice-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=3`。
+
 ## 2026-06-07 CI final public release gate
 
 本轮覆盖项：

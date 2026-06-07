@@ -239,7 +239,12 @@ object CapabilityMatrix {
                 consentBoundary = "仅处理用户主动分享或通过系统文件选择器确认的内容；本地模式才读取受支持文本/PDF/OCR 摘录，图片不自动 OCR。",
                 remoteBoundary = "远程模式保护分享文本、非图片附件、文本摘录和 OCR 摘录；仅在远程模式、视觉开启且用户确认发送后，图片才走远程视觉路径。",
                 revokeOrClearControl = "可取消草稿、删除当前会话，并通过系统 picker/分享入口重新选择范围。",
-                requiredTests = listOf("SharedInputTest", "MainActivitySharedIntentTest", "PocketMindScreenDisplayTest"),
+                requiredTests = listOf(
+                    "SharedInputTest",
+                    "MainActivitySharedIntentTest",
+                    "PocketMindScreenDisplayTest",
+                    "MainActivityAdaptiveUiTest",
+                ),
             ),
             SensitiveCapabilityDisclosure(
                 capabilityId = "confirmed_device_actions",
@@ -257,7 +262,12 @@ object CapabilityMatrix {
                 consentBoundary = "工具确认后才请求 READ_CONTACTS 或 READ_CALENDAR；权限拒绝会作为结构化失败返回。",
                 remoteBoundary = "读取结果标记为 LocalOnly，要求本地模型续写，不进入远程模型规划或远程历史。",
                 revokeOrClearControl = "可取消工具确认、在 Android 设置撤销联系人/日历权限，并删除相关会话记录；审计仅保留脱敏摘要并按保留策略裁剪。",
-                requiredTests = listOf("AgentRuntimePermissionPolicyTest", "ToolRegistryTest", "CalendarAvailabilityProviderTest"),
+                requiredTests = listOf(
+                    "AgentRuntimePermissionPolicyTest",
+                    "ToolRegistryTest",
+                    "CalendarAvailabilityProviderTest",
+                    "MainActivityRuntimePermissionUiTest",
+                ),
             ),
             SensitiveCapabilityDisclosure(
                 capabilityId = "media_and_recent_ocr",
@@ -266,7 +276,12 @@ object CapabilityMatrix {
                 consentBoundary = "显式 OCR 工具确认后才请求媒体权限或 selected visual media；普通图片输入不强制 OCR。",
                 remoteBoundary = "OCR 摘录是 LocalOnly；远程视觉图片发送与 OCR 工具分离。",
                 revokeOrClearControl = "可取消工具确认、撤销媒体权限、删除相关会话记录，并重新选择 selected visual media 范围；审计仅保留脱敏摘要并按保留策略裁剪。",
-                requiredTests = listOf("AgentRuntimePermissionPolicyTest", "ToolRegistryTest", "AgentLoopRuntimeTest"),
+                requiredTests = listOf(
+                    "AgentRuntimePermissionPolicyTest",
+                    "ToolRegistryTest",
+                    "AgentLoopRuntimeTest",
+                    "MainActivityRuntimePermissionUiTest",
+                ),
             ),
             SensitiveCapabilityDisclosure(
                 capabilityId = "usage_stats_foreground_app",
@@ -284,7 +299,12 @@ object CapabilityMatrix {
                 consentBoundary = "用户打开系统无障碍服务并确认单次工具读取后才处理当前屏幕文本。",
                 remoteBoundary = "Accessibility 文本标记为 LocalOnly，只进入本地续写和审计边界，不进入远程模型。",
                 revokeOrClearControl = "可取消工具确认，在系统无障碍设置关闭服务，并删除相关会话记录；审计仅保留脱敏摘要并按保留策略裁剪。",
-                requiredTests = listOf("ToolRegistryTest", "AgentLoopRuntimeTest", "MainActivitySkillUiTest"),
+                requiredTests = listOf(
+                    "ToolRegistryTest",
+                    "AgentLoopRuntimeTest",
+                    "MainActivitySkillUiTest",
+                    "MainActivitySpecialAccessUiTest",
+                ),
             ),
             SensitiveCapabilityDisclosure(
                 capabilityId = "media_projection_screenshot_ocr",

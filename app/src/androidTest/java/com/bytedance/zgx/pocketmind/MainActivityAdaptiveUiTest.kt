@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bytedance.zgx.pocketmind.ui.REMOTE_ATTACHMENT_PROTECTION_NOTICE
 import com.bytedance.zgx.pocketmind.ui.VOICE_INPUT_PRIVACY_DESCRIPTION
 import java.io.FileInputStream
 import org.junit.After
@@ -79,6 +80,8 @@ class MainActivityAdaptiveUiTest {
             )
             composeRule.assertLabeledAction("composer_voice_button", VOICE_INPUT_PRIVACY_DESCRIPTION)
             composeRule.onNodeWithTag("voice_privacy_notice").assertIsDisplayed()
+            composeRule.onNodeWithTag("remote_attachment_protection_notice").assertIsDisplayed()
+            composeRule.onNodeWithText(REMOTE_ATTACHMENT_PROTECTION_NOTICE).assertIsDisplayed()
             composeRule.assertLabeledAction("composer_model_button", "模型管理")
 
             composeRule.waitForReadyComposer()

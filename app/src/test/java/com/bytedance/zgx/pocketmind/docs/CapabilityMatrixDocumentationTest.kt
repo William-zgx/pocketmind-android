@@ -169,6 +169,72 @@ class CapabilityMatrixDocumentationTest {
         )
     }
 
+    @Test
+    fun sensitiveDisclosuresHaveExplicitUiAndTestAnchors() {
+        val anchorsByCapability = mapOf(
+            "remote_model_send" to listOf(
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "remote_send_disclosure_sheet"),
+                SourceAnchor("app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt", "remoteSendDisclosureRowsNameDestinationAndProtectedData"),
+            ),
+            "voice_transcript_input" to listOf(
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "voice_permission_disclosure_dialog"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/PocketMindVoiceInputConsentUiTest.kt", "voiceButtonRequiresAppConsentBeforeStartingVoiceInput"),
+            ),
+            "share_and_file_picker_input" to listOf(
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "remote_attachment_protection_notice"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityAdaptiveUiTest.kt", "remote_attachment_protection_notice"),
+            ),
+            "confirmed_device_actions" to listOf(
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "action_confirm_button"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySkillUiTest.kt", "action_dismiss_button"),
+            ),
+            "contacts_calendar_reads" to listOf(
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityRuntimePermissionUiTest.kt", "contactLookupConfirmationShowsRuntimePermissionRequirementWithoutSpecialAccess"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityRuntimePermissionUiTest.kt", "calendarAvailabilityConfirmationShowsRuntimePermissionRequirementWithoutSpecialAccess"),
+            ),
+            "media_and_recent_ocr" to listOf(
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityRuntimePermissionUiTest.kt", "recentImageOcrConfirmationShowsBoundedImageReadRationaleAndCancelsCleanly"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityRuntimePermissionUiTest.kt", "recentImageFilesConfirmationShowsMetadataOnlyRationaleAndCancelsCleanly"),
+            ),
+            "usage_stats_foreground_app" to listOf(
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySpecialAccessUiTest.kt", "foregroundAppConfirmationShowsUsageAccessRequirementWithoutRuntimePermission"),
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "special_access_requirements"),
+            ),
+            "accessibility_current_screen_text" to listOf(
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySpecialAccessUiTest.kt", "currentScreenTextConfirmationShowsSpecialAccessRequirementWithoutRuntimePermission"),
+                SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "special_access_requirements"),
+            ),
+            "media_projection_screenshot_ocr" to listOf(
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySkillUiTest.kt", "currentScreenshotOcrSkillShowsOneShotMediaProjectionConfirmation"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySkillUiTest.kt", "MediaProjection"),
+            ),
+        )
+        val disclosureIds = CapabilityMatrix.sensitiveCapabilityDisclosures
+            .map { disclosure -> disclosure.capabilityId }
+            .toSet()
+
+        assertEquals(disclosureIds, anchorsByCapability.keys)
+        anchorsByCapability.forEach { (capabilityId, anchors) ->
+            val disclosure = CapabilityMatrix.sensitiveCapabilityDisclosures.single {
+                it.capabilityId == capabilityId
+            }
+            anchors.forEach { anchor ->
+                val source = readRepoFile(anchor.path)
+                assertTrue(
+                    "$capabilityId missing anchor ${anchor.text} in ${anchor.path}",
+                    source.contains(anchor.text),
+                )
+                val testClass = anchor.testClassNameOrNull()
+                if (testClass != null) {
+                    assertTrue(
+                        "$capabilityId anchor ${anchor.path} is not listed in requiredTests",
+                        testClass in disclosure.requiredTests,
+                    )
+                }
+            }
+        }
+    }
+
     private fun readRepoFile(path: String): String =
         File(repoRoot(), path).also { file ->
             assertTrue("missing ${file.path}", file.isFile)
@@ -212,4 +278,13 @@ class CapabilityMatrixDocumentationTest {
         generateSequence(File(System.getProperty("user.dir") ?: ".")) { file -> file.parentFile }
             .first { candidate -> File(candidate, "docs/capability_matrix.json").isFile }
             .absoluteFile
+
+    private data class SourceAnchor(
+        val path: String,
+        val text: String,
+    ) {
+        fun testClassNameOrNull(): String? =
+            path.takeIf { it.endsWith("Test.kt") }
+                ?.let { filePath -> File(filePath).nameWithoutExtension }
+    }
 }

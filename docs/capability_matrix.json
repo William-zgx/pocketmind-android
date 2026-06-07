@@ -41,7 +41,8 @@
       "requiredTests": [
         "SharedInputTest",
         "MainActivitySharedIntentTest",
-        "PocketMindScreenDisplayTest"
+        "PocketMindScreenDisplayTest",
+        "MainActivityAdaptiveUiTest"
       ]
     },
     {
@@ -67,7 +68,8 @@
       "requiredTests": [
         "AgentRuntimePermissionPolicyTest",
         "ToolRegistryTest",
-        "CalendarAvailabilityProviderTest"
+        "CalendarAvailabilityProviderTest",
+        "MainActivityRuntimePermissionUiTest"
       ]
     },
     {
@@ -80,7 +82,8 @@
       "requiredTests": [
         "AgentRuntimePermissionPolicyTest",
         "ToolRegistryTest",
-        "AgentLoopRuntimeTest"
+        "AgentLoopRuntimeTest",
+        "MainActivityRuntimePermissionUiTest"
       ]
     },
     {
@@ -106,7 +109,8 @@
       "requiredTests": [
         "ToolRegistryTest",
         "AgentLoopRuntimeTest",
-        "MainActivitySkillUiTest"
+        "MainActivitySkillUiTest",
+        "MainActivitySpecialAccessUiTest"
       ]
     },
     {

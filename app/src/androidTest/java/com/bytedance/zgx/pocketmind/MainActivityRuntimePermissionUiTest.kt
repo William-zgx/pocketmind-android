@@ -91,6 +91,67 @@ class MainActivityRuntimePermissionUiTest {
         }
     }
 
+    @Test
+    fun recentImageOcrConfirmationShowsBoundedImageReadRationaleAndCancelsCleanly() {
+        launchReadyRemoteActivity().use {
+            composeRule.waitForTag("app_title")
+
+            composeRule.sendPrompt("识别最近图片文字")
+
+            composeRule.waitForTag("runtime_permission_requirements")
+            composeRule.onNodeWithText("读取最近图片 OCR").assertIsDisplayed()
+            composeRule.onNodeWithText("将扫描最近 3 张图片并在本地提取第一条 OCR 文本；不会保存图片、URI 或路径。")
+                .assertIsDisplayed()
+            composeRule.onNodeWithTag("runtime_permission_requirements")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后可能请求系统权限")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("照片和图片权限：用于在你确认后最多扫描最近 3 张图片像素，并在本地提取第一条 OCR 文本。")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后只读取本次动作需要的本机内容或权限范围内摘要。")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("读取结果默认 LocalOnly，不会自动发送给远程模型。")
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("special_access_requirements")
+
+            composeRule.onNodeWithTag("action_dismiss_button").performClick()
+            composeRule.waitForTagGone("runtime_permission_requirements")
+            composeRule.assertTextAbsent("读取最近图片 OCR")
+            composeRule.assertTextAbsent("工具执行结果")
+        }
+    }
+
+    @Test
+    fun recentImageFilesConfirmationShowsMetadataOnlyRationaleAndCancelsCleanly() {
+        launchReadyRemoteActivity().use {
+            composeRule.waitForTag("app_title")
+
+            composeRule.sendPrompt("查询最近5个图片文件列表")
+
+            composeRule.waitForTag("runtime_permission_requirements")
+            composeRule.onNodeWithText("查询最近文件").assertIsDisplayed()
+            composeRule.onNodeWithText(
+                "将读取最近 5 个图片文件摘要（仅返回文件名、类型、大小和修改时间）。",
+            ).assertIsDisplayed()
+            composeRule.onNodeWithTag("runtime_permission_requirements")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后可能请求系统权限")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("照片和图片权限：用于读取最近图片或截图的最小元数据。")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("确认后只读取本次动作需要的本机内容或权限范围内摘要。")
+                .assertIsDisplayed()
+            composeRule.onNodeWithText("读取结果默认 LocalOnly，不会自动发送给远程模型。")
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("special_access_requirements")
+
+            composeRule.onNodeWithTag("action_dismiss_button").performClick()
+            composeRule.waitForTagGone("runtime_permission_requirements")
+            composeRule.assertTextAbsent("查询最近文件")
+            composeRule.assertTextAbsent("工具执行结果")
+        }
+    }
+
     private fun launchReadyRemoteActivity(): ActivityScenario<MainActivity> {
         resetMainActivityPersistentState(
             context = targetContext,
