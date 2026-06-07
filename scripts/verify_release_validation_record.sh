@@ -544,6 +544,12 @@ def validate_flow_evidence(key, evidence_path):
             "documentExcerptBounded": "document-excerpt-boundary-missing",
             "pickerAttachmentPromptCovered": "picker-attachment-prompt-missing",
         },
+        "voiceInput": {
+            "voiceEntryDisclosureVisible": "entry-disclosure-missing",
+            "voiceDraftNoAutoSendCovered": "draft-no-auto-send-missing",
+            "voicePermissionFailureRecoveryCovered": "permission-failure-recovery-missing",
+            "voiceCancelCovered": "cancel-path-missing",
+        },
         "privacyAndDataControls": {
             "privacyNoticeEntryVisible": "privacy-notice-entry-missing",
             "memoryClearControlCovered": "memory-clear-control-missing",

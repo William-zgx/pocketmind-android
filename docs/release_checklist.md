@@ -314,6 +314,12 @@ release ticket or PR.
   the App privacy notice entry, long-term memory clear and forget controls,
   current-session deletion, remote configuration clearing, and deletion/control
   copy visible to the user.
+- [ ] `voiceInput` release flow evidence must explicitly record the near-field
+  voice disclosure, one-shot transcript draft with no auto-send, microphone
+  permission failure/recovery behavior, and voice-capture cancellation.
+  PocketMind behavior after microphone denial/grant recovery must be verified;
+  Android system permission dialog copy and button interaction are manual/device
+  acceptance evidence, not a required Compose AndroidTest gate.
 - [ ] `adaptiveUi` release flow evidence must explicitly record large-font
   reachability, landscape reachability, and accessible labels/actions for core
   controls.

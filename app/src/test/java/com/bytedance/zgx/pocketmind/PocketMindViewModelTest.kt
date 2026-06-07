@@ -1354,6 +1354,40 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun voicePermissionFailureClearsCaptureAndCanRecoverWithoutSending() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val executor = RecordingToolExecutor()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            actionExecutor = executor,
+        )
+
+        viewModel.startVoiceInputCapture()
+        viewModel.updateVoiceInputPartialTranscript("临时语音")
+        viewModel.reportVoiceInputUnavailable("未授权麦克风权限")
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.voiceCapture.isActive)
+        assertEquals("未授权麦克风权限", viewModel.uiState.value.statusText)
+        assertEquals(null, viewModel.uiState.value.voiceInputDraft)
+        assertTrue(sessionStore.messages.isEmpty())
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertTrue(executor.executedRequests.isEmpty())
+
+        viewModel.startVoiceInputCapture()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.voiceCapture.isListening)
+        assertEquals("正在收音", viewModel.uiState.value.statusText)
+        assertEquals(null, viewModel.uiState.value.voiceInputDraft)
+        assertTrue(sessionStore.messages.isEmpty())
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertTrue(executor.executedRequests.isEmpty())
+    }
+
+    @Test
     fun newVoiceTranscriptReplacesUnconsumedDraftAndOldConsumeDoesNotClearIt() = runTest(dispatcher) {
         val viewModel = createViewModel()
 

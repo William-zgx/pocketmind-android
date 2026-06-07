@@ -118,6 +118,12 @@ write_flow_contract_fields() {
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
+    voiceInput)
+      printf 'voiceEntryDisclosureVisible=true\n'
+      printf 'voiceDraftNoAutoSendCovered=true\n'
+      printf 'voicePermissionFailureRecoveryCovered=true\n'
+      printf 'voiceCancelCovered=true\n'
+      ;;
     privacyAndDataControls)
       printf 'privacyNoticeEntryVisible=true\n'
       printf 'memoryClearControlCovered=true\n'

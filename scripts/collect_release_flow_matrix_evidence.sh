@@ -322,6 +322,12 @@ write_flow_contract_fields() {
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
+    voiceInput)
+      printf 'voiceEntryDisclosureVisible=true\n'
+      printf 'voiceDraftNoAutoSendCovered=true\n'
+      printf 'voicePermissionFailureRecoveryCovered=true\n'
+      printf 'voiceCancelCovered=true\n'
+      ;;
     privacyAndDataControls)
       printf 'privacyNoticeEntryVisible=true\n'
       printf 'memoryClearControlCovered=true\n'
@@ -512,6 +518,12 @@ def is_valid_evidence(flow, value):
             "noImplicitImageOcr",
             "documentExcerptBounded",
             "pickerAttachmentPromptCovered",
+        ],
+        "voiceInput": [
+            "voiceEntryDisclosureVisible",
+            "voiceDraftNoAutoSendCovered",
+            "voicePermissionFailureRecoveryCovered",
+            "voiceCancelCovered",
         ],
         "privacyAndDataControls": [
             "privacyNoticeEntryVisible",

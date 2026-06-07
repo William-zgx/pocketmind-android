@@ -481,6 +481,12 @@ write_model_release_flow_contract_fixture() {
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
+    voiceInput)
+      printf 'voiceEntryDisclosureVisible=true\n'
+      printf 'voiceDraftNoAutoSendCovered=true\n'
+      printf 'voicePermissionFailureRecoveryCovered=true\n'
+      printf 'voiceCancelCovered=true\n'
+      ;;
     privacyAndDataControls)
       printf 'privacyNoticeEntryVisible=true\n'
       printf 'memoryClearControlCovered=true\n'
@@ -2028,6 +2034,36 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-text-share-protection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-vision-image-staging-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-no-implicit-image-ocr-missing"
+VALIDATION_WEAK_VOICE_FLOW="$TMP_DIR/release-validation-weak-voice-flow.json"
+VALIDATION_WEAK_VOICE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-voice.properties"
+cat > "$VALIDATION_WEAK_VOICE_FLOW_EVIDENCE" <<'VALIDATION_WEAK_VOICE_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow
+flowKey=voiceInput
+releaseFlowPassed=true
+candidateOnly=false
+VALIDATION_WEAK_VOICE_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_VOICE_FLOW" "$VALIDATION_WEAK_VOICE_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["voiceInput"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["voiceInput"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak voice input evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_VOICE_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-voice-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-voice-flow.properties" "flow-voiceInput-entry-disclosure-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-voice-flow.properties" "flow-voiceInput-draft-no-auto-send-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-voice-flow.properties" "flow-voiceInput-permission-failure-recovery-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-voice-flow.properties" "flow-voiceInput-cancel-path-missing"
 VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW="$TMP_DIR/release-validation-weak-privacy-controls-flow.json"
 VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-privacy-controls.properties"
 cat > "$VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE" <<'VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE_PROPERTIES'
@@ -2708,6 +2744,10 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareA
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "noImplicitImageOcr=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voiceEntryDisclosureVisible=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voiceDraftNoAutoSendCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voicePermissionFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voiceCancelCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "privacyNoticeEntryVisible=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "memoryClearControlCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "sessionDeleteControlCovered=true"
@@ -2962,6 +3002,10 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "documentExcerptBounded=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voiceEntryDisclosureVisible=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voiceDraftNoAutoSendCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voicePermissionFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voiceCancelCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "privacyNoticeEntryVisible=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "memoryForgetControlCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "sessionDeleteControlCovered=true"

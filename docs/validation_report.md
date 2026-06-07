@@ -10038,3 +10038,31 @@ bash scripts/verify_local.sh
   核心控件无障碍标签。
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Voice input release flow gate
+
+本轮覆盖项：
+
+- `voiceInput` release flow evidence 新增正式必填字段：就近语音说明、一次性
+  transcript draft 且不自动发送、麦克风权限失败/恢复、语音 capture 取消路径。
+- `scripts/collect_release_flow_matrix_evidence.sh` 和
+  `scripts/record_release_flow_evidence.sh` 都会写出这些 voice contract 字段。
+- `scripts/verify_release_validation_record.sh` 会拒绝缺少上述字段的正式
+  `voiceInput` release flow evidence；`scripts/test_validation_scripts.sh` 新增弱证据负例。
+- `PocketMindViewModelTest` 新增权限失败/恢复契约测试：权限失败后清空 capture、
+  不生成 draft、不发送 session message、不触发远程 runtime 或工具动作，之后可以重新进入收音状态。
+- 系统麦克风权限弹窗的文案和按钮交互不作为 Compose AndroidTest 门禁；release gate
+  验证 PocketMind 自身的失败/恢复行为，系统 permission controller 交互保留为手工/真机验收证据。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/record_release_flow_evidence.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.voicePermissionFailureClearsCaptureAndCanRecoverWithoutSending'
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 `voiceInput` 正式证据字段和弱证据拒绝。
+- 通过：目标 JVM 测试，覆盖麦克风权限失败后的业务恢复和 no-auto-send 边界。
