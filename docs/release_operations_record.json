@@ -1,7 +1,48 @@
 {
   "version": 1,
-  "policy": "Public release builds require VERIFY_RELEASE_OPERATIONS=1 and an approved crash/ANR monitoring plus rollback record.",
+  "policy": "Public release builds require VERIFY_RELEASE_OPERATIONS=1 and an approved CI, crash/ANR monitoring, artifact archive, signing, and rollback record.",
   "status": "pending_operations_review",
+  "ci": {
+    "owner": "",
+    "provider": "",
+    "workflowName": "",
+    "runId": "",
+    "commitSha": "",
+    "localVerification": {
+      "status": "pending",
+      "jobName": "",
+      "evidence": {
+        "path": "",
+        "sha256": ""
+      }
+    },
+    "connectedAndroidTests": {
+      "status": "pending",
+      "jobName": "",
+      "evidence": {
+        "path": "",
+        "sha256": ""
+      }
+    },
+    "releaseArtifactArchive": {
+      "status": "pending",
+      "jobName": "",
+      "artifactName": "",
+      "evidence": {
+        "path": "",
+        "sha256": ""
+      }
+    },
+    "protectedSigning": {
+      "status": "pending",
+      "jobName": "",
+      "signingEnvironment": "",
+      "evidence": {
+        "path": "",
+        "sha256": ""
+      }
+    }
+  },
   "monitoring": {
     "owner": "",
     "signalSources": [],

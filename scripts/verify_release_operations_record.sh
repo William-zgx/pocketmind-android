@@ -81,27 +81,135 @@ def number_between(value, minimum, maximum):
 def validate_evidence_file(section, entry):
     if not isinstance(entry, dict):
         failures.append(f"{section}-evidence-missing")
-        return
+        return None
     evidence_path = entry.get("path", "")
     expected_sha = entry.get("sha256", "")
     if not non_empty_string(evidence_path):
         failures.append(f"{section}-evidence-path-missing")
-        return
+        return None
     path = Path(evidence_path)
     if not path.is_file():
         failures.append(f"{section}-evidence-file-missing")
-        return
+        return None
     actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
     if not non_empty_string(expected_sha):
         failures.append(f"{section}-evidence-sha-missing")
     elif expected_sha != actual_sha:
         failures.append(f"{section}-evidence-sha-mismatch")
+    return path
+
+def properties_for(path):
+    props = {}
+    if path is None:
+        return props
+    try:
+        with Path(path).open() as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip("\n")
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                props[key] = value
+    except OSError:
+        pass
+    return props
+
+def is_sha256(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{64}", value))
+
+def positive_int_string(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[1-9][0-9]*", value))
+
+def validate_ci_evidence_record(section, entry, expected_target):
+    if not isinstance(entry, dict):
+        failures.append(f"ci-{section}-missing")
+        return {}
+    if entry.get("status") != "passed":
+        failures.append(f"ci-{section}-not-passed")
+    if not non_empty_string(entry.get("jobName")):
+        failures.append(f"ci-{section}-job-name-missing")
+    path = validate_evidence_file(f"ci-{section}", entry.get("evidence"))
+    props = properties_for(path)
+    if props.get("status") != "passed":
+        failures.append(f"ci-{section}-evidence-status-not-passed")
+    if props.get("target") != expected_target:
+        failures.append(f"ci-{section}-evidence-target-invalid")
+    return props
 
 failures = []
 if record.get("version") != 1:
     failures.append("version-invalid")
 if record.get("status") != "approved":
     failures.append("status-not-approved")
+
+ci = record.get("ci")
+if not isinstance(ci, dict):
+    failures.append("ci-missing")
+    ci = {}
+for field in ("owner", "provider", "workflowName", "runId"):
+    if not non_empty_string(ci.get(field)):
+        failures.append(f"ci-{field}-missing")
+ci_commit = ci.get("commitSha", "")
+if not re.fullmatch(r"[0-9a-f]{40}", ci_commit):
+    failures.append("ci-commit-sha-invalid")
+elif not git_success("cat-file", "-e", f"{ci_commit}^{{commit}}"):
+    failures.append("ci-commit-sha-missing")
+
+local_ci_props = validate_ci_evidence_record(
+    "local-verification",
+    ci.get("localVerification"),
+    "ci-local-verification",
+)
+if local_ci_props.get("command") != "scripts/verify_local.sh":
+    failures.append("ci-local-verification-command-invalid")
+
+connected_ci_props = validate_ci_evidence_record(
+    "connected-android-tests",
+    ci.get("connectedAndroidTests"),
+    "regression-emulator",
+)
+if connected_ci_props.get("clean_device") != "1":
+    failures.append("ci-connected-android-tests-not-clean")
+if not positive_int_string(connected_ci_props.get("actual_android_test_count", "")):
+    failures.append("ci-connected-android-tests-count-invalid")
+if not non_empty_string(connected_ci_props.get("device_report_file")):
+    failures.append("ci-connected-android-tests-device-report-missing")
+if not non_empty_string(connected_ci_props.get("instrumentation_output_file")):
+    failures.append("ci-connected-android-tests-instrumentation-output-missing")
+
+artifact_entry = ci.get("releaseArtifactArchive")
+artifact_ci_props = validate_ci_evidence_record(
+    "release-artifact-archive",
+    artifact_entry,
+    "ci-release-artifact-archive",
+)
+if isinstance(artifact_entry, dict) and not non_empty_string(artifact_entry.get("artifactName")):
+    failures.append("ci-release-artifact-archive-name-missing")
+if not is_sha256(artifact_ci_props.get("aabSha256", "")):
+    failures.append("ci-release-artifact-archive-aab-sha-invalid")
+if not is_sha256(artifact_ci_props.get("mappingSha256", "")):
+    failures.append("ci-release-artifact-archive-mapping-sha-invalid")
+if artifact_ci_props.get("artifactScanStatus") != "passed":
+    failures.append("ci-release-artifact-archive-scan-not-passed")
+if not non_empty_string(artifact_ci_props.get("artifactUploadName")):
+    failures.append("ci-release-artifact-archive-upload-name-missing")
+
+signing_entry = ci.get("protectedSigning")
+signing_ci_props = validate_ci_evidence_record(
+    "protected-signing",
+    signing_entry,
+    "release-signing",
+)
+if isinstance(signing_entry, dict) and not non_empty_string(signing_entry.get("signingEnvironment")):
+    failures.append("ci-protected-signing-environment-missing")
+if signing_ci_props.get("signingMode") != "production":
+    failures.append("ci-protected-signing-mode-invalid")
+if signing_ci_props.get("artifactScanStatus") != "passed":
+    failures.append("ci-protected-signing-artifact-scan-not-passed")
+if not is_sha256(signing_ci_props.get("expectedSigningCertSha256", "")):
+    failures.append("ci-protected-signing-cert-sha-invalid")
+if not is_sha256(signing_ci_props.get("signedAabSha256", "")):
+    failures.append("ci-protected-signing-aab-sha-invalid")
 
 monitoring = record.get("monitoring")
 if not isinstance(monitoring, dict):

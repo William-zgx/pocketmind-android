@@ -1131,7 +1131,78 @@ OPERATIONS_SMOKE_JAVA_CRASH_REPORT="$TMP_DIR/release-operations-smoke-java-crash
 OPERATIONS_SMOKE_INSTRUMENTATION_CRASH="$TMP_DIR/release-operations-smoke-instrumentation-crash.txt"
 OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT="$TMP_DIR/release-operations-smoke-instrumentation-crash.properties"
 OPERATIONS_ROLLBACK_EVIDENCE="$TMP_DIR/release-operations-rollback.properties"
+OPERATIONS_CI_LOCAL_EVIDENCE="$TMP_DIR/release-operations-ci-local.properties"
+OPERATIONS_CI_CONNECTED_EVIDENCE="$TMP_DIR/release-operations-ci-connected.properties"
+OPERATIONS_CI_ARTIFACT_EVIDENCE="$TMP_DIR/release-operations-ci-artifact-archive.properties"
+OPERATIONS_CI_SIGNING_EVIDENCE="$TMP_DIR/release-operations-ci-signing.properties"
+OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE="$TMP_DIR/release-operations-ci-connected-weak.properties"
+OPERATIONS_COMMIT_SHA="$(git rev-parse HEAD)"
+OPERATIONS_FAKE_SHA_1="1111111111111111111111111111111111111111111111111111111111111111"
+OPERATIONS_FAKE_SHA_2="2222222222222222222222222222222222222222222222222222222222222222"
+OPERATIONS_FAKE_SHA_3="3333333333333333333333333333333333333333333333333333333333333333"
+OPERATIONS_FAKE_SHA_4="4444444444444444444444444444444444444444444444444444444444444444"
 printf 'status=passed\nsource=Android Vitals\nwatcher=Launch Watcher\n' > "$OPERATIONS_MONITORING_EVIDENCE"
+cat > "$OPERATIONS_CI_LOCAL_EVIDENCE" <<OPERATIONS_CI_LOCAL_EVIDENCE_PROPERTIES
+status=passed
+target=ci-local-verification
+workflow=Android Verification
+job=verify
+runId=123456
+commitSha=$OPERATIONS_COMMIT_SHA
+command=scripts/verify_local.sh
+OPERATIONS_CI_LOCAL_EVIDENCE_PROPERTIES
+cat > "$OPERATIONS_CI_CONNECTED_EVIDENCE" <<OPERATIONS_CI_CONNECTED_EVIDENCE_PROPERTIES
+status=passed
+exit_code=0
+target=regression-emulator
+failedTarget=
+reason=
+clean_device=1
+source_android_test_count=20
+expected_android_test_count=20
+actual_android_test_count=20
+serial=emulator-5554
+api_level=36
+abi=arm64-v8a
+avd=pocketmind_ci_api36_arm64
+instrumentation_output_file=$TMP_DIR/ci-instrumentation.txt
+device_report_file=$TMP_DIR/ci-device-verification.properties
+OPERATIONS_CI_CONNECTED_EVIDENCE_PROPERTIES
+cat > "$OPERATIONS_CI_ARTIFACT_EVIDENCE" <<OPERATIONS_CI_ARTIFACT_EVIDENCE_PROPERTIES
+status=passed
+target=ci-release-artifact-archive
+workflow=Android Verification
+job=release-artifact-archive
+runId=123456
+commitSha=$OPERATIONS_COMMIT_SHA
+artifactUploadName=android-release-artifacts
+aabPath=app/build/outputs/bundle/release/app-release.aab
+aabSha256=$OPERATIONS_FAKE_SHA_1
+apkPath=app/build/outputs/apk/release/app-release-unsigned.apk
+apkSha256=$OPERATIONS_FAKE_SHA_2
+mappingPath=app/build/outputs/mapping/release/mapping.txt
+mappingSha256=$OPERATIONS_FAKE_SHA_3
+artifactScanReport=build/verification/ci-release-artifact-archive/android-artifact-scan.properties
+artifactScanStatus=passed
+OPERATIONS_CI_ARTIFACT_EVIDENCE_PROPERTIES
+cat > "$OPERATIONS_CI_SIGNING_EVIDENCE" <<OPERATIONS_CI_SIGNING_EVIDENCE_PROPERTIES
+status=passed
+exit_code=0
+target=release-signing
+signingMode=production
+allowDebugKeystore=0
+requireAab=1
+expectedSigningCertSha256=$OPERATIONS_FAKE_SHA_4
+signedAab=app/build/outputs/bundle/release/app-release-signed.aab
+signedAabSha256=$OPERATIONS_FAKE_SHA_1
+artifactScanReport=build/verification/ci-protected-signing/signing.properties.artifact-scan.properties
+artifactScanStatus=passed
+OPERATIONS_CI_SIGNING_EVIDENCE_PROPERTIES
+cat > "$OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE" <<OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE_PROPERTIES
+status=passed
+target=ci-local-verification
+command=scripts/verify_local.sh
+OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE_PROPERTIES
 cat > "$OPERATIONS_SMOKE_INSTRUMENTATION" <<'OPERATIONS_SMOKE_INSTRUMENTATION_TXT'
 INSTRUMENTATION_STATUS: numtests=3
 OK (3 tests)
@@ -1216,6 +1287,11 @@ printf 'status=passed\nrollback=initial-release\n' > "$OPERATIONS_ROLLBACK_EVIDE
 OPERATIONS_MONITORING_SHA="$(shasum -a 256 "$OPERATIONS_MONITORING_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_SMOKE_SHA="$(shasum -a 256 "$OPERATIONS_SMOKE_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_ROLLBACK_SHA="$(shasum -a 256 "$OPERATIONS_ROLLBACK_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_LOCAL_SHA="$(shasum -a 256 "$OPERATIONS_CI_LOCAL_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_CONNECTED_SHA="$(shasum -a 256 "$OPERATIONS_CI_CONNECTED_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_ARTIFACT_SHA="$(shasum -a 256 "$OPERATIONS_CI_ARTIFACT_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_SIGNING_SHA="$(shasum -a 256 "$OPERATIONS_CI_SIGNING_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_CONNECTED_WEAK_SHA="$(shasum -a 256 "$OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE" | awk '{print $1}')"
 cat > "$OPERATIONS_PENDING" <<'OPERATIONS_PENDING_JSON'
 {
   "version": 1,
@@ -1230,6 +1306,47 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
 {
   "version": 1,
   "status": "approved",
+  "ci": {
+    "owner": "Release Engineering",
+    "provider": "GitHub Actions",
+    "workflowName": "Android Verification",
+    "runId": "123456",
+    "commitSha": "$OPERATIONS_COMMIT_SHA",
+    "localVerification": {
+      "status": "passed",
+      "jobName": "verify",
+      "evidence": {
+        "path": "$OPERATIONS_CI_LOCAL_EVIDENCE",
+        "sha256": "$OPERATIONS_CI_LOCAL_SHA"
+      }
+    },
+    "connectedAndroidTests": {
+      "status": "passed",
+      "jobName": "emulator-regression",
+      "evidence": {
+        "path": "$OPERATIONS_CI_CONNECTED_EVIDENCE",
+        "sha256": "$OPERATIONS_CI_CONNECTED_SHA"
+      }
+    },
+    "releaseArtifactArchive": {
+      "status": "passed",
+      "jobName": "release-artifact-archive",
+      "artifactName": "android-release-artifacts",
+      "evidence": {
+        "path": "$OPERATIONS_CI_ARTIFACT_EVIDENCE",
+        "sha256": "$OPERATIONS_CI_ARTIFACT_SHA"
+      }
+    },
+    "protectedSigning": {
+      "status": "passed",
+      "jobName": "protected-signing",
+      "signingEnvironment": "android-production-signing",
+      "evidence": {
+        "path": "$OPERATIONS_CI_SIGNING_EVIDENCE",
+        "sha256": "$OPERATIONS_CI_SIGNING_SHA"
+      }
+    }
+  },
   "monitoring": {
     "owner": "Release Owner",
     "signalSources": ["Android Vitals", "Internal dogfood feedback"],
@@ -1294,6 +1411,22 @@ expect_success \
   "release operations verifier accepts approved initial-release record" \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-operations-approved.properties" "status=passed"
+OPERATIONS_CI_WEAK_CONNECTED="$TMP_DIR/release-operations-ci-weak-connected.json"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_CI_WEAK_CONNECTED" "$OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE" "$OPERATIONS_CI_CONNECTED_WEAK_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["ci"]["connectedAndroidTests"]["evidence"]["path"] = sys.argv[3]
+record["ci"]["connectedAndroidTests"]["evidence"]["sha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects weak connected Android test evidence" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_CI_WEAK_CONNECTED" --report "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties" "ci-connected-android-tests-evidence-target-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties" "ci-connected-android-tests-count-invalid"
 OPERATIONS_NO_VITALS="$TMP_DIR/release-operations-no-vitals.json"
 sed 's/"Android Vitals", //' "$OPERATIONS_APPROVED" > "$OPERATIONS_NO_VITALS"
 expect_failure \

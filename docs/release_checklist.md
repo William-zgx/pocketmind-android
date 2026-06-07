@@ -184,6 +184,13 @@ release ticket or PR.
 ## Build Verification
 
 - [ ] `scripts/verify_local.sh` passes on a clean checkout.
+- [ ] CI release operations evidence is complete: the `verify` job records
+  `ci-local-verification`, the `emulator-regression` job records connected
+  Android test evidence, `release-artifact-archive` uploads APK/AAB/mapping
+  artifacts with SHA-256 values, and `protected-signing` runs in the protected
+  signing environment with production signing evidence. All four evidence files
+  are referenced from `docs/release_operations_record.json` with matching
+  SHA-256 values.
 - [ ] The GitHub Actions `emulator-regression` job has passed for the release
   candidate SHA, or the release ticket records why CI emulator execution was
   unavailable and links an equivalent local `scripts/regression_emulator.sh`
@@ -366,11 +373,13 @@ release ticket or PR.
   with SHA-256 values so release operations approval cannot rely only on prose.
 - [ ] `docs/release_operations_record.json` is updated and approved, then
   `VERIFY_RELEASE_OPERATIONS=1 scripts/verify_release_gate.sh` passes. The gate
-  checks Android Vitals coverage, crash/ANR smoke status, rollout watcher,
-  rollout thresholds, monitoring evidence, crash/ANR smoke evidence, rollback
-  evidence, previous known-good metadata or initial-release exemption,
-  rollback criteria, Play version-code policy, model manifest rollback path,
-  and data compatibility notes.
+  checks CI local verification, connected Android tests, release artifact
+  archive evidence, protected production signing evidence, Android Vitals
+  coverage, crash/ANR smoke status, rollout watcher, rollout thresholds,
+  monitoring evidence, crash/ANR smoke evidence, rollback evidence, previous
+  known-good metadata or initial-release exemption, rollback criteria, Play
+  version-code policy, model manifest rollback path, and data compatibility
+  notes.
 
 ## Rollback
 

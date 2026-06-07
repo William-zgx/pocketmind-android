@@ -9946,3 +9946,37 @@ scripts/collect_crash_anr_smoke_evidence.sh --device-report build/verification/p
   记录 `status=passed`，instrumentation 输出 `OK (1 test)`，crash/ANR smoke 通过。
 - 通过：先前失败的 `privacy-data-controls-smoke-current2` 在修复后重跑 crash/ANR 收集器通过，
   证明失败原因是 `INSTRUMENTATION_CODE: -1` 的 verifier 误判，不是 App 崩溃。
+
+## 2026-06-07 CI release operations gate
+
+本轮覆盖项：
+
+- 扩展 `.github/workflows/android.yml`：现有 `verify` job 继续跑
+  `scripts/verify_local.sh`，并生成/上传 `ci-local-verification` evidence；
+  现有 `emulator-regression` job 继续作为 connected Android test evidence。
+- 新增 workflow_dispatch 的 `release-artifact-archive` job：构建 release APK/AAB，
+  扫描 artifact，并归档 APK、AAB、mapping 和机器可读 evidence。
+- 新增 `protected-signing` job：在 `android-production-signing` 受保护环境中使用
+  signing secrets 运行 `scripts/sign_release_artifacts.sh`；secrets 未配置时只生成
+  skipped evidence，正式 release operations verifier 不接受 skipped signing。
+- `docs/release_operations_record.json` 新增 `ci` 区块，要求 local verification、
+  connected Android tests、release artifact archive 和 protected signing 均有 evidence path
+  与 SHA-256。
+- `scripts/verify_release_operations_record.sh` 新增 CI 门禁：connected test evidence 必须是
+  `target=regression-emulator` 且有实际 instrumentation count；artifact archive 必须记录 AAB
+  和 mapping SHA；protected signing 必须是 `target=release-signing`、`signingMode=production`
+  且 artifact scan 通过。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_operations_record.sh scripts/test_validation_scripts.sh scripts/verify_release_gate.sh
+ruby -e 'require "yaml"; YAML.load_file(".github/workflows/android.yml"); puts "workflow yaml ok"'
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：workflow YAML 可解析。
+- 通过：release operations verifier 接受包含 CI evidence 的 approved initial-release record。
+- 通过：release operations verifier 拒绝把本地验证 evidence 冒充 connected Android test evidence。
