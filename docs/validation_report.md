@@ -10693,3 +10693,39 @@ scripts/verify_privacy_review.sh --report build/verification/privacy-review-curr
 - 通过：JVM mode contract，覆盖远程已配置但不支持视觉时选择 `RemoteVisionUnsupportedSignal`。
 - 通过：API 36 emulator targeted 新用例，覆盖 Activity 分享入口的不支持图片提示和 0 读取计数。
 - 通过：API 36 emulator `MainActivitySharedIntentTest` 整组 7 条用例。
+
+## 2026-06-07 Contact runtime permission denial ActivityResult
+
+本轮覆盖项：
+
+- `MainActivityRuntimePermissionUiTest` 新增联系人查询确认后真实系统权限拒绝链路：
+  prompt -> 工具确认页 -> 系统权限弹窗 -> 拒绝 -> 确认页关闭 -> 状态显示
+  “权限被拒，工具未执行” -> 无工具结果。
+- 新增 UiAutomator androidTest 依赖，用于点击 Android 系统权限弹窗；Compose test 仍只负责 App 内 UI。
+- `Composer` 对工具未执行/权限拒绝/特殊权限拒绝/屏幕截图同意取消等安全结果保持紧凑状态可见，
+  并提供 `app_status_text` 测试锚点。
+- 权限重置 helper 等待 shell 命令完成，并在拒绝用例结束后清理 `READ_CONTACTS` user-set/user-fixed
+  标记，避免测试间污染。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest#contactLookupConfirmThenDenyPermissionShowsDeniedStateAndNoToolResult
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.AgentRuntimePermissionPolicyTest' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.deniedRuntimePermissionFailsPendingToolWithoutExecutingIt'
+./gradlew :app:compileDebugAndroidTestKotlin && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivityRuntimePermissionUiTest
+```
+
+结果：
+
+- 通过：debug 和 androidTest Kotlin 编译。
+- 通过：API 36 emulator targeted 新用例，覆盖 ActivityResult 系统拒绝、状态可见、权限仍 denied、
+  无 `工具执行结果`。
+- 通过：JVM 权限策略和 ViewModel 拒绝逻辑定向测试。
+- 通过：API 36 emulator `MainActivityRuntimePermissionUiTest` 整组 6 条用例。
+
+剩余风险：
+
+- 麦克风系统权限拒绝/恢复还未补真实系统弹窗模拟器测试。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。

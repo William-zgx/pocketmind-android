@@ -4436,7 +4436,10 @@ private fun Composer(
         hasPendingSharedInput -> "补充说明"
         else -> "输入问题"
     }
-    val showCompactStatus = !state.isReady || state.isBusy || state.statusText.isVoiceStatusText()
+    val showCompactStatus = !state.isReady ||
+        state.isBusy ||
+        state.statusText.isVoiceStatusText() ||
+        state.statusText.isAgentExecutionOutcomeStatusText()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -4483,7 +4486,9 @@ private fun Composer(
         }
         if (showCompactStatus) {
             Text(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("app_status_text"),
                 text = state.statusText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4984,6 +4989,10 @@ private fun VoiceWaveform(
 
 private fun String.isVoiceStatusText(): Boolean =
     listOf("语音", "麦克风", "收音", "转写", "识别", "声音")
+        .any { marker -> marker in this }
+
+private fun String.isAgentExecutionOutcomeStatusText(): Boolean =
+    listOf("工具未执行", "权限被拒", "特殊权限未开启", "屏幕截图同意已取消")
         .any { marker -> marker in this }
 
 private val VOICE_WAVEFORM_FALLBACK_BARS =
