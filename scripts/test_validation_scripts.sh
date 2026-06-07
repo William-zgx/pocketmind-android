@@ -457,6 +457,11 @@ assert_report_contains_text() {
 write_model_release_flow_contract_fixture() {
   local flow="$1"
   case "$flow" in
+    remoteHttpsConfiguration)
+      printf 'remoteNetworkFailureRecoveryCovered=true\n'
+      printf 'remoteUnconfiguredModelFailureCovered=true\n'
+      printf 'remoteLocalMemoryNotAutoIncluded=true\n'
+      ;;
     localModelDownloadVerification)
       printf 'localModelDownloadVerified=true\n'
       printf 'modelSha256VerificationCovered=true\n'
@@ -487,6 +492,7 @@ write_model_release_flow_contract_fixture() {
       printf 'remoteVisionImageAttachmentStaged=true\n'
       printf 'remoteVisionUnsupportedProtected=true\n'
       printf 'noImplicitImageOcr=true\n'
+      printf 'remoteNonImageAttachmentNotAutoIncluded=true\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
@@ -2023,6 +2029,35 @@ assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-non-litertlm-rejection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-invalid-url-rejection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-unverified-marker-missing"
+VALIDATION_WEAK_REMOTE_FLOW="$TMP_DIR/release-validation-weak-remote-flow.json"
+VALIDATION_WEAK_REMOTE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-remote.properties"
+cat > "$VALIDATION_WEAK_REMOTE_FLOW_EVIDENCE" <<'VALIDATION_WEAK_REMOTE_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow
+flowKey=remoteHttpsConfiguration
+releaseFlowPassed=true
+candidateOnly=false
+VALIDATION_WEAK_REMOTE_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_REMOTE_FLOW" "$VALIDATION_WEAK_REMOTE_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["remoteHttpsConfiguration"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["remoteHttpsConfiguration"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak remote evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_REMOTE_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-remote-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-remote-flow.properties" "flow-remoteHttpsConfiguration-remote-network-failure-recovery-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-remote-flow.properties" "flow-remoteHttpsConfiguration-remote-unconfigured-model-failure-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-remote-flow.properties" "flow-remoteHttpsConfiguration-remote-local-memory-boundary-missing"
 VALIDATION_WEAK_SHARE_FLOW="$TMP_DIR/release-validation-weak-share-flow.json"
 VALIDATION_WEAK_SHARE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-share-picker.properties"
 cat > "$VALIDATION_WEAK_SHARE_FLOW_EVIDENCE" <<'VALIDATION_WEAK_SHARE_FLOW_EVIDENCE_PROPERTIES'
@@ -2052,6 +2087,7 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-text-share-protection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-vision-image-staging-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-no-implicit-image-ocr-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-non-image-attachment-protection-missing"
 VALIDATION_WEAK_VOICE_FLOW="$TMP_DIR/release-validation-weak-voice-flow.json"
 VALIDATION_WEAK_VOICE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-voice.properties"
 cat > "$VALIDATION_WEAK_VOICE_FLOW_EVIDENCE" <<'VALIDATION_WEAK_VOICE_FLOW_EVIDENCE_PROPERTIES'
@@ -2766,11 +2802,15 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-custom
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customNonLitertlmDownloadRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customInvalidUrlRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-remoteHttpsConfiguration.properties" "remoteNetworkFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-remoteHttpsConfiguration.properties" "remoteUnconfiguredModelFailureCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-remoteHttpsConfiguration.properties" "remoteLocalMemoryNotAutoIncluded=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "actionSendTextStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteTextShareProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "noImplicitImageOcr=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteNonImageAttachmentNotAutoIncluded=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voiceEntryDisclosureVisible=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voiceDraftNoAutoSendCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-voiceInput.properties" "voicePermissionFailureRecoveryCovered=true"
@@ -3033,10 +3073,14 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOr
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customNonLitertlmDownloadRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customCredentialedUrlRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-remoteHttpsConfiguration.properties" "remoteNetworkFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-remoteHttpsConfiguration.properties" "remoteUnconfiguredModelFailureCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-remoteHttpsConfiguration.properties" "remoteLocalMemoryNotAutoIncluded=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "actionSendTextStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteTextShareProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteNonImageAttachmentNotAutoIncluded=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "documentExcerptBounded=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voiceEntryDisclosureVisible=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-voiceInput.properties" "voiceDraftNoAutoSendCovered=true"

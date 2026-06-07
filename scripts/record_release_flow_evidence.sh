@@ -94,6 +94,11 @@ fail() {
 write_flow_contract_fields() {
   local flow="$1"
   case "$flow" in
+    remoteHttpsConfiguration)
+      printf 'remoteNetworkFailureRecoveryCovered=true\n'
+      printf 'remoteUnconfiguredModelFailureCovered=true\n'
+      printf 'remoteLocalMemoryNotAutoIncluded=true\n'
+      ;;
     localModelDownloadVerification)
       printf 'localModelDownloadVerified=true\n'
       printf 'modelSha256VerificationCovered=true\n'
@@ -124,6 +129,7 @@ write_flow_contract_fields() {
       printf 'remoteVisionImageAttachmentStaged=true\n'
       printf 'remoteVisionUnsupportedProtected=true\n'
       printf 'noImplicitImageOcr=true\n'
+      printf 'remoteNonImageAttachmentNotAutoIncluded=true\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;

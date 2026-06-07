@@ -171,7 +171,7 @@ flow_summary() {
       printf 'API 36 emulator regression covers custom model URL rejection and custom .litertlm DownloadManager handoff; JVM contracts reject unsafe URLs and cover local import extension, storage, empty-file, temp-cleanup, and UnverifiedCustom registration boundaries.'
       ;;
     remoteHttpsConfiguration)
-      printf 'API 36 emulator regression configures remote mode against a local OpenAI-compatible fixture; JVM contract accepts HTTPS public endpoints and rejects non-local public HTTP.'
+      printf 'API 36 emulator regression configures remote mode against a local OpenAI-compatible fixture; JVM contracts cover HTTPS validation, remote failure recovery, unconfigured remote handling, and local memory/device context protection.'
       ;;
     encryptedApiKeyClear)
       printf 'Repository tests prove blank API key clears the encrypted secret; API 36 emulator regression checks the legacy plaintext preference is not populated.'
@@ -189,7 +189,7 @@ flow_summary() {
       printf 'Repository tests cover BOOT_COMPLETED and package-replaced reminder rescheduling, catch-up scheduling, stale-running recovery, and metadata-only reminder audit boundaries.'
       ;;
     shareAndPickerInput)
-      printf 'API 36 emulator regression covers ACTION_SEND text and image staging; JVM shared-input tests cover in-app picker attachment prompts, remote-mode protection, document excerpts, and no implicit image OCR.'
+      printf 'API 36 emulator regression covers ACTION_SEND text and image staging; JVM shared-input tests cover in-app picker attachment prompts, remote-mode protection, non-image attachment protection, document excerpts, and no implicit image OCR.'
       ;;
     voiceInput)
       printf 'API 36 emulator accessibility regression covers the voice entry disclosure and button label; ViewModel tests cover one-shot transcript drafts, partial transcript state, cancellation, and no auto-send.'
@@ -229,7 +229,9 @@ flow_source_files() {
     remoteHttpsConfiguration)
       printf '%s\n' \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityComprehensiveTest.kt \
-        app/src/test/java/com/bytedance/zgx/pocketmind/RemoteModelConfigTest.kt
+        app/src/test/java/com/bytedance/zgx/pocketmind/RemoteModelConfigTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/PocketMindViewModelTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/runtime/RemoteChatRuntimeTest.kt
       ;;
     encryptedApiKeyClear)
       printf '%s\n' \
@@ -322,12 +324,18 @@ write_flow_contract_fields() {
       printf 'customCredentialedUrlRejected=true\n'
       printf 'customUnverifiedModelMarked=true\n'
       ;;
+    remoteHttpsConfiguration)
+      printf 'remoteNetworkFailureRecoveryCovered=true\n'
+      printf 'remoteUnconfiguredModelFailureCovered=true\n'
+      printf 'remoteLocalMemoryNotAutoIncluded=true\n'
+      ;;
     shareAndPickerInput)
       printf 'actionSendTextStaged=true\n'
       printf 'remoteTextShareProtected=true\n'
       printf 'remoteVisionImageAttachmentStaged=true\n'
       printf 'remoteVisionUnsupportedProtected=true\n'
       printf 'noImplicitImageOcr=true\n'
+      printf 'remoteNonImageAttachmentNotAutoIncluded=true\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;

@@ -10135,3 +10135,39 @@ AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT
 - 通过：API 36 targeted emulator，`build/verification/model-import-gate-smoke-current`
   记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
   隐私入口、会话管理和后台任务空态。
+
+## 2026-06-07 Remote boundary and recovery gate
+
+本轮覆盖项：
+
+- 远程模式未配置时，发送尝试不再静默返回；会写入本地 `LocalOnly` 提示，说明需要先配置远程模型，
+  并明确“还没有发送你的内容”，避免用户点击后无反馈。
+- `PocketMindViewModelTest` 新增远程记忆边界合同：远程发送时 route 层收到
+  `memoryEnabled=false`，设备上下文为 null，Run Data Receipt 标记 destination 为 `Remote`、
+  `memoryContextIncluded=false`，并声明本地记忆/设备上下文被保护。
+- 远程未配置发送尝试新增 JVM 合同：不调用 remote runtime、不进入 router、不持久化用户 prompt，
+  UI 状态为“请配置远程模型”，`ModelHealth` 为 `LoadFailed`。
+- `remoteHttpsConfiguration` release flow evidence 新增必填字段：远程网络失败恢复、
+  远程未配置失败、远程不自动携带本地记忆。
+- `shareAndPickerInput` release flow evidence 新增必填字段：远程模式非图片附件不自动携带。
+- 正式 release-flow 记录脚本、候选证据收集脚本和 release record verifier 已同步这些字段；
+  弱远程/弱分享证据会被验证脚本拒绝。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeDoesNotEnableMemoryContextOrReceiptForRemoteSend' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModeUnconfiguredSendAttemptShowsLocalNoticeWithoutCallingRuntime' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteNetworkFailureShowsReadableFailureAndFailsTrace'
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/record_release_flow_evidence.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/remote-boundary-gate-smoke-current INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：目标 JVM 测试覆盖远程记忆/receipt 边界、未配置远程点击反馈和网络失败恢复。
+- 通过：validation script self-tests，覆盖新增 release flow 字段和弱证据拒绝。
+- 通过：`verify_local` 全链路，包括 unit test、lint、debug/release APK、release AAB 和 artifact scan。
+- 通过：API 36 targeted emulator，`build/verification/remote-boundary-gate-smoke-current`
+  记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
+  隐私入口、会话管理和后台任务空态。

@@ -544,12 +544,18 @@ def validate_flow_evidence(key, evidence_path):
             "customCredentialedUrlRejected": "credentialed-url-rejection-missing",
             "customUnverifiedModelMarked": "custom-unverified-marker-missing",
         },
+        "remoteHttpsConfiguration": {
+            "remoteNetworkFailureRecoveryCovered": "remote-network-failure-recovery-missing",
+            "remoteUnconfiguredModelFailureCovered": "remote-unconfigured-model-failure-missing",
+            "remoteLocalMemoryNotAutoIncluded": "remote-local-memory-boundary-missing",
+        },
         "shareAndPickerInput": {
             "actionSendTextStaged": "action-send-text-staging-missing",
             "remoteTextShareProtected": "remote-text-share-protection-missing",
             "remoteVisionImageAttachmentStaged": "remote-vision-image-staging-missing",
             "remoteVisionUnsupportedProtected": "remote-vision-unsupported-protection-missing",
             "noImplicitImageOcr": "no-implicit-image-ocr-missing",
+            "remoteNonImageAttachmentNotAutoIncluded": "remote-non-image-attachment-protection-missing",
             "documentExcerptBounded": "document-excerpt-boundary-missing",
             "pickerAttachmentPromptCovered": "picker-attachment-prompt-missing",
         },

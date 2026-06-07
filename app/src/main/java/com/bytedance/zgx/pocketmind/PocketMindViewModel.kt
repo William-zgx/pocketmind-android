@@ -1116,7 +1116,10 @@ class PocketMindViewModel(
             handleExplicitPreferenceCommand(trimmed)
             return
         }
-        if (!_uiState.value.isReady) return
+        if (!_uiState.value.isReady) {
+            handleNotReadySendAttempt()
+            return
+        }
 
         syncTaskStateMemories()
         rebuildMemoryIndex()
@@ -1860,6 +1863,45 @@ class PocketMindViewModel(
             it.copy(
                 pendingSharedInputDraft = null,
                 statusText = "当前远程模型不支持图片输入",
+            )
+        }
+    }
+
+    private fun handleNotReadySendAttempt() {
+        val state = _uiState.value
+        if (state.inferenceMode == InferenceMode.Remote && !state.remoteModelConfig.isConfigured) {
+            val notice = "请先在模型管理中配置远程模型地址和模型名；我还没有发送你的内容。"
+            val messages = if (state.messages.lastOrNull()?.text == notice) {
+                state.messages
+            } else {
+                state.messages + ChatMessage(
+                    role = MessageRole.Assistant,
+                    text = notice,
+                    privacy = MessagePrivacy.LocalOnly,
+                )
+            }
+            replaceActiveSessionMessages(messages, persistNow = true)
+            _uiState.update {
+                it.copy(
+                    isReady = false,
+                    pendingRemoteSendDisclosure = null,
+                    statusText = "请配置远程模型",
+                    modelHealth = ModelHealth(
+                        profileId = it.remoteModelConfig.modelProfile().id,
+                        state = ModelHealthState.LoadFailed,
+                        failureReason = "远程模型未配置",
+                    ),
+                )
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                statusText = if (state.inferenceMode == InferenceMode.Remote) {
+                    "远程模型未就绪"
+                } else {
+                    "请先下载或导入本地模型"
+                },
             )
         }
     }

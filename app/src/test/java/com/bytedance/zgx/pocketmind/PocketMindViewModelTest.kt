@@ -70,6 +70,8 @@ import com.bytedance.zgx.pocketmind.orchestration.InMemoryAgentTraceStore
 import com.bytedance.zgx.pocketmind.orchestration.InitialPlanningMode
 import com.bytedance.zgx.pocketmind.orchestration.PendingExternalOutcomeSnapshot
 import com.bytedance.zgx.pocketmind.orchestration.RemoteToolScope
+import com.bytedance.zgx.pocketmind.orchestration.RunDataDestination
+import com.bytedance.zgx.pocketmind.orchestration.RunDataReceipt
 import com.bytedance.zgx.pocketmind.runtime.LiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatEvent
 import com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntime
@@ -263,6 +265,50 @@ class PocketMindViewModelTest {
         assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
         assertTrue(remoteRuntime.calls.isEmpty())
         assertEquals("已取消远程发送", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun remoteModeDoesNotEnableMemoryContextOrReceiptForRemoteSend() = runTest(dispatcher) {
+        val memoryRepository = MemoryRepository(recordStore = FakeMemoryRecordStore())
+        memoryRepository.indexPreference("pref-1", "I prefer concise answers")
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-memory-boundary",
+                promptForModel = "ordinary remote question",
+                memoryHits = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            memoryRepository = memoryRepository,
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("ordinary remote question")
+        advanceUntilIdle()
+
+        assertEquals(false, assistantRouter.lastRouteMemoryEnabled)
+        assertEquals(null, assistantRouter.lastRouteDeviceContext)
+        val receipt = requireNotNull(assistantRouter.lastRecordedRunDataReceipt)
+        assertEquals("run-remote-memory-boundary", assistantRouter.lastRecordedRunDataReceiptRunId)
+        assertEquals(RunDataDestination.Remote, receipt.destination)
+        assertEquals(MessagePrivacy.RemoteEligible.name, receipt.currentPromptPrivacy)
+        assertEquals(false, receipt.memoryContextIncluded)
+        assertEquals(false, receipt.deviceContextIncluded)
+        assertTrue(receipt.protectedContentTypes.contains("本地记忆"))
+        assertTrue(receipt.protectedContentTypes.contains("设备上下文"))
+        val call = remoteRuntime.calls.single()
+        assertEquals("ordinary remote question", call.prompt)
+        assertTrue(call.history.isEmpty())
+        assertFalse(call.prompt.contains("I prefer concise answers"))
+        assertFalse(call.history.toString().contains("I prefer concise answers"))
     }
 
     @Test
@@ -555,6 +601,39 @@ class PocketMindViewModelTest {
             assertTrue(viewModel.uiState.value.messages.last().text.contains("疑似包含个人信息或密钥"))
         }
         assertTrue(sessionStore.messages.all { message -> message.privacy == MessagePrivacy.LocalOnly })
+    }
+
+    @Test
+    fun remoteModeUnconfiguredSendAttemptShowsLocalNoticeWithoutCallingRuntime() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = RemoteModelConfig(),
+            ),
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(0, assistantRouter.routeCallCount)
+        assertEquals("请配置远程模型", viewModel.uiState.value.statusText)
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertEquals("远程模型未配置", viewModel.uiState.value.modelHealth.failureReason)
+        val notice = sessionStore.messages.single()
+        assertEquals(MessageRole.Assistant, notice.role)
+        assertEquals(MessagePrivacy.LocalOnly, notice.privacy)
+        assertTrue(notice.text.contains("配置远程模型地址和模型名"))
+        assertTrue(notice.text.contains("还没有发送"))
+        assertFalse(notice.text.contains("普通远程问题"))
     }
 
     @Test
@@ -6711,9 +6790,15 @@ class PocketMindViewModelTest {
             private set
         var lastRouteSessionId: String? = null
             private set
+        var lastRouteMemoryEnabled: Boolean? = null
+            private set
         var lastRouteOptions: AgentRunOptions? = null
             private set
         var lastRouteDeviceContext: com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot? = null
+            private set
+        var lastRecordedRunDataReceiptRunId: String? = null
+            private set
+        var lastRecordedRunDataReceipt: RunDataReceipt? = null
             private set
         var lastRecoverySessionId: String? = null
             private set
@@ -6743,6 +6828,7 @@ class PocketMindViewModelTest {
         ): AssistantRoute {
             routeCallCount += 1
             lastRouteSessionId = sessionId
+            lastRouteMemoryEnabled = memoryEnabled
             lastRouteOptions = options
             lastRouteDeviceContext = deviceContext
             routeFailure?.let { throw it }
@@ -6904,6 +6990,11 @@ class PocketMindViewModelTest {
         ) {
             lastRemoteToolsExposedScope = scope
             lastRemoteToolsExposedNames = toolNames
+        }
+
+        override fun recordRunDataReceipt(runId: String, receipt: RunDataReceipt) {
+            lastRecordedRunDataReceiptRunId = runId
+            lastRecordedRunDataReceipt = receipt
         }
 
         override fun observeModelToolRequest(runId: String, request: ToolRequest): AgentModelObservationResult? {
