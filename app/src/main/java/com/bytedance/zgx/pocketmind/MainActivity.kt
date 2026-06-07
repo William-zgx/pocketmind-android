@@ -260,9 +260,12 @@ class MainActivity : ComponentActivity() {
         if (!isDebuggableBuild()) return
         val baseUrl = intent.getStringExtra(EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL) ?: return
         val modelName = intent.getStringExtra(EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME) ?: return
+        val supportsVisionInput =
+            intent.getBooleanExtra(EXTRA_DEBUG_SCREENSHOT_REMOTE_SUPPORTS_VISION_INPUT, true)
         viewModel.configureDebugRemoteModelForScreenshotEvidence(
             baseUrl = baseUrl,
             modelName = modelName,
+            supportsVisionInput = supportsVisionInput,
         )
     }
 
@@ -547,6 +550,8 @@ class MainActivity : ComponentActivity() {
             "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_BASE_URL"
         const val EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME =
             "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_MODEL_NAME"
+        const val EXTRA_DEBUG_SCREENSHOT_REMOTE_SUPPORTS_VISION_INPUT =
+            "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_SUPPORTS_VISION_INPUT"
         private const val KEY_PENDING_SPECIAL_ACCESS_REQUIREMENT_ID =
             "com.bytedance.zgx.pocketmind.state.PENDING_SPECIAL_ACCESS_REQUIREMENT_ID"
         private val SHARED_ATTACHMENT_MIME_TYPES = arrayOf(

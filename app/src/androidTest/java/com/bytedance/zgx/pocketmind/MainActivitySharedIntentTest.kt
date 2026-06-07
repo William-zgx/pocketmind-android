@@ -152,6 +152,45 @@ class MainActivitySharedIntentTest {
     }
 
     @Test
+    fun actionSendImageInRemoteModeWithVisionDisabledShowsUnsupportedNoticeWithoutReadingImage() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        CountingSharedContentProvider.resetCounters(context)
+        val remoteWithoutVision = ReadyRemoteModelConfig.copy(supportsVisionInput = false)
+        resetMainActivityPersistentState(
+            context,
+            inferenceMode = InferenceMode.Remote,
+            remoteModelConfig = remoteWithoutVision,
+        )
+
+        val launchIntent = Intent(Intent.ACTION_SEND).apply {
+            setClass(context, MainActivity::class.java)
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, CountingSharedContentProvider.imageUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)
+            putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL, remoteWithoutVision.baseUrl)
+            putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME, remoteWithoutVision.modelName)
+            putExtra(
+                MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_SUPPORTS_VISION_INPUT,
+                remoteWithoutVision.supportsVisionInput,
+            )
+        }
+
+        ActivityScenario.launch<MainActivity>(launchIntent).use {
+            composeRule.waitForTag("app_title")
+            composeRule.waitForText("当前远程模型未启用图片输入能力", substring = true)
+
+            composeRule.onNodeWithText("未读取、OCR 或发送图片", substring = true)
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("pending_shared_input_strip")
+            composeRule.assertTextAbsent("counting-image.png")
+            composeRule.assertTextAbsent("data:image")
+            assertEquals(0, CountingSharedContentProvider.imageOpenCount(context))
+            assertEquals(0, CountingSharedContentProvider.textOpenCount(context))
+        }
+    }
+
+    @Test
     fun shareIntentReaderRemoteVisionReadsOnlyImageBytesAndProtectsNonImageAttachment() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         CountingSharedContentProvider.resetCounters(context)

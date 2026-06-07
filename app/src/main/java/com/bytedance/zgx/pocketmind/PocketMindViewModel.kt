@@ -226,8 +226,17 @@ class PocketMindViewModel(
         restorePendingExternalOutcomeIfAny()
     }
 
-    fun configureDebugRemoteModelForScreenshotEvidence(baseUrl: String, modelName: String) {
-        val config = RemoteModelConfig(baseUrl = baseUrl, modelName = modelName, apiKey = "").normalized()
+    fun configureDebugRemoteModelForScreenshotEvidence(
+        baseUrl: String,
+        modelName: String,
+        supportsVisionInput: Boolean = true,
+    ) {
+        val config = RemoteModelConfig(
+            baseUrl = baseUrl,
+            modelName = modelName,
+            apiKey = "",
+            supportsVisionInput = supportsVisionInput,
+        ).normalized()
         if (!config.isConfigured) {
             _uiState.update { it.copy(statusText = "截图验证远程配置无效") }
             return

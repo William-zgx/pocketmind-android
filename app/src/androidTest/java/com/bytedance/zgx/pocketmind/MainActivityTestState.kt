@@ -52,6 +52,10 @@ internal fun mainActivitySkipStartupIntent(
     mainActivitySkipStartupIntent(context).apply {
         putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL, debugRemoteModelConfig.baseUrl)
         putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME, debugRemoteModelConfig.modelName)
+        putExtra(
+            MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_SUPPORTS_VISION_INPUT,
+            debugRemoteModelConfig.supportsVisionInput,
+        )
     }
 
 internal fun <A : Activity> activityFromScenarioRule(rule: ActivityScenarioRule<A>): A {

@@ -10661,7 +10661,35 @@ scripts/verify_privacy_review.sh --report build/verification/privacy-review-curr
 
 剩余风险：
 
-- 麦克风系统权限拒绝/恢复、设备动作确认后 ActivityResult 权限拒绝、远程视觉不支持的
-  Activity 分享整链路仍需补模拟器测试。
+- 麦克风系统权限拒绝/恢复、设备动作确认后 ActivityResult 权限拒绝仍需补模拟器测试。
 - 真实联系邮箱、公开隐私政策 URL、release/security/legal/store reviewer 和日期仍未填写；
   因此公发门禁继续 fail-closed。
+
+## 2026-06-07 Remote vision unsupported share Activity contract
+
+本轮覆盖项：
+
+- `MainActivitySharedIntentTest` 新增远程模型已配置但关闭图片输入时的 ACTION_SEND 图片分享测试。
+- 测试从 Activity 分享入口进入，验证 UI 明确提示当前远程模型未启用图片输入能力，
+  并声明未读取、OCR 或发送图片。
+- 测试断言不会出现 `pending_shared_input_strip`，不会泄漏 `counting-image.png` 或 `data:image`。
+- `CountingSharedContentProvider` 的 image/text open count 均保持 0，证明该路径不打开图片流、
+  不触发 OCR，也不读取文本附件。
+- Debug-only remote config extra 增加 `supportsVisionInput`，让截图/Activity 测试可以稳定覆盖
+  远程视觉开启和关闭两类配置。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.MainActivitySharedInputModeTest'
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySharedIntentTest#actionSendImageInRemoteModeWithVisionDisabledShowsUnsupportedNoticeWithoutReadingImage
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySharedIntentTest
+```
+
+结果：
+
+- 通过：debug 和 androidTest Kotlin 编译。
+- 通过：JVM mode contract，覆盖远程已配置但不支持视觉时选择 `RemoteVisionUnsupportedSignal`。
+- 通过：API 36 emulator targeted 新用例，覆盖 Activity 分享入口的不支持图片提示和 0 读取计数。
+- 通过：API 36 emulator `MainActivitySharedIntentTest` 整组 7 条用例。
