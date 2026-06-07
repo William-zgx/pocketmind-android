@@ -303,11 +303,13 @@ release ticket or PR.
 - [ ] `localModelDownloadVerification` release flow evidence must explicitly
   record local download verification, SHA-256 verification, storage preflight,
   failure recovery, unavailable download directory handling, SHA failure cleanup,
-  missing pending-download task recovery, remote fallback explanation, and lightweight alternative
-  explanation. `customModelImportOrUrlRejection` evidence must explicitly
-  record `.litertlm` import coverage, HTTPS-only custom download policy,
-  non-`.litertlm` URL rejection, invalid/credentialed URL rejection, and the
-  unverified custom model marker.
+  insufficient-storage download failure, missing pending-download task recovery,
+  remote fallback explanation, and lightweight alternative explanation.
+  `customModelImportOrUrlRejection` evidence must explicitly record `.litertlm`
+  import coverage, local non-`.litertlm` import rejection, import storage
+  preflight, empty-file rejection, temp cleanup on copy failure, HTTPS-only
+  custom download policy, non-`.litertlm` URL rejection, invalid/credentialed URL
+  rejection, and successful local import registration as `UnverifiedCustom`.
 - [ ] `shareAndPickerInput` release flow evidence must explicitly record
   ACTION_SEND text staging, remote-mode text-share protection, remote vision
   image attachment staging, unsupported-vision protection, no implicit image

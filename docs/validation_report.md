@@ -10100,3 +10100,38 @@ AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT
 - 通过：API 36 targeted emulator，`build/verification/model-download-gate-smoke-current`
   记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
   隐私入口、会话管理和后台任务空态。
+
+## 2026-06-07 Local model import file-flow gate
+
+本轮覆盖项：
+
+- `ModelRepository.importModel()` 的 Android `Uri/ContentResolver` 读取保持在 Android 适配层；
+  文件名校验、空间预检、临时文件、移动、失败清理和导入结果被抽成 JVM 可测的
+  `importModelFileToModelDir()`。
+- 系统文件提供方缺少 `DISPLAY_NAME` 时不再 fallback 到推荐模型文件名；只使用 URI 末段作为
+  最后文件名来源，否则走 `.litertlm` 校验失败，避免未知来源绕过后缀检查。
+- 本地导入新增 JVM 契约：非 `.litertlm` 拒绝且不 copy、存储不足时不 copy、空文件拒绝并删除
+  `.tmp`、copy 失败删除 `.tmp`、成功导入结果声明 `recommendedModelId=null` 且
+  `verificationStatus=UnverifiedCustom`。
+- `customModelImportOrUrlRejection` release flow evidence 新增必填字段：本地非 `.litertlm`
+  导入拒绝、导入存储预检、空文件拒绝、copy/move 失败临时文件清理。
+- `localModelDownloadVerification` release flow evidence 新增必填字段：
+  insufficient-storage 下载失败覆盖。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.data.ModelRepositoryTest'
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/model-import-gate-smoke-current INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：仓库层 JVM 测试覆盖本地模型导入文件流边界。
+- 通过：validation script self-tests，覆盖新增 import/download release flow 字段和弱证据拒绝。
+- 通过：`verify_local` 全链路，包括 unit test、lint、debug/release APK、release AAB 和 artifact scan。
+- 通过：API 36 targeted emulator，`build/verification/model-import-gate-smoke-current`
+  记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
+  隐私入口、会话管理和后台任务空态。

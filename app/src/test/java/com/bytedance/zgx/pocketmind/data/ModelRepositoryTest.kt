@@ -1,7 +1,9 @@
 package com.bytedance.zgx.pocketmind.data
 
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -117,6 +119,124 @@ class ModelRepositoryTest {
         }
     }
 
+    @Test
+    fun importModelFileRejectsNonLiteRtLmDisplayNameBeforeCopy() {
+        withTempModelDir { modelDir ->
+            var copyCalled = false
+
+            val failure = runCatching {
+                importModelFileToModelDir(
+                    modelDir = modelDir,
+                    displayName = "custom-model.bin",
+                    sourceSizeBytes = 5L,
+                    usableSpaceBytes = 10L,
+                    copyToTemp = {
+                        copyCalled = true
+                    },
+                )
+            }
+
+            assertTrue(failure.isFailure)
+            assertEquals("请选择 .litertlm 模型文件", failure.exceptionOrNull()?.message)
+            assertFalse(copyCalled)
+            assertNoTemporaryModels(modelDir)
+            assertFalse(File(modelDir, "custom-model.bin.litertlm").exists())
+        }
+    }
+
+    @Test
+    fun importModelFileFailsStoragePreflightBeforeCopy() {
+        withTempModelDir { modelDir ->
+            var copyCalled = false
+
+            val failure = runCatching {
+                importModelFileToModelDir(
+                    modelDir = modelDir,
+                    displayName = "custom-model.litertlm",
+                    sourceSizeBytes = 11L,
+                    usableSpaceBytes = 10L,
+                    copyToTemp = {
+                        copyCalled = true
+                    },
+                )
+            }
+
+            assertTrue(failure.isFailure)
+            assertEquals("存储空间不足，导入需要 11.0 B", failure.exceptionOrNull()?.message)
+            assertFalse(copyCalled)
+            assertNoTemporaryModels(modelDir)
+            assertFalse(File(modelDir, "custom-model.litertlm").exists())
+        }
+    }
+
+    @Test
+    fun importModelFileRejectsEmptyCopiedFileAndDeletesTmp() {
+        withTempModelDir { modelDir ->
+            val failure = runCatching {
+                importModelFileToModelDir(
+                    modelDir = modelDir,
+                    displayName = "custom-model.litertlm",
+                    sourceSizeBytes = 0L,
+                    usableSpaceBytes = 10L,
+                    copyToTemp = {
+                        // Leave the temp file empty to simulate a zero-byte picker result.
+                    },
+                )
+            }
+
+            assertTrue(failure.isFailure)
+            assertEquals("模型文件为空", failure.exceptionOrNull()?.message)
+            assertNoTemporaryModels(modelDir)
+            assertFalse(File(modelDir, "custom-model.litertlm").exists())
+        }
+    }
+
+    @Test
+    fun importModelFileDeletesTmpWhenCopyFails() {
+        withTempModelDir { modelDir ->
+            val failure = runCatching {
+                importModelFileToModelDir(
+                    modelDir = modelDir,
+                    displayName = "custom-model.litertlm",
+                    sourceSizeBytes = 5L,
+                    usableSpaceBytes = 10L,
+                    copyToTemp = { tempTarget ->
+                        tempTarget.writeText("partial", Charsets.UTF_8)
+                        throw IOException("copy failed")
+                    },
+                )
+            }
+
+            assertTrue(failure.isFailure)
+            assertEquals("copy failed", failure.exceptionOrNull()?.message)
+            assertNoTemporaryModels(modelDir)
+            assertFalse(File(modelDir, "custom-model.litertlm").exists())
+        }
+    }
+
+    @Test
+    fun importModelFileMovesCopiedFileAsUnverifiedCustomRegistration() {
+        withTempModelDir { modelDir ->
+            val imported = importModelFileToModelDir(
+                modelDir = modelDir,
+                displayName = "custom-model.litertlm",
+                sourceSizeBytes = 5L,
+                usableSpaceBytes = 10L,
+                copyToTemp = { tempTarget ->
+                    tempTarget.writeText("model", Charsets.UTF_8)
+                },
+            )
+
+            val target = File(imported.path)
+            assertTrue(target.exists())
+            assertEquals("model", target.readText(Charsets.UTF_8))
+            assertEquals("custom-model", imported.displayName)
+            assertEquals(null, imported.recommendedModelId)
+            assertEquals(ModelVerificationStatus.UnverifiedCustom, imported.verificationStatus)
+            assertNoTemporaryModels(modelDir)
+        }
+    }
+
     private fun withTempModelFile(content: String, block: (File) -> Unit) {
         val file = File.createTempFile("pocketmind-model", ".litertlm")
         try {
@@ -125,5 +245,23 @@ class ModelRepositoryTest {
         } finally {
             file.delete()
         }
+    }
+
+    private fun withTempModelDir(block: (File) -> Unit) {
+        val dir = File.createTempFile("pocketmind-model-dir", "")
+        dir.delete()
+        dir.mkdirs()
+        try {
+            block(dir)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private fun assertNoTemporaryModels(modelDir: File) {
+        val tempFiles = modelDir.listFiles { file ->
+            file.isFile && file.extension == "tmp"
+        }?.toList().orEmpty()
+        assertTrue("Expected no temporary model files, found $tempFiles", tempFiles.isEmpty())
     }
 }

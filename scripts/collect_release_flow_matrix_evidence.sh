@@ -165,10 +165,10 @@ flow_summary() {
       printf 'Clean API 36 emulator regression covers first-run setup dismissal, chat shell rendering, model manager entry, session controls, and background task empty state.'
       ;;
     localModelDownloadVerification)
-      printf 'API 36 emulator regression covers custom .litertlm DownloadManager handoff; repository tests cover recommended model verification metadata, trusted model surfaces, and failure-state UI contracts.'
+      printf 'API 36 emulator regression covers custom .litertlm DownloadManager handoff; repository tests cover recommended model verification metadata, trusted model surfaces, insufficient-storage download failure, and failure-state UI contracts.'
       ;;
     customModelImportOrUrlRejection)
-      printf 'API 36 emulator regression covers custom model URL rejection and custom .litertlm DownloadManager handoff; JVM URL contract rejects malformed, credentialed, and public HTTP URLs.'
+      printf 'API 36 emulator regression covers custom model URL rejection and custom .litertlm DownloadManager handoff; JVM contracts reject unsafe URLs and cover local import extension, storage, empty-file, temp-cleanup, and UnverifiedCustom registration boundaries.'
       ;;
     remoteHttpsConfiguration)
       printf 'API 36 emulator regression configures remote mode against a local OpenAI-compatible fixture; JVM contract accepts HTTPS public endpoints and rejects non-local public HTTP.'
@@ -305,12 +305,17 @@ write_flow_contract_fields() {
       printf 'downloadFailureRecoveryCovered=true\n'
       printf 'downloadDirectoryUnavailableCovered=true\n'
       printf 'downloadShaFailureCleanupCovered=true\n'
+      printf 'downloadInsufficientStorageFailureCovered=true\n'
       printf 'pendingDownloadMissingTaskRecoveryCovered=true\n'
       printf 'remoteFallbackExplained=true\n'
       printf 'lightweightAlternativeExplained=true\n'
       ;;
     customModelImportOrUrlRejection)
       printf 'customLitertlmImportCovered=true\n'
+      printf 'customLocalNonLitertlmImportRejected=true\n'
+      printf 'customImportStoragePreflightCovered=true\n'
+      printf 'customImportEmptyFileRejected=true\n'
+      printf 'customImportTempCleanupOnCopyFailureCovered=true\n'
       printf 'customDownloadHttpsOnly=true\n'
       printf 'customNonLitertlmDownloadRejected=true\n'
       printf 'customInvalidUrlRejected=true\n'
@@ -506,12 +511,17 @@ def is_valid_evidence(flow, value):
             "downloadFailureRecoveryCovered",
             "downloadDirectoryUnavailableCovered",
             "downloadShaFailureCleanupCovered",
+            "downloadInsufficientStorageFailureCovered",
             "pendingDownloadMissingTaskRecoveryCovered",
             "remoteFallbackExplained",
             "lightweightAlternativeExplained",
         ],
         "customModelImportOrUrlRejection": [
             "customLitertlmImportCovered",
+            "customLocalNonLitertlmImportRejected",
+            "customImportStoragePreflightCovered",
+            "customImportEmptyFileRejected",
+            "customImportTempCleanupOnCopyFailureCovered",
             "customDownloadHttpsOnly",
             "customNonLitertlmDownloadRejected",
             "customInvalidUrlRejected",

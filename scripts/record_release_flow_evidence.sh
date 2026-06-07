@@ -101,12 +101,17 @@ write_flow_contract_fields() {
       printf 'downloadFailureRecoveryCovered=true\n'
       printf 'downloadDirectoryUnavailableCovered=true\n'
       printf 'downloadShaFailureCleanupCovered=true\n'
+      printf 'downloadInsufficientStorageFailureCovered=true\n'
       printf 'pendingDownloadMissingTaskRecoveryCovered=true\n'
       printf 'remoteFallbackExplained=true\n'
       printf 'lightweightAlternativeExplained=true\n'
       ;;
     customModelImportOrUrlRejection)
       printf 'customLitertlmImportCovered=true\n'
+      printf 'customLocalNonLitertlmImportRejected=true\n'
+      printf 'customImportStoragePreflightCovered=true\n'
+      printf 'customImportEmptyFileRejected=true\n'
+      printf 'customImportTempCleanupOnCopyFailureCovered=true\n'
       printf 'customDownloadHttpsOnly=true\n'
       printf 'customNonLitertlmDownloadRejected=true\n'
       printf 'customInvalidUrlRejected=true\n'
