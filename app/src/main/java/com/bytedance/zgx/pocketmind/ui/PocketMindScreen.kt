@@ -2535,16 +2535,14 @@ private fun SessionManagerSheet(
                 onClick = { onSessionSelected(session.id) },
             )
         }
-        if (state.sessions.size > 1) {
-            OutlinedButton(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("session_delete_button"),
-                onClick = onDeleteSession,
-                enabled = !state.isBusy,
-            ) {
-                Text("删除当前会话")
-            }
+        OutlinedButton(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("session_delete_button"),
+            onClick = onDeleteSession,
+            enabled = !state.isBusy,
+        ) {
+            Text("删除当前会话")
         }
     }
 }
@@ -3056,7 +3054,7 @@ internal const val LOCAL_SETUP_PANEL_DESCRIPTION =
     "下载后基础问答和历史默认留在本机；也可以先跳过，稍后配置远程模型或导入可信 .litertlm。"
 
 internal const val MODEL_MANAGER_POSITIONING_TEXT =
-    "选择本地离线或可选远程；远程发送和设备动作仍会先确认。"
+    "本地离线可用；远程多模态可选。远程发送和设备动作仍会先确认。"
 
 internal val PRODUCT_PROMPT_SUGGESTIONS = listOf(
     "告诉我哪些内容会留在本机",
@@ -3074,7 +3072,7 @@ internal const val PRODUCT_ACTION_VALUE_TEXT =
     "联系人、日历、系统页面、分享、提醒和屏幕相关能力都先展示用途、权限和风险，再由你确认或取消。"
 
 internal const val PRIVACY_POLICY_ENTRY_TEXT =
-    "这一页是 App 内隐私说明入口；公开发布前仍需把同一口径同步到外部隐私政策和 Play Data safety。"
+    "说明哪些内容留在本机、什么时候会发送到远程，以及哪些设备能力必须你确认后才执行。"
 
 internal const val REMOTE_MODE_DISCLOSURE_TEXT =
     "兼容 /v1/chat/completions；远程模式只发送可远程发送的对话上下文，每次发送前都会确认，主动选择的图片会随请求发送。"

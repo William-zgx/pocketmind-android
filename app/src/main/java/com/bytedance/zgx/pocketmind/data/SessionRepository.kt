@@ -62,8 +62,6 @@ class SessionRepository(
     }
 
     override fun deleteActiveSession(): List<ChatMessage>? {
-        val sessions = sessionDao.sessions()
-        if (sessions.size <= 1) return null
         sessionDao.deleteMessages(activeSessionId)
         sessionDao.deleteSession(activeSessionId)
         activeSessionId = resolveActiveSessionId()

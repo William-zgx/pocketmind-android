@@ -2907,6 +2907,36 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun deleteOnlyActiveSessionClearsMessagesAndPendingSharedDraft() = runTest(dispatcher) {
+        val sessionStore = FakeSessionStore(
+            initialSessions = linkedMapOf(
+                "session-only" to listOf(ChatMessage(MessageRole.User, "要清掉的聊天记录")),
+            ),
+            initialActiveSessionId = "session-only",
+        )
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+        viewModel.stageSharedInput(SharedInput(text = "待发送附件内容", attachments = emptyList()))
+        advanceUntilIdle()
+        requireNotNull(viewModel.uiState.value.pendingSharedInputDraft)
+
+        viewModel.deleteActiveSession()
+        advanceUntilIdle()
+
+        assertEquals(listOf("session-only"), assistantRouter.deletedTraceSessionIds)
+        assertEquals("session-2", viewModel.uiState.value.activeSessionId)
+        assertTrue(viewModel.uiState.value.messages.isEmpty())
+        assertEquals(null, viewModel.uiState.value.pendingSharedInputDraft)
+        assertEquals(1, viewModel.uiState.value.sessions.size)
+        assertEquals(0, viewModel.uiState.value.sessions.single().messageCount)
+    }
+
+    @Test
     fun duplicatePendingConfirmationExecutesOnlyOnce() = runTest(dispatcher) {
         val request = ToolRequest(toolName = MobileActionFunctions.OPEN_WIFI_SETTINGS)
         val executor = RecordingToolExecutor()
@@ -7126,8 +7156,10 @@ class PocketMindViewModelTest {
         }
 
         override fun deleteActiveSession(): List<ChatMessage>? {
-            if (sessionsById.size <= 1) return null
             sessionsById.remove(activeSessionId)
+            if (sessionsById.isEmpty()) {
+                sessionsById["session-${nextSessionId++}"] = emptyList()
+            }
             activeSessionId = sessionsById.keys.first()
             return messages
         }

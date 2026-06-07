@@ -23,6 +23,41 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Release fail-closed and deletion control gate
+
+本轮覆盖项：
+
+- GitHub Actions `workflow_dispatch` 发布包路径收紧：`verify` 也在手动发布时运行；
+  `release-artifact-archive` 依赖 local verify 和 emulator regression；
+  `protected-signing` 显式依赖 local verify、emulator regression 和 artifact archive。
+- 生产签名缺少 keystore、alias、password 或 expected signing certificate 时，
+  `protected-signing` 写入 `status=failed`、`failedTarget=environment`、
+  `reason=protected-signing-secrets-not-configured` 并退出失败，不再以 skipped 成功。
+- 模型管理页文案收敛为“本地离线可用；远程多模态可选”，隐私说明页改为面向用户的数据边界说明。
+- 当前会话删除控制覆盖唯一会话：删除最后一个会话会清除旧消息、旧 session Agent 轨迹和待发送分享草稿，
+  然后自动创建一个新的空会话。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+./gradlew :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.data.SessionRepositoryTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.deleteActiveSessionClearsSessionAgentTraceAndPendingConfirmation' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.deleteOnlyActiveSessionClearsMessagesAndPendingSharedDraft' \
+  --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest \
+  :app:compileDebugAndroidTestKotlin
+git diff --check
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 workflow 发布依赖、protected-signing fail-closed、
+  fresh-start helper 和模型管理新文案。
+- 通过：targeted JVM tests，覆盖唯一会话删除、旧多会话删除、UI 信任边界文案和仓库删除行为。
+- 通过：AndroidTest Kotlin 编译，确认 smoke 文案同步后可编译。
+- 通过：`git diff --check`。
+
 ## 2026-06-07 First-run setup and skip gate
 
 本轮覆盖项：

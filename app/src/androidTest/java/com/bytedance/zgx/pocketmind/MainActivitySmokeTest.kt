@@ -48,7 +48,7 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("model_manager_sheet")
 
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
-        composeRule.waitForText("选择本地离线或可选远程；远程发送和设备动作仍会先确认。")
+        composeRule.waitForText("本地离线可用；远程多模态可选。远程发送和设备动作仍会先确认。")
         composeRule.waitForText("当前模型")
         composeRule.onNodeWithTag("model_tab_advanced").performClick()
         composeRule.waitForText("生成参数")

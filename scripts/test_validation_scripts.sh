@@ -287,7 +287,7 @@ FAKE_FRESH_START_UI
         fi
         ;;
       /sdcard/pocketmind-model-manager.xml)
-        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_MODEL_MANAGER_UI_TEXT:-选择本地离线或可选远程；远程发送和设备动作仍会先确认。}" > "$destination"
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_MODEL_MANAGER_UI_TEXT:-本地离线可用；远程多模态可选。远程发送和设备动作仍会先确认。}" > "$destination"
         ;;
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
@@ -744,6 +744,48 @@ grep -q 'scripts/collect_model_license_metadata.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_model_license_metadata.sh in shell syntax checks"
 grep -q 'scripts/sign_release_artifacts.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include sign_release_artifacts.sh in shell syntax checks"
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+workflow = Path(".github/workflows/android.yml").read_text()
+
+def fail(message):
+    print(f"validation-script-test: {message}", file=sys.stderr)
+    sys.exit(1)
+
+def job_block(name):
+    match = re.search(
+        rf"^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:|\Z)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not match:
+        fail(f"android workflow is missing {name} job")
+    return match.group("body")
+
+verify_block = job_block("verify")
+release_archive_block = job_block("release-artifact-archive")
+protected_signing_block = job_block("protected-signing")
+
+if "workflow_dispatch" not in verify_block:
+    fail("verify job must run on workflow_dispatch before release artifacts are archived")
+if "needs: [verify, emulator-regression]" not in release_archive_block:
+    fail("release-artifact-archive must depend on verify and emulator-regression")
+if "needs: [verify, emulator-regression, release-artifact-archive]" not in protected_signing_block:
+    fail("protected-signing must explicitly depend on verify, emulator-regression, and release-artifact-archive")
+if "status=skipped" in protected_signing_block:
+    fail("protected-signing must not report skipped when production signing secrets are missing")
+for required in (
+    "status=failed",
+    "failedTarget=environment",
+    "reason=protected-signing-secrets-not-configured",
+    "exit 1",
+):
+    if required not in protected_signing_block:
+        fail(f"protected-signing missing fail-closed marker: {required}")
+PY
 
 UPGRADE_FAKE_BASE_APK="$TMP_DIR/upgrade-base.apk"
 UPGRADE_FAKE_CURRENT_APK="$TMP_DIR/upgrade-current.apk"
@@ -4556,7 +4598,7 @@ grep -q -- "-s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.
   fail "Expected fresh start helper to launch MainActivity"
 grep -q -- "-s emulator-5554 shell input tap 534 212" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to tap the model manager button"
-assert_report_contains_text "$ARTIFACT_DIR/model-manager.xml" "选择本地离线或可选远程"
+assert_report_contains_text "$ARTIFACT_DIR/model-manager.xml" "远程多模态可选"
 
 reset_logs
 expect_success \

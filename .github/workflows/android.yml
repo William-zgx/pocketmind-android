@@ -11,7 +11,7 @@ on:
 
 jobs:
   verify:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -142,6 +142,7 @@ jobs:
 
   release-artifact-archive:
     if: github.event_name == 'workflow_dispatch'
+    needs: [verify, emulator-regression]
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -212,7 +213,7 @@ jobs:
 
   protected-signing:
     if: github.event_name == 'workflow_dispatch'
-    needs: release-artifact-archive
+    needs: [verify, emulator-regression, release-artifact-archive]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: android-production-signing
@@ -249,15 +250,17 @@ jobs:
           mkdir -p build/verification/ci-protected-signing build/ci-signing
           if [[ -z "${RELEASE_KEYSTORE_BASE64}" || -z "${RELEASE_KEY_ALIAS}" || -z "${RELEASE_KEYSTORE_PASSWORD}" || -z "${RELEASE_KEY_PASSWORD}" || -z "${EXPECTED_SIGNING_CERT_SHA256}" ]]; then
             {
-              echo "status=skipped"
+              echo "status=failed"
               echo "target=release-signing"
+              echo "failedTarget=environment"
               echo "reason=protected-signing-secrets-not-configured"
               echo "workflow=${GITHUB_WORKFLOW}"
               echo "job=protected-signing"
               echo "runId=${GITHUB_RUN_ID}"
               echo "commitSha=${GITHUB_SHA}"
             } > build/verification/ci-protected-signing/signing.properties
-            exit 0
+            echo "Protected signing requires production signing secrets." >&2
+            exit 1
           fi
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > build/ci-signing/release.keystore
           RELEASE_KEYSTORE="$PWD/build/ci-signing/release.keystore" \
