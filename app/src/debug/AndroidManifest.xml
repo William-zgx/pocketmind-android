@@ -4,5 +4,10 @@
         <receiver
             android:name=".debug.DebugRemoteConfigReceiver"
             android:exported="false" />
+        <provider
+            android:name=".debug.CountingSharedContentProvider"
+            android:authorities="com.bytedance.zgx.pocketmind.debug.sharedcontent"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

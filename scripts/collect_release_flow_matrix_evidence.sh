@@ -189,7 +189,7 @@ flow_summary() {
       printf 'Repository tests cover BOOT_COMPLETED and package-replaced reminder rescheduling, catch-up scheduling, stale-running recovery, and metadata-only reminder audit boundaries.'
       ;;
     shareAndPickerInput)
-      printf 'API 36 emulator regression covers ACTION_SEND text and image staging; JVM shared-input tests cover in-app picker attachment prompts, remote-mode protection, non-image attachment protection, document excerpts, and no implicit image OCR.'
+      printf 'API 36 emulator regression covers ACTION_SEND text and image staging; androidTest provider counters cover remote vision image stream/OCR boundaries; JVM shared-input tests cover in-app picker attachment prompts, remote-mode protection, non-image attachment protection, document excerpts, and no implicit image OCR.'
       ;;
     voiceInput)
       printf 'API 36 emulator accessibility regression covers the voice entry disclosure and button label; ViewModel tests cover one-shot transcript drafts, partial transcript state, cancellation, and no auto-send.'
@@ -265,6 +265,7 @@ flow_source_files() {
     shareAndPickerInput)
       printf '%s\n' \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySharedIntentTest.kt \
+        app/src/debug/java/com/bytedance/zgx/pocketmind/debug/CountingSharedContentProvider.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/multimodal/SharedInputTest.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt
       ;;
@@ -336,6 +337,18 @@ write_flow_contract_fields() {
       printf 'remoteVisionUnsupportedProtected=true\n'
       printf 'noImplicitImageOcr=true\n'
       printf 'remoteNonImageAttachmentNotAutoIncluded=true\n'
+      printf 'remoteVisionSupportedOpenStreamCountCovered=true\n'
+      printf 'remoteVisionSupportedOcrSkipped=true\n'
+      printf 'remoteVisionUnsupportedOpenStreamCountCovered=true\n'
+      printf 'remoteVisionUnsupportedOcrSkipped=true\n'
+      printf 'remoteVisionMixedShareNonImageProtected=true\n'
+      printf 'remoteVisionHttpFixtureImagePartCount=1\n'
+      printf 'remoteVisionHttpFixtureStreamRequested=true\n'
+      printf 'remoteVisionSupportedImageStreamOpenCount=1\n'
+      printf 'remoteVisionSupportedImageOcrInvocationCount=0\n'
+      printf 'remoteVisionUnsupportedImageStreamOpenCount=0\n'
+      printf 'remoteVisionUnsupportedImageOcrInvocationCount=0\n'
+      printf 'remoteVisionMixedProtectedNonImageCount=1\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
@@ -542,6 +555,13 @@ def is_valid_evidence(flow, value):
             "remoteVisionImageAttachmentStaged",
             "remoteVisionUnsupportedProtected",
             "noImplicitImageOcr",
+            "remoteNonImageAttachmentNotAutoIncluded",
+            "remoteVisionSupportedOpenStreamCountCovered",
+            "remoteVisionSupportedOcrSkipped",
+            "remoteVisionUnsupportedOpenStreamCountCovered",
+            "remoteVisionUnsupportedOcrSkipped",
+            "remoteVisionMixedShareNonImageProtected",
+            "remoteVisionHttpFixtureStreamRequested",
             "documentExcerptBounded",
             "pickerAttachmentPromptCovered",
         ],
@@ -567,6 +587,19 @@ def is_valid_evidence(flow, value):
     }.get(flow, [])
     for field in required_true_fields:
         if props.get(field, "").lower() not in {"true", "1", "yes"}:
+            return False
+    required_exact_fields = {
+        "shareAndPickerInput": {
+            "remoteVisionHttpFixtureImagePartCount": "1",
+            "remoteVisionSupportedImageStreamOpenCount": "1",
+            "remoteVisionSupportedImageOcrInvocationCount": "0",
+            "remoteVisionUnsupportedImageStreamOpenCount": "0",
+            "remoteVisionUnsupportedImageOcrInvocationCount": "0",
+            "remoteVisionMixedProtectedNonImageCount": "1",
+        },
+    }.get(flow, {})
+    for field, expected in required_exact_fields.items():
+        if props.get(field) != expected:
             return False
     recorded_date = value.get("date", "")
     if not non_empty_string(recorded_date) or not date_pattern.match(recorded_date):

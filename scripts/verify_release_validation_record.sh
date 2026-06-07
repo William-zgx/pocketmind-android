@@ -556,6 +556,12 @@ def validate_flow_evidence(key, evidence_path):
             "remoteVisionUnsupportedProtected": "remote-vision-unsupported-protection-missing",
             "noImplicitImageOcr": "no-implicit-image-ocr-missing",
             "remoteNonImageAttachmentNotAutoIncluded": "remote-non-image-attachment-protection-missing",
+            "remoteVisionSupportedOpenStreamCountCovered": "remote-vision-supported-open-stream-count-missing",
+            "remoteVisionSupportedOcrSkipped": "remote-vision-supported-ocr-skip-missing",
+            "remoteVisionUnsupportedOpenStreamCountCovered": "remote-vision-unsupported-open-stream-count-missing",
+            "remoteVisionUnsupportedOcrSkipped": "remote-vision-unsupported-ocr-skip-missing",
+            "remoteVisionMixedShareNonImageProtected": "remote-vision-mixed-share-non-image-protection-missing",
+            "remoteVisionHttpFixtureStreamRequested": "remote-vision-http-fixture-stream-request-missing",
             "documentExcerptBounded": "document-excerpt-boundary-missing",
             "pickerAttachmentPromptCovered": "picker-attachment-prompt-missing",
         },
@@ -581,6 +587,19 @@ def validate_flow_evidence(key, evidence_path):
     }.get(key, {})
     for field, reason in required_true_fields.items():
         if props.get(field, "").lower() not in {"true", "1", "yes"}:
+            failures.append(f"{prefix}-{reason}")
+    required_exact_fields = {
+        "shareAndPickerInput": {
+            "remoteVisionHttpFixtureImagePartCount": ("1", "remote-vision-http-fixture-image-part-count-mismatch"),
+            "remoteVisionSupportedImageStreamOpenCount": ("1", "remote-vision-supported-image-stream-count-mismatch"),
+            "remoteVisionSupportedImageOcrInvocationCount": ("0", "remote-vision-supported-image-ocr-count-mismatch"),
+            "remoteVisionUnsupportedImageStreamOpenCount": ("0", "remote-vision-unsupported-image-stream-count-mismatch"),
+            "remoteVisionUnsupportedImageOcrInvocationCount": ("0", "remote-vision-unsupported-image-ocr-count-mismatch"),
+            "remoteVisionMixedProtectedNonImageCount": ("1", "remote-vision-mixed-protected-non-image-count-mismatch"),
+        },
+    }.get(key, {})
+    for field, (expected, reason) in required_exact_fields.items():
+        if props.get(field) != expected:
             failures.append(f"{prefix}-{reason}")
 
 def validate_png_file(name, path):

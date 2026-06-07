@@ -24,6 +24,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okio.Timeout
 import kotlin.reflect.KClass
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -427,6 +428,59 @@ class RemoteChatRuntimeTest {
             assertTrue(requestBody.contains(""""stream":true"""))
             assertTrue(requestBody.contains("可发送历史"))
             assertFalse(requestBody.contains("仅本地历史"))
+        }
+    }
+
+    @Test
+    fun sendWithImageUsesOpenAiVisionContentPartInHttpFixture() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .addHeader("Content-Type", "text/event-stream")
+                    .body(
+                        """
+                        data: {"choices":[{"delta":{"content":"完成"}}]}
+
+                        data: [DONE]
+
+                        """.trimIndent(),
+                    )
+                    .build(),
+            )
+            server.start()
+            val runtime = OkHttpRemoteChatRuntime(OkHttpClient())
+            val dataUrl = "data:image/png;base64,AA=="
+
+            val chunks = runtime.send(
+                prompt = "描述图片",
+                history = emptyList(),
+                parameters = GenerationParameters(),
+                config = RemoteModelConfig(
+                    baseUrl = server.url("/v1").toString().trimEnd('/'),
+                    modelName = "vision-model",
+                    supportsVisionInput = true,
+                ),
+                imageAttachments = listOf(
+                    ChatImageAttachment(
+                        mimeType = "image/png",
+                        dataUrl = dataUrl,
+                    ),
+                ),
+            ).toList()
+
+            assertEquals("完成", chunks.joinToString(separator = ""))
+            val request = server.takeRequest()
+            assertEquals("/v1/chat/completions", request.target)
+            val body = JSONObject(request.body!!.utf8())
+            assertTrue(body.getBoolean("stream"))
+            val messages = body.getJSONArray("messages")
+            val content = messages.getJSONObject(messages.length() - 1).getJSONArray("content")
+            assertEquals(2, content.length())
+            assertEquals("text", content.getJSONObject(0).getString("type"))
+            assertEquals("描述图片", content.getJSONObject(0).getString("text"))
+            assertEquals("image_url", content.getJSONObject(1).getString("type"))
+            assertEquals(dataUrl, content.getJSONObject(1).getJSONObject("image_url").getString("url"))
         }
     }
 

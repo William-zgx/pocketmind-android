@@ -3,6 +3,7 @@ package com.bytedance.zgx.pocketmind
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Base64
@@ -16,9 +17,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.bytedance.zgx.pocketmind.multimodal.NoOpImageTextExtractor
+import com.bytedance.zgx.pocketmind.debug.CountingSharedContentProvider
+import com.bytedance.zgx.pocketmind.multimodal.ImageTextExtractor
 import com.bytedance.zgx.pocketmind.multimodal.ShareIntentReader
 import com.bytedance.zgx.pocketmind.multimodal.SharedInputReadMode
+import com.bytedance.zgx.pocketmind.multimodal.SharedTextPreview
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -115,31 +118,72 @@ class MainActivitySharedIntentTest {
     }
 
     @Test
+    fun shareIntentReaderRemoteVisionReadsOnlyImageBytesAndProtectsNonImageAttachment() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        CountingSharedContentProvider.resetCounters(context)
+        val imageTextExtractor = CountingImageTextExtractor()
+
+        val sharedInput = ShareIntentReader(
+            context = context,
+            imageTextExtractor = imageTextExtractor,
+        ).readUris(
+            uris = listOf(
+                CountingSharedContentProvider.imageUri,
+                CountingSharedContentProvider.textUri,
+            ),
+            intentMimeType = "*/*",
+            mode = SharedInputReadMode.RemoteVision,
+        )
+
+        requireNotNull(sharedInput)
+        assertEquals(1, CountingSharedContentProvider.imageOpenCount(context))
+        assertEquals(0, CountingSharedContentProvider.textOpenCount(context))
+        assertEquals(0, imageTextExtractor.uriCallCount)
+        assertEquals(0, imageTextExtractor.bitmapCallCount)
+        assertEquals(1, sharedInput.attachments.size)
+        assertEquals(1, sharedInput.protectedSourceCount)
+        assertEquals(0, sharedInput.protectedImageSourceCount)
+        val imageAttachment = requireNotNull(sharedInput.attachments.single().imageAttachment)
+        assertEquals("image/png", imageAttachment.mimeType)
+        assertEquals("data:image/png;base64,$TINY_PNG_BASE64", imageAttachment.dataUrl)
+        val prompt = sharedInput.toRemoteVisionPrompt()
+        assertTrue(prompt.contains("已附加 1 张图片"))
+        assertTrue(prompt.contains("1 个非图片或分享来源已被保护"))
+        assertFalse(prompt.contains("counting-image.png"))
+        assertFalse(prompt.contains("private-notes.txt"))
+        assertFalse(prompt.contains("PRIVATE_NOTES_SHOULD_NOT_BE_READ"))
+    }
+
+    @Test
     fun actionSendImageUnsupportedByRemoteVisionProducesProtectedSignalWithoutReadingImage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val fileName = "private-unsupported-image.png"
-        val imageUri = createSharedPngUri(context, fileName)
+        CountingSharedContentProvider.resetCounters(context)
+        val imageTextExtractor = CountingImageTextExtractor()
         val sharedIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
-            putExtra(Intent.EXTRA_STREAM, imageUri)
+            putExtra(Intent.EXTRA_STREAM, CountingSharedContentProvider.imageUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
         val sharedInput = ShareIntentReader(
             context = context,
-            imageTextExtractor = NoOpImageTextExtractor,
+            imageTextExtractor = imageTextExtractor,
         ).read(
             sharedIntent,
             mode = SharedInputReadMode.RemoteVisionUnsupportedSignal,
         )
 
         requireNotNull(sharedInput)
+        assertEquals(0, CountingSharedContentProvider.imageOpenCount(context))
+        assertEquals(0, CountingSharedContentProvider.textOpenCount(context))
+        assertEquals(0, imageTextExtractor.uriCallCount)
+        assertEquals(0, imageTextExtractor.bitmapCallCount)
         assertEquals(0, sharedInput.protectedSourceCount)
         assertEquals(1, sharedInput.protectedImageSourceCount)
         assertTrue(sharedInput.attachments.isEmpty())
         assertTrue(sharedInput.text.isBlank())
-        assertFalse(sharedInput.toPrompt().contains(fileName))
-        assertFalse(sharedInput.toPrompt().contains(imageUri.toString()))
+        assertFalse(sharedInput.toPrompt().contains("counting-image.png"))
+        assertFalse(sharedInput.toPrompt().contains(CountingSharedContentProvider.imageUri.toString()))
         assertFalse(sharedInput.toPrompt().contains("data:image"))
     }
 
@@ -165,12 +209,6 @@ class MainActivitySharedIntentTest {
         }
     }
 
-    private fun ComposeTestRule.assertTagAbsent(tag: String) {
-        waitUntil(timeoutMillis = 5_000) {
-            onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
-        }
-    }
-
     private fun createSharedPngUri(context: Context, fileName: String): Uri {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
@@ -190,6 +228,23 @@ class MainActivitySharedIntentTest {
         }
         resolver.update(uri, publishValues, null, null)
         return uri
+    }
+
+    private class CountingImageTextExtractor : ImageTextExtractor {
+        var uriCallCount: Int = 0
+            private set
+        var bitmapCallCount: Int = 0
+            private set
+
+        override fun extract(uri: Uri): SharedTextPreview? {
+            uriCallCount += 1
+            return null
+        }
+
+        override fun extract(bitmap: Bitmap): SharedTextPreview? {
+            bitmapCallCount += 1
+            return null
+        }
     }
 
     private companion object {

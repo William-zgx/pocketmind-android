@@ -10171,3 +10171,43 @@ AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT
 - 通过：API 36 targeted emulator，`build/verification/remote-boundary-gate-smoke-current`
   记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
   隐私入口、会话管理和后台任务空态。
+
+## 2026-06-07 Remote vision share stream-count gate
+
+本轮覆盖项：
+
+- 新增 debug-only `CountingSharedContentProvider`，只进入 debug APK，不进入 release；
+  androidTest 通过 `ContentResolver.call()` 重置/读取计数，避免依赖静态变量跨进程行为。
+- `MainActivitySharedIntentTest` 新增远程视觉分享计数合同：
+  支持视觉时，混合分享中的 PNG 图片流打开 1 次、文本附件流打开 0 次、图片 OCR 调用 0 次；
+  不支持视觉时，图片流打开 0 次、文本流打开 0 次、图片 OCR 调用 0 次。
+- 支持视觉的 direct reader 测试精确断言 tiny PNG 被转为
+  `data:image/png;base64,...`，并确认 remote vision prompt 不含文件名、URI 或文本附件内容。
+- `RemoteChatRuntimeTest` 新增 HTTP fixture：实际远程请求必须使用 OpenAI 兼容
+  `image_url` content part，且 `stream=true`。
+- `shareAndPickerInput` release flow evidence 新增 exact-value 字段：
+  `remoteVisionHttpFixtureImagePartCount=1`、支持视觉图片流 `1`、OCR `0`、
+  不支持视觉图片流 `0`、OCR `0`、混合分享受保护非图片数 `1`。
+- release flow collector、formal recorder、validation verifier 和脚本自测已同步这些字段；
+  collector 的 approved-record 校验也补齐，避免只跑 collector 时漏过弱证据。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.runtime.RemoteChatRuntimeTest.sendWithImageUsesOpenAiVisionContentPartInHttpFixture'
+./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+scripts/test_validation_scripts.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/remote-vision-share-gate-current INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySharedIntentTest' INSTRUMENTATION_TIMEOUT_SECONDS=300 scripts/verify_emulator.sh
+bash scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/remote-vision-share-smoke-current INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：Runtime HTTP fixture JVM 测试覆盖远程视觉请求体。
+- 通过：validation script self-tests，覆盖新增 exact-value evidence 字段和弱证据拒绝。
+- 通过：API 36 targeted emulator，`build/verification/remote-vision-share-gate-current`
+  记录 `MainActivitySharedIntentTest` 的 `OK (5 tests)`。
+- 通过：`verify_local` 全链路，包括 unit test、lint、debug/release APK、release AAB 和 artifact scan。
+- 通过：API 36 targeted emulator smoke，`build/verification/remote-vision-share-smoke-current`
+  记录 `MainActivitySmokeTest` 的 `OK (6 tests)`。
