@@ -10590,3 +10590,35 @@ rg -n --hidden -g '!build/**' -g '!**/.git/**' 'sk-[A-Za-z0-9]{16,}' . || true
   远程视觉不支持保护和 reader 流读取计数。
 - 通过：diff whitespace 检查。
 - 通过：工作区敏感配置扫描未命中用户提供的 API key、远程 endpoint 或模型名 literal。
+
+## 2026-06-07 First-screen positioning and remote clear guard
+
+本轮覆盖项：
+
+- 顶栏从“标题和五个入口挤在同一行”改为“定位标题行 + 操作入口行”，小屏首屏可完整显示
+  `PocketMind` 与“隐私优先的随身 AI 助手”。
+- 空状态主卡标题从“开始和 PocketMind 对话”收敛为“隐私优先的随身 AI 助手”，副标题第一句直接说明：
+  本地可用、远程多模态可选、设备动作必须确认执行。
+- `MainActivitySmokeTest` 锁住首屏定位副标题和主卡主定位第一眼可见。
+- 新增 `clearingRemoteConfigWhileInRemoteModeBlocksRemoteSend` JVM 回归：
+  用户清除远程配置后继续发送，不调用 remote runtime，不进入 router，
+  UI 提示“请配置远程模型”，`ModelHealth` 标记远程模型未配置。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.clearingRemoteConfigWhileInRemoteModeBlocksRemoteSend' --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager
+./gradlew :app:installDebug
+adb shell am start -n com.bytedance.zgx.pocketmind/.MainActivity --ez com.bytedance.zgx.pocketmind.extra.SKIP_STARTUP_MODEL_RUNTIME_WORK true
+adb exec-out screencap -p > /tmp/pocketmind-positioning-first-screen.png
+```
+
+结果：
+
+- 通过：debug 和 androidTest Kotlin 编译。
+- 通过：目标 JVM 测试覆盖首屏定位文案和清除远程配置后的发送拦截。
+- 通过：API 36 emulator `MainActivitySmokeTest#chatShellShowsModelManager`。
+- 通过：截图 `/tmp/pocketmind-positioning-first-screen.png` 显示首屏主卡标题为
+  “隐私优先的随身 AI 助手”，顶栏完整显示 `PocketMind` 与定位副标题。

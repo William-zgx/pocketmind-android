@@ -36,7 +36,9 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("app_title")
 
         composeRule.onNodeWithTag("app_title").assertIsDisplayed()
-        composeRule.waitForText("开始和 PocketMind 对话")
+        composeRule.onNodeWithTag("app_positioning_subtitle").assertIsDisplayed()
+        composeRule.waitForText("隐私优先的随身 AI 助手")
+        composeRule.waitForText("本地可用，远程多模态可选，设备动作必须确认执行", substring = true)
         composeRule.waitForText("模型未就绪")
         composeRule.onNodeWithTag("home_positioning_panel").performScrollTo().assertIsDisplayed()
         composeRule.waitForText("为什么装它")

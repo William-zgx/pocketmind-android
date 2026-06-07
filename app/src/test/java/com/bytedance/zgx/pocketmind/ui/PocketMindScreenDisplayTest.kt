@@ -37,8 +37,11 @@ class PocketMindScreenDisplayTest {
         assertTrue(PRODUCT_POSITIONING_TEXT.contains("必须确认执行"))
         assertTrue(PRODUCT_POSITIONING_SHORT_TEXT.contains("隐私优先"))
         assertTrue(PRODUCT_POSITIONING_SHORT_TEXT.contains("随身 AI 助手"))
-        assertTrue(PRODUCT_HOME_TITLE_TEXT.contains("PocketMind"))
-        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("输入问题"))
+        assertTrue(PRODUCT_HOME_TITLE_TEXT.contains("隐私优先"))
+        assertTrue(PRODUCT_HOME_TITLE_TEXT.contains("随身 AI 助手"))
+        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("本地可用"))
+        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("远程多模态可选"))
+        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("必须确认执行"))
         assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("不读取本地数据"))
         assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("不会自动发送远程请求"))
         val homeValueText = HOME_VALUE_PROPOSITIONS.joinToString("\n") { "${it.title}\n${it.body}" }

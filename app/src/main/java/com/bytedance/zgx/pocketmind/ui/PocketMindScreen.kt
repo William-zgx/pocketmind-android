@@ -602,6 +602,13 @@ private fun ChatTopBar(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 TopActionButton(
                     modifier = Modifier.testTag("top_create_session_button"),
                     icon = Icons.Filled.Add,
@@ -3083,10 +3090,10 @@ internal const val PRODUCT_POSITIONING_SHORT_TEXT =
     "隐私优先的随身 AI 助手"
 
 internal const val PRODUCT_HOME_TITLE_TEXT =
-    "开始和 PocketMind 对话"
+    "隐私优先的随身 AI 助手"
 
 internal const val PRODUCT_HOME_DESCRIPTION_TEXT =
-    "先输入问题、附加图片或准备设备动作；没有模型时只展示启动选项，不读取本地数据，也不会自动发送远程请求。"
+    "本地可用，远程多模态可选，设备动作必须确认执行。没有模型时只展示启动选项，不读取本地数据，也不会自动发送远程请求。"
 
 internal enum class HomeValueKind {
     Local,

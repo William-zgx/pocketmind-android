@@ -689,6 +689,43 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun clearingRemoteConfigWhileInRemoteModeBlocksRemoteSend() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isReady)
+        assertEquals(InferenceMode.Remote, viewModel.uiState.value.inferenceMode)
+
+        viewModel.updateRemoteModelConfig(RemoteModelConfig())
+        advanceUntilIdle()
+        viewModel.sendMessage("普通远程问题")
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(0, assistantRouter.routeCallCount)
+        assertEquals("请配置远程模型", viewModel.uiState.value.statusText)
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertEquals("远程模型未配置", viewModel.uiState.value.modelHealth.failureReason)
+        val notice = sessionStore.messages.single()
+        assertEquals(MessageRole.Assistant, notice.role)
+        assertEquals(MessagePrivacy.LocalOnly, notice.privacy)
+        assertTrue(notice.text.contains("配置远程模型地址和模型名"))
+        assertTrue(notice.text.contains("还没有发送"))
+        assertFalse(notice.text.contains("普通远程问题"))
+    }
+
+    @Test
     fun remoteModeUnconfiguredSharedImageSignalShowsConfigNoticeWithoutReadingOrSending() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore()
