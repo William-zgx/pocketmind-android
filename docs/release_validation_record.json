@@ -5,7 +5,7 @@
   "emulatorRegression": {
     "status": "passed",
     "reportPath": "build/verification/product-contract-regression-current/regression-emulator.properties",
-    "reportSha256": "ed29aeb0a5cfe0508bf273ecfbbc2c6c8a95f8a1d1306c4a6f108410ca8a2844",
+    "reportSha256": "bcc2fb1ceee0d37d3a2204ea533256b4d24891b59c3f69fc051b4a36a6f5bfe0",
     "avd": "pocketmind_api36_arm64",
     "apiLevel": 36,
     "abi": "arm64-v8a",
@@ -52,9 +52,9 @@
     {
       "apiLevel": 36,
       "status": "passed",
-      "evidence": "API 36 arm64 emulator regression passed 35 AndroidTest(s) on pocketmind_api36_arm64 with source AndroidTest count matching the regression report after product-contract UI wording updates.",
+      "evidence": "API 36 arm64 clean-device emulator regression passed 51 AndroidTest(s) on pocketmind_api36_arm64 with source AndroidTest count matching the current regression report after core flow fixes.",
       "evidencePath": "build/verification/product-contract-regression-current/regression-emulator.properties",
-      "evidenceSha256": "ed29aeb0a5cfe0508bf273ecfbbc2c6c8a95f8a1d1306c4a6f108410ca8a2844"
+      "evidenceSha256": "bcc2fb1ceee0d37d3a2204ea533256b4d24891b59c3f69fc051b4a36a6f5bfe0"
     }
   ],
   "manualAcceptance": {

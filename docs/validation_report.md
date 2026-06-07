@@ -10927,3 +10927,57 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 - 真机/不同 Android 版本的真实下载、校验、加载耗时和空间压力仍需要发布前矩阵验收。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
+
+## 2026-06-07 API 36 regression evidence refresh after core flow fixes
+
+本轮覆盖项：
+
+- 当前 `app/src/androidTest` 源测试数已增长到 51；旧
+  `product-contract-regression-current` report 仍绑定 35 个 AndroidTest，
+  release flow matrix candidate 因 stale source count 正确拒绝复用旧证据。
+- 重新执行 API 36 arm64 clean-device 完整模拟器回归，刷新
+  `build/verification/product-contract-regression-current/regression-emulator.properties`。
+- `docs/release_validation_record.json` 的 `emulatorRegression.reportSha256` 和
+  API 36 `apiMatrix.evidenceSha256` 同步到当前 51-test 回归 report。
+- 重新生成 release flow matrix candidate；它不再因为 stale source count 或 SHA mismatch
+  失败，而是继续因正式 flow evidence 未批准而 fail closed。
+
+验证命令：
+
+```bash
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 AVD_NAME=pocketmind_api36_arm64 CLEAN_DEVICE=1 \
+  EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 \
+  ARTIFACT_DIR=build/verification/product-contract-regression-current \
+  REGRESSION_REPORT_FILE=build/verification/product-contract-regression-current/regression-emulator.properties \
+  scripts/regression_emulator.sh
+
+ARTIFACT_DIR=build/verification/release-flow-matrix-after-core-fixes-current \
+  REPORT_FILE=build/verification/release-flow-matrix-after-core-fixes-current/release-flow-matrix-candidate-evidence.properties \
+  scripts/collect_release_flow_matrix_evidence.sh
+
+scripts/verify_release_validation_record.sh \
+  --report build/verification/release-validation-after-core-fixes-current.properties
+```
+
+结果：
+
+- 通过：API 36 arm64 `pocketmind_api36_arm64` clean-device 完整模拟器回归，
+  `actual_android_test_count=51`、`source_android_test_count=51`、
+  `expected_android_test_count=51`。
+- 通过：当前 regression report SHA-256 为
+  `bcc2fb1ceee0d37d3a2204ea533256b4d24891b59c3f69fc051b4a36a6f5bfe0`，
+  已同步到 release validation record 的 emulator regression 和 API 36 matrix entry。
+- 预期失败：`collect_release_flow_matrix_evidence.sh` 生成 candidate evidence，
+  `sourceAndroidTestCount=51`，失败目标为 `flow-matrix`，原因是正式 flow evidence
+  仍未 approved。
+- 预期失败：`verify_release_validation_record.sh` 不再报告 API 36 SHA/source-count
+  mismatch；当前失败项集中在 non-emulator physical device、API 28/32/33/34、
+  manual acceptance、正式 flow evidence、截图视觉回归、performance sanity 和 reviewer/date。
+
+剩余风险：
+
+- 本轮只刷新 API 36 当前源码面的完整模拟器证据，不替代 API 28/32/33/34 矩阵、
+  真机、性能基线、视觉回归截图或人工验收。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。
