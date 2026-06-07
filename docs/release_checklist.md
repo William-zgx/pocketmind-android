@@ -140,6 +140,11 @@ release ticket or PR.
   path/SHA-256. Each linked screenshot file must be PNG evidence captured by
   `scripts/capture_release_screenshots.sh`; text or placeholder files are not
   accepted.
+- [ ] Every screenshot report includes the matching UI dump path/SHA-256,
+  `visualRegression=passed`, and the expected `requiredText` contract for that
+  release screen. The release validation verifier must reject screenshots whose
+  UI dump does not contain the expected visible text for chat home, model
+  manager, confirmation, and background/audit screens.
 
 ## Privacy And License
 

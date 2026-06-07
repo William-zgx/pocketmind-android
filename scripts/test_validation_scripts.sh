@@ -271,7 +271,13 @@ FAKE_FRESH_START_UI
       /sdcard/pocketmind-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
 <hierarchy>
+  <node text="PocketMind" bounds="[80,80][360,140]" />
+  <node text="隐私优先的随身 AI 助手" bounds="[80,145][640,205]" />
+  <node text="开始和 PocketMind 对话" bounds="[80,460][780,560]" />
   <node text="模型管理" content-desc="模型管理" bounds="[760,80][980,180]" />
+  <node text="当前模型" bounds="[80,260][420,340]" />
+  <node text="本地可用" bounds="[80,360][420,430]" />
+  <node text="远程多模态可选" bounds="[80,440][620,510]" />
   <node text="后台任务" content-desc="后台任务" bounds="[520,80][740,180]" />
   <node text="输入问题" bounds="[120,2100][780,2220]" />
   <node content-desc="发送" bounds="[920,2100][1020,2220]" />
@@ -1485,10 +1491,40 @@ PY
   printf 'screenshot_dir=%s\n' "$TMP_DIR/validation-screenshots"
   for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
     screenshot_path="$TMP_DIR/validation-screenshots/$screenshot_name.png"
+    screenshot_ui_dump="$TMP_DIR/validation-screenshots/$screenshot_name.xml"
     screenshot_sha="$(shasum -a 256 "$screenshot_path" | awk '{print $1}')"
+    case "$screenshot_name" in
+      chat-home)
+        screenshot_required_text="PocketMind|隐私优先的随身 AI 助手|开始和 PocketMind 对话|模型管理"
+        ;;
+      model-manager)
+        screenshot_required_text="模型管理|当前模型|本地可用|远程多模态可选"
+        ;;
+      confirmation-sheet)
+        screenshot_required_text="确认执行|读取剪贴板|取消"
+        ;;
+      background-tasks-or-audit)
+        screenshot_required_text="后台任务|最近审计日志|最近 Agent 轨迹|暂无运行中的后台任务"
+        ;;
+    esac
+    {
+      printf '<hierarchy>\n'
+      old_ifs="$IFS"
+      IFS='|' read -r -a screenshot_required_texts <<< "$screenshot_required_text"
+      IFS="$old_ifs"
+      for screenshot_text in "${screenshot_required_texts[@]}"; do
+        printf '  <node text="%s" />\n' "$screenshot_text"
+      done
+      printf '</hierarchy>\n'
+    } > "$screenshot_ui_dump"
+    screenshot_ui_dump_sha="$(shasum -a 256 "$screenshot_ui_dump" | awk '{print $1}')"
     printf 'screenshot.%s.path=%s\n' "$screenshot_name" "$screenshot_path"
     printf 'screenshot.%s.sha256=%s\n' "$screenshot_name" "$screenshot_sha"
     printf 'screenshot.%s.sanitized=true\n' "$screenshot_name"
+    printf 'screenshot.%s.uiDump=%s\n' "$screenshot_name" "$screenshot_ui_dump"
+    printf 'screenshot.%s.uiDumpSha256=%s\n' "$screenshot_name" "$screenshot_ui_dump_sha"
+    printf 'screenshot.%s.visualRegression=passed\n' "$screenshot_name"
+    printf 'screenshot.%s.requiredText=%s\n' "$screenshot_name" "$screenshot_required_text"
   done
 } > "$VALIDATION_SCREENSHOT_REPORT"
 mkdir -p "$TMP_DIR/validation-api-evidence"
@@ -2326,6 +2362,21 @@ report = Path(sys.argv[4])
 record = json.loads(source.read_text())
 screenshot.write_text("not a png\n")
 screenshot_sha = hashlib.sha256(screenshot.read_bytes()).hexdigest()
+ui_dump = screenshot.with_suffix(".xml")
+ui_dump.write_text(
+    "\n".join(
+        [
+            "<hierarchy>",
+            '  <node text="PocketMind" />',
+            '  <node text="隐私优先的随身 AI 助手" />',
+            '  <node text="开始和 PocketMind 对话" />',
+            '  <node text="模型管理" />',
+            "</hierarchy>",
+            "",
+        ]
+    )
+)
+ui_dump_sha = hashlib.sha256(ui_dump.read_bytes()).hexdigest()
 report.write_text(
     "\n".join(
         [
@@ -2340,6 +2391,10 @@ report.write_text(
             f"screenshot.chat-home.path={screenshot}",
             f"screenshot.chat-home.sha256={screenshot_sha}",
             "screenshot.chat-home.sanitized=true",
+            f"screenshot.chat-home.uiDump={ui_dump}",
+            f"screenshot.chat-home.uiDumpSha256={ui_dump_sha}",
+            "screenshot.chat-home.visualRegression=passed",
+            "screenshot.chat-home.requiredText=PocketMind|隐私优先的随身 AI 助手|开始和 PocketMind 对话|模型管理",
             "",
         ]
     )
@@ -2354,6 +2409,36 @@ expect_failure \
   "release validation verifier rejects non-png screenshot evidence" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_SCREENSHOT_NOT_PNG" --report "$ARTIFACT_DIR/release-validation-screenshot-not-png.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-not-png.properties" "chat-home-screenshot-not-png"
+VALIDATION_SCREENSHOT_WEAK_VISUAL="$TMP_DIR/release-validation-screenshot-weak-visual.json"
+VALIDATION_SCREENSHOT_WEAK_VISUAL_REPORT="$TMP_DIR/release-screenshots-weak-visual.properties"
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_SCREENSHOT_WEAK_VISUAL" "$VALIDATION_SCREENSHOT_REPORT" "$VALIDATION_SCREENSHOT_WEAK_VISUAL_REPORT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+report = Path(sys.argv[3])
+weak_report = Path(sys.argv[4])
+record = json.loads(source.read_text())
+weak_lines = [
+    line
+    for line in report.read_text().splitlines()
+    if not line.startswith("screenshot.chat-home.uiDump")
+    and not line.startswith("screenshot.chat-home.uiDumpSha256")
+    and not line.startswith("screenshot.chat-home.visualRegression")
+]
+weak_report.write_text("\n".join(weak_lines) + "\n")
+record["screenshots"][0]["reportPath"] = str(weak_report)
+record["screenshots"][0]["reportSha256"] = hashlib.sha256(weak_report.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects screenshot report without visual contract" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_SCREENSHOT_WEAK_VISUAL" --report "$ARTIFACT_DIR/release-validation-screenshot-weak-visual.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-weak-visual.properties" "chat-home-screenshot-visual-regression-not-passed"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-screenshot-weak-visual.properties" "chat-home-screenshot-ui-dump-missing"
 VALIDATION_MISSING_DEVICE="$TMP_DIR/release-validation-missing-device.json"
 sed 's#"reportPath": "'"$VALIDATION_DEVICE_REPORT"'"#"reportPath": "'"$TMP_DIR/missing-device.properties"'"#' "$VALIDATION_APPROVED" > "$VALIDATION_MISSING_DEVICE"
 expect_failure \
@@ -4470,8 +4555,15 @@ for screenshot_name in chat-home model-manager confirmation-sheet background-tas
   [[ -s "$ARTIFACT_DIR/screenshots/$screenshot_name.png" ]] ||
     fail "Expected release screenshot evidence for $screenshot_name"
   assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.${screenshot_name}.sanitized=true"
+  assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.${screenshot_name}.uiDump=$ARTIFACT_DIR/ui/screenshot-${screenshot_name}.xml"
+  assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.${screenshot_name}.visualRegression=passed"
+  assert_report_contains_text "$ARTIFACT_DIR/release-screenshots.properties" "screenshot.${screenshot_name}.requiredText="
+  [[ -s "$ARTIFACT_DIR/ui/screenshot-${screenshot_name}.xml" ]] ||
+    fail "Expected release screenshot UI dump for $screenshot_name"
   grep -Eq "^screenshot[.]${screenshot_name}[.]sha256=[0-9a-f]{64}$" "$ARTIFACT_DIR/release-screenshots.properties" ||
     fail "Expected release screenshot SHA for $screenshot_name"
+  grep -Eq "^screenshot[.]${screenshot_name}[.]uiDumpSha256=[0-9a-f]{64}$" "$ARTIFACT_DIR/release-screenshots.properties" ||
+    fail "Expected release screenshot UI dump SHA for $screenshot_name"
 done
 REGRESSION_COUNT_FIXTURE="$TMP_DIR/android-test-count-fixture"
 mkdir -p "$REGRESSION_COUNT_FIXTURE/java/example"

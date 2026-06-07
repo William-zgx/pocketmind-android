@@ -274,16 +274,85 @@ optional_tap_node() {
 capture_screenshot() {
   local name="$1"
   local path="${SCREENSHOT_DIR}/${name}.png"
+  local ui_dump required_texts ui_dump_sha
   mkdir -p "$SCREENSHOT_DIR"
   if ! "${ADB[@]}" exec-out screencap -p > "$path"; then
     fail evidence "${name}-screenshot-capture-failed" "Failed to capture $name screenshot."
   fi
+  ui_dump="$(dump_ui "screenshot-${name}")"
+  validate_screenshot_visual_contract "$name" "$ui_dump"
   local sha
   sha="$(shasum -a 256 "$path" | awk '{print $1}')"
+  ui_dump_sha="$(shasum -a 256 "$ui_dump" | awk '{print $1}')"
+  required_texts="$(screenshot_required_texts "$name" | paste -sd '|' -)"
   CAPTURED_SCREENSHOTS+=("screenshot.${name}.path=$path")
   CAPTURED_SCREENSHOTS+=("screenshot.${name}.sha256=$sha")
   CAPTURED_SCREENSHOTS+=("screenshot.${name}.sanitized=true")
+  CAPTURED_SCREENSHOTS+=("screenshot.${name}.uiDump=$ui_dump")
+  CAPTURED_SCREENSHOTS+=("screenshot.${name}.uiDumpSha256=$ui_dump_sha")
+  CAPTURED_SCREENSHOTS+=("screenshot.${name}.visualRegression=passed")
+  CAPTURED_SCREENSHOTS+=("screenshot.${name}.requiredText=$required_texts")
   echo "Captured $name: $path"
+}
+
+screenshot_required_texts() {
+  case "$1" in
+    chat-home)
+      printf '%s\n' "PocketMind" "隐私优先的随身 AI 助手" "开始和 PocketMind 对话" "模型管理"
+      ;;
+    model-manager)
+      printf '%s\n' "模型管理" "当前模型" "本地可用" "远程多模态可选"
+      ;;
+    confirmation-sheet)
+      printf '%s\n' "确认执行" "读取剪贴板" "取消"
+      ;;
+    background-tasks-or-audit)
+      printf '%s\n' "后台任务" "最近审计日志" "最近 Agent 轨迹" "暂无运行中的后台任务"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+validate_screenshot_visual_contract() {
+  local name="$1"
+  local ui_dump="$2"
+  python3 - "$name" "$ui_dump" <<'PY' || fail visual-regression "${name}-visual-contract-missing" "Screenshot $name is missing required UI text in $ui_dump."
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+name = sys.argv[1]
+xml_path = Path(sys.argv[2])
+required = {
+    "chat-home": ["PocketMind", "隐私优先的随身 AI 助手", "开始和 PocketMind 对话", "模型管理"],
+    "model-manager": ["模型管理", "当前模型", "本地可用", "远程多模态可选"],
+    "confirmation-sheet": ["确认执行", "读取剪贴板", "取消"],
+    "background-tasks-or-audit": ["后台任务", "最近审计日志", "最近 Agent 轨迹", "暂无运行中的后台任务"],
+}[name]
+raw = xml_path.read_text(errors="ignore")
+start = raw.find("<")
+if start > 0:
+    raw = raw[start:]
+root = ET.fromstring(raw)
+surface = "\n".join(
+    " ".join(
+        value
+        for value in (
+            node.attrib.get("text", ""),
+            node.attrib.get("content-desc", ""),
+            node.attrib.get("resource-id", ""),
+        )
+        if value
+    )
+    for node in root.iter("node")
+)
+missing = [text for text in required if text not in surface]
+if missing:
+    print(",".join(missing), file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 capture_failure_artifacts() {

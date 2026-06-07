@@ -566,6 +566,10 @@ def validate_png_file(name, path):
     if signature != b"\x89PNG\r\n\x1a\n":
         failures.append(f"{name}-screenshot-not-png")
 
+def slug(value):
+    slugged = re.sub(r"[^0-9A-Za-z]+", "-", value).strip("-").lower()
+    return slugged or "non-ascii-text"
+
 def validate_screenshot_report(name, entry, path):
     report_path = entry.get("reportPath", "")
     if not non_empty_string(report_path):
@@ -588,6 +592,58 @@ def validate_screenshot_report(name, entry, path):
         failures.append(f"{name}-screenshot-report-sha-mismatch")
     if props.get(f"screenshot.{name}.sanitized", "").lower() not in {"true", "1", "yes"}:
         failures.append(f"{name}-screenshot-report-not-sanitized")
+    if props.get(f"screenshot.{name}.visualRegression") != "passed":
+        failures.append(f"{name}-screenshot-visual-regression-not-passed")
+    expected_text = "|".join(required_screenshot_texts(name))
+    if props.get(f"screenshot.{name}.requiredText") != expected_text:
+        failures.append(f"{name}-screenshot-required-text-contract-mismatch")
+    ui_dump = props.get(f"screenshot.{name}.uiDump", "")
+    if not non_empty_string(ui_dump):
+        failures.append(f"{name}-screenshot-ui-dump-missing")
+    elif not Path(ui_dump).is_file():
+        failures.append(f"{name}-screenshot-ui-dump-file-missing")
+    else:
+        validate_file_sha(f"{name}-screenshot-ui-dump", ui_dump, props.get(f"screenshot.{name}.uiDumpSha256", ""))
+        validate_screenshot_ui_contract(name, ui_dump)
+
+def required_screenshot_texts(name):
+    return {
+        "chat-home": ["PocketMind", "隐私优先的随身 AI 助手", "开始和 PocketMind 对话", "模型管理"],
+        "model-manager": ["模型管理", "当前模型", "本地可用", "远程多模态可选"],
+        "confirmation-sheet": ["确认执行", "读取剪贴板", "取消"],
+        "background-tasks-or-audit": ["后台任务", "最近审计日志", "最近 Agent 轨迹", "暂无运行中的后台任务"],
+    }.get(name, [])
+
+def validate_screenshot_ui_contract(name, ui_dump):
+    expected = required_screenshot_texts(name)
+    if not expected:
+        failures.append(f"{name}-screenshot-required-text-contract-missing")
+        return
+    try:
+        raw = Path(ui_dump).read_text(errors="ignore")
+        start = raw.find("<")
+        if start > 0:
+            raw = raw[start:]
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(raw)
+    except Exception:
+        failures.append(f"{name}-screenshot-ui-dump-parse-failed")
+        return
+    surface = "\n".join(
+        " ".join(
+            value
+            for value in (
+                node.attrib.get("text", ""),
+                node.attrib.get("content-desc", ""),
+                node.attrib.get("resource-id", ""),
+            )
+            if value
+        )
+        for node in root.iter("node")
+    )
+    for text in expected:
+        if text not in surface:
+            failures.append(f"{name}-screenshot-required-text-missing-{slug(text)}")
 
 def validate_instrumentation_output(prefix, output_file):
     if not non_empty_string(output_file):

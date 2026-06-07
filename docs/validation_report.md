@@ -9980,3 +9980,29 @@ scripts/test_validation_scripts.sh
 - 通过：workflow YAML 可解析。
 - 通过：release operations verifier 接受包含 CI evidence 的 approved initial-release record。
 - 通过：release operations verifier 拒绝把本地验证 evidence 冒充 connected Android test evidence。
+
+## 2026-06-07 Release screenshot visual contract
+
+本轮覆盖项：
+
+- `scripts/capture_release_screenshots.sh` 在每张 release 截图后同步保存 UI dump，
+  记录 `uiDump`、`uiDumpSha256`、`visualRegression=passed` 和 `requiredText`。
+- 固定 4 个发布截图的可见文字合同：chat home、model manager、confirmation sheet、
+  background tasks / audit。截图即使是 PNG，只要停在默认页、空白页或错误页面，UI dump
+  缺少这些文字就会失败。
+- `scripts/verify_release_validation_record.sh` 会验证截图报告的 visual contract、
+  UI dump SHA-256 和必需文案；缺少 UI dump 或 visualRegression 不通过的报告会被拒绝。
+- `scripts/test_validation_scripts.sh` 新增弱 visual report 负例，并增强 release screenshot
+  capture 自测，确保截图报告实际写出 UI dump、requiredText 和 visualRegression 字段。
+
+验证命令：
+
+```bash
+bash -n scripts/capture_release_screenshots.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 预期：approved release validation record 必须携带 release screenshot visual contract 才能通过。
+- 预期：缺少 UI dump 或 `visualRegression=passed` 的截图报告会被 release validation verifier 拒绝。
