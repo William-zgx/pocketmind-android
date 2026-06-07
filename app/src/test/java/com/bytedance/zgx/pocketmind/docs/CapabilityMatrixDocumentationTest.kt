@@ -192,6 +192,7 @@ class CapabilityMatrixDocumentationTest {
             "voice_transcript_input" to listOf(
                 SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "voice_permission_disclosure_dialog"),
                 SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/PocketMindVoiceInputConsentUiTest.kt", "voiceButtonRequiresAppConsentBeforeStartingVoiceInput"),
+                SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityVoicePermissionUiTest.kt", "voiceConsentThenDenyMicrophonePermissionShowsFailureAndKeepsRecoveryEntry"),
             ),
             "share_and_file_picker_input" to listOf(
                 SourceAnchor("app/src/main/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreen.kt", "remote_attachment_protection_notice"),

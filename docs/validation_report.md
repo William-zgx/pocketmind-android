@@ -10729,3 +10729,55 @@ scripts/verify_privacy_review.sh --report build/verification/privacy-review-curr
 - 麦克风系统权限拒绝/恢复还未补真实系统弹窗模拟器测试。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
+
+## 2026-06-07 Voice microphone permission denial Activity contract
+
+本轮覆盖项：
+
+- 新增 `MainActivityVoicePermissionUiTest`，覆盖真实 Activity 语音入口：
+  点击麦克风 -> App 内语音输入说明 -> 确认 -> Android 系统麦克风权限弹窗 -> 拒绝。
+- 测试断言拒绝后 `app_status_text` 显示“未授权麦克风权限”，`voice_capture_bar` 不出现，
+  `composer_input` 仍可用，`RECORD_AUDIO` 仍为 denied。
+- 测试断言拒绝后语音入口仍可再次打开 App 内说明弹窗，证明恢复入口仍可达；
+  不依赖模拟器是否有可用 `SpeechRecognizer`。
+- Capability Matrix / `docs/capability_matrix.json` 将 `MainActivityVoicePermissionUiTest`
+  纳入 `voice_transcript_input` required tests；文档锚点同步锁定真实系统拒绝证据。
+- `AndroidManifestTest` 新增 `RECORD_AUDIO` 声明断言，避免语音能力和 Manifest 脱节。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest'
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivityVoicePermissionUiTest
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.voicePermissionFailureClearsCaptureAndCanRecoverWithoutSending' --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest'
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.PocketMindVoiceInputConsentUiTest
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.AndroidManifestTest' --tests 'com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.voicePermissionFailureClearsCaptureAndCanRecoverWithoutSending'
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=0 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityVoicePermissionUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/voice-permission-denial-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：androidTest Kotlin 编译、Capability Matrix 文档契约、Manifest 契约和 ViewModel
+  语音权限失败/恢复状态机定向测试。
+- 通过：API 36 emulator `MainActivityVoicePermissionUiTest`，裸 Gradle connected test 1/1 通过。
+- 通过：API 36 emulator `PocketMindVoiceInputConsentUiTest`，App 内语音显著同意弹窗 1/1 通过。
+- 通过：`scripts/verify_emulator.sh` 生成
+  `build/verification/voice-permission-denial-current/device-verification.properties`，
+  记录 `status=passed`、`instrumentation_test_count=1`、
+  `instrumentation_class=com.bytedance.zgx.pocketmind.MainActivityVoicePermissionUiTest`。
+- 通过：`build/verification/voice-permission-denial-current/emulator-verification.properties`
+  记录 `status=passed`、`api_level=36`、`abi=arm64-v8a`、`avd=pocketmind_api36_arm64`。
+
+剩余风险：
+
+- 本轮不把真实 `SpeechRecognizer.onResults()` 进入输入框写成自动化通过；该路径仍由
+  ViewModel draft 测试和后续真机/手工语音验收共同覆盖。
+- Android 设置页恢复授权、永久拒绝后的设置跳转和真实语音服务可用性仍属于手工验收或后续更专门的设备测试。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。

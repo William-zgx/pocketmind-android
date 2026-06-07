@@ -15,6 +15,13 @@ class AndroidManifestTest {
     }
 
     @Test
+    fun declaresMicrophonePermissionForVoiceInput() {
+        val manifest = readManifest()
+
+        assertTrue(manifest.contains("""android.permission.RECORD_AUDIO"""))
+    }
+
+    @Test
     fun declaresAndroid14SelectedVisualMediaPermission() {
         val manifest = readManifest()
 

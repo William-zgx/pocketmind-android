@@ -28,7 +28,8 @@
         "PocketMindViewModelTest",
         "PocketMindScreenDisplayTest",
         "MainActivityAdaptiveUiTest",
-        "PocketMindVoiceInputConsentUiTest"
+        "PocketMindVoiceInputConsentUiTest",
+        "MainActivityVoicePermissionUiTest"
       ]
     },
     {
@@ -207,7 +208,8 @@
       "requiredTests": [
         "PocketMindViewModelTest",
         "MainActivitySmokeTest",
-        "PocketMindVoiceInputConsentUiTest"
+        "PocketMindVoiceInputConsentUiTest",
+        "MainActivityVoicePermissionUiTest"
       ],
       "ownerAgent": "Multimodal"
     },

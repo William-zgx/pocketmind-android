@@ -133,6 +133,7 @@ object CapabilityMatrix {
                     "PocketMindViewModelTest",
                     "MainActivitySmokeTest",
                     "PocketMindVoiceInputConsentUiTest",
+                    "MainActivityVoicePermissionUiTest",
                 ),
                 ownerAgent = CapabilityOwnerAgent.Multimodal,
             ),
@@ -230,6 +231,7 @@ object CapabilityMatrix {
                     "PocketMindScreenDisplayTest",
                     "MainActivityAdaptiveUiTest",
                     "PocketMindVoiceInputConsentUiTest",
+                    "MainActivityVoicePermissionUiTest",
                 ),
             ),
             SensitiveCapabilityDisclosure(
