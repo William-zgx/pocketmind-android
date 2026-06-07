@@ -9833,3 +9833,49 @@ git diff --check
   `选择本地离线或可选远程；远程发送和设备动作仍会先确认。`
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Live remote emulator input targeting and evidence redaction
+
+本轮覆盖项：
+
+- 修复 `scripts/live_remote_emulator.sh` 的真实设备输入流程：不再只按屏幕比例盲点
+  prompt/send 坐标，而是在输入前、发送前、发送后分别采集 UI dump，并从
+  `EditText`、`发送`、`确认发送` 节点坐标执行 `adb shell input tap`。
+- live remote 脚本现在能识别 `即将发送到远程模型` 披露 sheet，并在真实发送前
+  点击 `确认发送`；report 新增 `input_dump`、`send_ready_dump`、
+  `after_send_dump` 和 `remote_confirmation_handled`。
+- 退出前清洗文本证据中的 API key、远程 base URL、host 和 model，避免归档的
+  XML/logcat artifact 保留远程配置 literal；report 继续只写 `<redacted>` 和来源变量名。
+- `scripts/test_validation_scripts.sh` 新增 fake UI dump 覆盖输入框、发送按钮、
+  远程发送确认和 artifact redaction。
+
+验证命令：
+
+```bash
+bash -n scripts/live_remote_emulator.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+POCKETMIND_LIVE_REMOTE_BASE_URL=<provided-remote-base-url> \
+POCKETMIND_LIVE_REMOTE_MODEL=<provided-remote-model> \
+POCKETMIND_LIVE_REMOTE_API_KEY=<provided-secret> \
+POCKETMIND_LIVE_REMOTE_PROMPT='Return POCKETMIND_LIVE_OK' \
+POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT=POCKETMIND_LIVE_OK \
+POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=75 \
+ARTIFACT_DIR=build/verification/live-remote-emulator-deepseek-current \
+REPORT_FILE=build/verification/live-remote-emulator-deepseek-current/live-remote-emulator.properties \
+scripts/live_remote_emulator.sh
+bash scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：API 36 arm64 emulator 真实远程模型请求返回 `POCKETMIND_LIVE_OK`，
+  `live-remote-emulator.properties` 记录 `status=passed`、`target=live-remote-emulator`、
+  `device_target=emulator`、`remote_confirmation_handled=true`。
+- 通过：`after_send_dump` 证明远程发送前出现确认 sheet，最终 `ui_dump` 证明收到
+  远程响应，且没有 `远程模型请求失败`。
+- 通过：live remote 文本证据目录扫描未命中用户提供的 API key、endpoint 或 model literal；
+  相关 UI/logcat 文本已替换为 `<redacted>`。
+- 通过：仓库源码扫描未命中用户提供的 API key、endpoint 或 model literal。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。

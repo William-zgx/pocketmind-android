@@ -156,6 +156,15 @@ FAKE_PACKAGE_DUMPSYS
       uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
         echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote.xml"
         ;;
+      uiautomator\ dump\ /sdcard/pocketmind-live-remote-before-input.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-before-input.xml"
+        ;;
+      uiautomator\ dump\ /sdcard/pocketmind-live-remote-before-send.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-before-send.xml"
+        ;;
+      uiautomator\ dump\ /sdcard/pocketmind-live-remote-after-send.xml)
+        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-after-send.xml"
+        ;;
       uiautomator\ dump\ /sdcard/pocketmind-fresh-start.xml)
         echo "UI hierchary dumped to: /sdcard/pocketmind-fresh-start.xml"
         ;;
@@ -213,6 +222,34 @@ FAKE_PACKAGE_DUMPSYS
     case "$source" in
       /sdcard/pocketmind-live-remote.xml)
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
+        ;;
+      /sdcard/pocketmind-live-remote-before-input.xml)
+        cat > "$destination" <<'FAKE_LIVE_REMOTE_INPUT_UI'
+<hierarchy>
+  <node class="android.widget.EditText" enabled="true" clickable="true" bounds="[169,2103][621,2313]" />
+  <node class="android.widget.Button" content-desc="发送" enabled="false" clickable="false" bounds="[911,2176][1048,2313]" />
+</hierarchy>
+FAKE_LIVE_REMOTE_INPUT_UI
+        ;;
+      /sdcard/pocketmind-live-remote-before-send.xml)
+        cat > "$destination" <<'FAKE_LIVE_REMOTE_SEND_UI'
+<hierarchy>
+  <node class="android.widget.EditText" enabled="true" clickable="true" bounds="[169,2103][621,2313]" />
+  <node class="android.widget.Button" content-desc="发送" enabled="true" clickable="true" bounds="[911,2176][1048,2313]" />
+</hierarchy>
+FAKE_LIVE_REMOTE_SEND_UI
+        ;;
+      /sdcard/pocketmind-live-remote-after-send.xml)
+        cat > "$destination" <<'FAKE_LIVE_REMOTE_CONFIRM_UI'
+<hierarchy>
+  <node text="即将发送到远程模型" enabled="true" clickable="false" bounds="[80,900][980,980]" />
+  <node text="远程地址：remote.example.test" enabled="true" clickable="false" bounds="[80,1000][980,1080]" />
+  <node text="模型：validation-model" enabled="true" clickable="false" bounds="[80,1100][980,1180]" />
+  <node class="android.view.View" enabled="true" clickable="true" bounds="[80,1850][980,1970]">
+    <node text="确认发送" enabled="true" clickable="false" bounds="[420,1880][660,1930]" />
+  </node>
+</hierarchy>
+FAKE_LIVE_REMOTE_CONFIRM_UI
         ;;
       /sdcard/pocketmind-fresh-start.xml)
         if [[ -n "${FAKE_FRESH_START_UI_TEXT:-}" ]]; then
@@ -4042,10 +4079,12 @@ grep -q -- "-s device-a install -r app/build/outputs/apk/debug/app-debug.apk" "$
   fail "Expected explicit physical live remote helper to install the debug APK on the selected device"
 grep -q -- "-s device-a shell wm size" "$FAKE_ADB_LOG" ||
   fail "Expected explicit physical live remote helper to read the device screen size"
-grep -q -- "-s device-a shell input tap 345 2250" "$FAKE_ADB_LOG" ||
-  fail "Expected explicit physical live remote helper to tap the prompt field using screen-relative coordinates"
-grep -q -- "-s device-a shell input tap 960 2250" "$FAKE_ADB_LOG" ||
-  fail "Expected explicit physical live remote helper to tap the send button using screen-relative coordinates"
+grep -q -- "-s device-a shell input tap 395 2208" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to tap the prompt field from UI dump coordinates"
+grep -q -- "-s device-a shell input tap 979 2244" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to tap the send button from UI dump coordinates"
+grep -q -- "-s device-a shell input tap 530 1910" "$FAKE_ADB_LOG" ||
+  fail "Expected explicit physical live remote helper to confirm remote send from UI dump coordinates"
 receiver_broadcast_count="$(
   grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
 )"
@@ -4058,6 +4097,17 @@ assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "serial=dev
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "base_url=<redacted>"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "model=<redacted>"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "input_dump=$ARTIFACT_DIR/live-remote-before-input.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "send_ready_dump=$ARTIFACT_DIR/live-remote-before-send.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "after_send_dump=$ARTIFACT_DIR/live-remote-after-send.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "remote_confirmation_handled=true"
+assert_report_contains_text "$ARTIFACT_DIR/live-remote-after-send.xml" "远程地址：<redacted>"
+assert_report_contains_text "$ARTIFACT_DIR/live-remote-after-send.xml" "模型：<redacted>"
+if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-after-send.xml" ||
+  grep -Fq "remote.example.test" "$ARTIFACT_DIR/live-remote-after-send.xml" ||
+  grep -Fq "validation-model" "$ARTIFACT_DIR/live-remote-after-send.xml"; then
+  fail "Live remote text evidence must redact remote secret/config values"
+fi
 [[ -s "$ARTIFACT_DIR/live-remote-logcat.txt" ]] ||
   fail "Expected physical live remote success logcat evidence"
 if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-device.properties"; then
@@ -4100,7 +4150,13 @@ assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "base_url
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "evidence_dir=$ARTIFACT_DIR"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "ui_dump=$ARTIFACT_DIR/live-remote-result.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "input_dump=$ARTIFACT_DIR/live-remote-before-input.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "send_ready_dump=$ARTIFACT_DIR/live-remote-before-send.xml"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "after_send_dump=$ARTIFACT_DIR/live-remote-after-send.xml"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "logcat_file=$ARTIFACT_DIR/live-remote-logcat.txt"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "remote_confirmation_handled=true"
+assert_report_contains_text "$ARTIFACT_DIR/live-remote-after-send.xml" "远程地址：<redacted>"
+assert_report_contains_text "$ARTIFACT_DIR/live-remote-after-send.xml" "模型：<redacted>"
 [[ -s "$ARTIFACT_DIR/live-remote-logcat.txt" ]] ||
   fail "Expected live remote success logcat evidence"
 if grep -Fq "$LIVE_REMOTE_TEST_TOKEN" "$ARTIFACT_DIR/live-remote-emulator.properties"; then
