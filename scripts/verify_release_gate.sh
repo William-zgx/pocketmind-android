@@ -200,6 +200,24 @@ else
   } > "$ARTIFACT_DIR/android-artifact-scan.properties"
 fi
 
+release_artifact_path=""
+release_artifact_type=""
+release_artifact_sha256=""
+if [[ -f "$RELEASE_AAB" ]]; then
+  release_artifact_path="$RELEASE_AAB"
+  release_artifact_type="aab"
+  release_artifact_sha256="$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')"
+elif [[ -f "$RELEASE_APK" ]]; then
+  release_artifact_path="$RELEASE_APK"
+  release_artifact_type="apk"
+  release_artifact_sha256="$(shasum -a 256 "$RELEASE_APK" | awk '{print $1}')"
+fi
+release_mapping_sha256=""
+if [[ -f "$RELEASE_MAPPING_FILE" ]]; then
+  release_mapping_sha256="$(shasum -a 256 "$RELEASE_MAPPING_FILE" | awk '{print $1}')"
+fi
+head_commit_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+
 if [[ -n "$PERF_BASELINE_FILE" ]]; then
   expected_app_version="$(awk -F\" '/versionName[[:space:]]*=/ {print $2; exit}' "$GRADLE_FILE")"
   perf_args=(
@@ -241,27 +259,15 @@ else
 fi
 
 if [[ "$VERIFY_RELEASE_RECORD" == "1" ]]; then
-  release_record_artifact_path=""
-  release_record_artifact_type=""
-  release_record_artifact_sha256=""
-  if [[ -f "$RELEASE_AAB" ]]; then
-    release_record_artifact_path="$RELEASE_AAB"
-    release_record_artifact_type="aab"
-    release_record_artifact_sha256="$(shasum -a 256 "$RELEASE_AAB" | awk '{print $1}')"
-  elif [[ -f "$RELEASE_APK" ]]; then
-    release_record_artifact_path="$RELEASE_APK"
-    release_record_artifact_type="apk"
-    release_record_artifact_sha256="$(shasum -a 256 "$RELEASE_APK" | awk '{print $1}')"
-  fi
   release_record_env=(
     "PUBLIC_RELEASE_CONTEXT=$PUBLIC_RELEASE"
     "EXPECTED_SIGNING_CERT_SHA256=$EXPECTED_SIGNING_CERT_SHA256"
   )
-  if [[ -n "$release_record_artifact_path" ]]; then
+  if [[ -n "$release_artifact_path" ]]; then
     release_record_env+=(
-      "EXPECTED_RELEASE_ARTIFACT_PATH=$release_record_artifact_path"
-      "EXPECTED_RELEASE_ARTIFACT_TYPE=$release_record_artifact_type"
-      "EXPECTED_RELEASE_ARTIFACT_SHA256=$release_record_artifact_sha256"
+      "EXPECTED_RELEASE_ARTIFACT_PATH=$release_artifact_path"
+      "EXPECTED_RELEASE_ARTIFACT_TYPE=$release_artifact_type"
+      "EXPECTED_RELEASE_ARTIFACT_SHA256=$release_artifact_sha256"
     )
   fi
   if ! env "${release_record_env[@]}" scripts/verify_release_record.sh --file "$RELEASE_RECORD_FILE" --report "$ARTIFACT_DIR/release-record.properties"; then
@@ -290,7 +296,14 @@ else
 fi
 
 if [[ "$VERIFY_RELEASE_OPERATIONS" == "1" ]]; then
-  if ! scripts/verify_release_operations_record.sh --file "$OPERATIONS_RECORD_FILE" --report "$ARTIFACT_DIR/release-operations-record.properties"; then
+  operations_env=(
+    "EXPECTED_COMMIT_SHA=$head_commit_sha"
+    "EXPECTED_RELEASE_ARTIFACT_TYPE=$release_artifact_type"
+    "EXPECTED_RELEASE_ARTIFACT_SHA256=$release_artifact_sha256"
+    "EXPECTED_RELEASE_MAPPING_SHA256=$release_mapping_sha256"
+    "EXPECTED_SIGNING_CERT_SHA256=$EXPECTED_SIGNING_CERT_SHA256"
+  )
+  if ! env "${operations_env[@]}" scripts/verify_release_operations_record.sh --file "$OPERATIONS_RECORD_FILE" --report "$ARTIFACT_DIR/release-operations-record.properties"; then
     fail_gate release-operations-record "$ARTIFACT_DIR/release-operations-record.properties"
   fi
 else
@@ -303,7 +316,7 @@ else
 fi
 
 if [[ "$VERIFY_RELEASE_VALIDATION" == "1" ]]; then
-  if ! scripts/verify_release_validation_record.sh --file "$VALIDATION_RECORD_FILE" --report "$ARTIFACT_DIR/release-validation-record.properties"; then
+  if ! env "EXPECTED_RELEASE_ARTIFACT_SHA256=$release_artifact_sha256" scripts/verify_release_validation_record.sh --file "$VALIDATION_RECORD_FILE" --report "$ARTIFACT_DIR/release-validation-record.properties"; then
     fail_gate release-validation-record "$ARTIFACT_DIR/release-validation-record.properties"
   fi
 else

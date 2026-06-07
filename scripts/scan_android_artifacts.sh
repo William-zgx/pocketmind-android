@@ -223,22 +223,18 @@ for artifact in "${ARTIFACTS[@]}"; do
       fi
       ;;
   esac
-  if grep -E '(^|/)[^/]+[.](litertlm|jks|keystore|pem|p12)$' "$entry_list" >/tmp/pocketmind-artifact-files.$$; then
-    while IFS= read -r finding; do
-      add_finding forbidden-artifact-file "$artifact:$finding"
-    done < /tmp/pocketmind-artifact-files.$$
-  fi
+  while IFS= read -r finding; do
+    add_finding forbidden-artifact-file "$artifact:$finding"
+  done < <(grep -E '(^|/)[^/]+[.](litertlm|jks|keystore|pem|p12)$' "$entry_list" || true)
   rm -f "$entry_list"
-  rm -f /tmp/pocketmind-artifact-files.$$
-  if unzip -p "$artifact" 2>/dev/null |
+  sensitive_index=0
+  while IFS= read -r _finding; do
+    sensitive_index=$((sensitive_index + 1))
+    add_finding sensitive-string "$artifact:string:$sensitive_index:sensitive-string-redacted"
+  done < <(unzip -p "$artifact" 2>/dev/null |
     strings |
     grep -E '(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abprs]-[0-9A-Za-z-]{16,}|sk-[A-Za-z0-9_-]{24,}|code[.]byted[.]org)' \
-      >/tmp/pocketmind-artifact-strings.$$; then
-    while IFS= read -r finding; do
-      add_finding sensitive-string "$artifact:string:$finding"
-    done < /tmp/pocketmind-artifact-strings.$$
-  fi
-  rm -f /tmp/pocketmind-artifact-strings.$$
+    || true)
   if [[ "$REQUIRE_SIGNED" == "1" ]]; then
     signing_status="$(artifact_signing_status "$artifact")"
     if [[ "$signing_status" != "verified" ]]; then

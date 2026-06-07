@@ -1142,8 +1142,17 @@ download metadata. Android runtime permissions are disclosed for system speech
 recognition, contacts, calendar, media, Usage Access, Accessibility, and
 MediaProjection.
 STORE_POLICY_NOTICE_MD
-printf 'status=approved\nscope=store-policy\nreviewer=Store Reviewer\n' > "$STORE_POLICY_REVIEW_EVIDENCE"
 STORE_POLICY_NOTICE_SHA="$(shasum -a 256 "$STORE_POLICY_NOTICE" | awk '{print $1}')"
+cat > "$STORE_POLICY_REVIEW_EVIDENCE" <<STORE_POLICY_REVIEW_EVIDENCE_PROPERTIES
+status=approved
+target=store-policy-review-approved-evidence
+privacyNoticePath=$STORE_POLICY_NOTICE
+privacyNoticeSha256=$STORE_POLICY_NOTICE_SHA
+scope=store-listing-data-safety-permissions-special-access
+requiredDecision=approved
+approvalStatus=approved
+reviewer=Store Reviewer
+STORE_POLICY_REVIEW_EVIDENCE_PROPERTIES
 STORE_POLICY_REVIEW_EVIDENCE_SHA="$(shasum -a 256 "$STORE_POLICY_REVIEW_EVIDENCE" | awk '{print $1}')"
 cat > "$STORE_POLICY_MANIFEST" <<'STORE_POLICY_MANIFEST_XML'
 <?xml version="1.0" encoding="utf-8"?>
@@ -1268,6 +1277,54 @@ expect_failure \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_REVIEW_EVIDENCE_SHA" --report "$ARTIFACT_DIR/store-policy-bad-review-evidence-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-review-evidence-sha.properties" "review-evidence-sha-mismatch"
+STORE_POLICY_PENDING_REVIEW_EVIDENCE="$TMP_DIR/store-policy-pending-review.properties"
+cat > "$STORE_POLICY_PENDING_REVIEW_EVIDENCE" <<STORE_POLICY_PENDING_REVIEW_EVIDENCE_PROPERTIES
+status=pending
+target=store-policy-review-candidate-evidence
+privacyNoticePath=$STORE_POLICY_NOTICE
+privacyNoticeSha256=$STORE_POLICY_NOTICE_SHA
+scope=store-listing-data-safety-permissions-special-access
+requiredDecision=approved
+approvalStatus=not-approved
+STORE_POLICY_PENDING_REVIEW_EVIDENCE_PROPERTIES
+STORE_POLICY_PENDING_REVIEW_EVIDENCE_SHA="$(shasum -a 256 "$STORE_POLICY_PENDING_REVIEW_EVIDENCE" | awk '{print $1}')"
+STORE_POLICY_PENDING_REVIEW_RECORD="$TMP_DIR/store-policy-pending-review-evidence.json"
+python3 - "$STORE_POLICY_APPROVED" "$STORE_POLICY_PENDING_REVIEW_RECORD" "$STORE_POLICY_PENDING_REVIEW_EVIDENCE" "$STORE_POLICY_PENDING_REVIEW_EVIDENCE_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["review"]["evidencePath"] = sys.argv[3]
+record["review"]["evidenceSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "store policy verifier rejects pending review evidence content" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_PENDING_REVIEW_RECORD" --report "$ARTIFACT_DIR/store-policy-pending-review-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-pending-review-evidence.properties" "review-evidence-status-not-approved"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-pending-review-evidence.properties" "review-evidence-approval-status-not-approved"
+STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE="$TMP_DIR/store-policy-bad-review-notice.properties"
+sed "s/privacyNoticeSha256=$STORE_POLICY_NOTICE_SHA/privacyNoticeSha256=0000000000000000000000000000000000000000000000000000000000000000/" \
+  "$STORE_POLICY_REVIEW_EVIDENCE" > "$STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE"
+STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE_SHA="$(shasum -a 256 "$STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE" | awk '{print $1}')"
+STORE_POLICY_BAD_REVIEW_NOTICE_RECORD="$TMP_DIR/store-policy-bad-review-notice-evidence.json"
+python3 - "$STORE_POLICY_APPROVED" "$STORE_POLICY_BAD_REVIEW_NOTICE_RECORD" "$STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE" "$STORE_POLICY_BAD_REVIEW_NOTICE_EVIDENCE_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["review"]["evidencePath"] = sys.argv[3]
+record["review"]["evidenceSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "store policy verifier rejects review evidence notice sha mismatch" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_REVIEW_NOTICE_RECORD" --report "$ARTIFACT_DIR/store-policy-bad-review-notice-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-review-notice-evidence.properties" "review-evidence-privacy-notice-sha-mismatch"
 STORE_POLICY_EXTRA_PERMISSION="$TMP_DIR/store-policy-extra-permission.json"
 sed 's/"name": "android.permission.RECORD_AUDIO"/"name": "android.permission.READ_CONTACTS"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_EXTRA_PERMISSION"
 expect_failure \
@@ -1419,6 +1476,10 @@ cat > "$OPERATIONS_CI_SIGNING_EVIDENCE" <<OPERATIONS_CI_SIGNING_EVIDENCE_PROPERT
 status=passed
 exit_code=0
 target=release-signing
+workflow=Android Verification
+job=protected-signing
+runId=123456
+commitSha=$OPERATIONS_COMMIT_SHA
 signingMode=production
 allowDebugKeystore=0
 requireAab=1
@@ -1652,6 +1713,89 @@ expect_success \
   "release operations verifier accepts approved initial-release record" \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-operations-approved.properties" "status=passed"
+expect_success \
+  "release operations verifier accepts current release artifact context" \
+  env EXPECTED_COMMIT_SHA="$OPERATIONS_COMMIT_SHA" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$OPERATIONS_FAKE_SHA_1" \
+  EXPECTED_RELEASE_MAPPING_SHA256="$OPERATIONS_FAKE_SHA_3" \
+  EXPECTED_SIGNING_CERT_SHA256="$OPERATIONS_FAKE_SHA_4" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-current-context.properties"
+assert_report_contains "$ARTIFACT_DIR/release-operations-current-context.properties" "status=passed"
+expect_failure \
+  "release operations verifier rejects stale release artifact context" \
+  env EXPECTED_COMMIT_SHA="$OPERATIONS_COMMIT_SHA" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$OPERATIONS_FAKE_SHA_2" \
+  EXPECTED_RELEASE_MAPPING_SHA256="$OPERATIONS_FAKE_SHA_3" \
+  EXPECTED_SIGNING_CERT_SHA256="$OPERATIONS_FAKE_SHA_4" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-stale-artifact.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-stale-artifact.properties" "ci-release-artifact-archive-aab-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-stale-artifact.properties" "ci-protected-signing-aab-sha-mismatch"
+expect_failure \
+  "release operations verifier rejects stale commit context" \
+  env EXPECTED_COMMIT_SHA=0000000000000000000000000000000000000000 \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$OPERATIONS_FAKE_SHA_1" \
+  EXPECTED_RELEASE_MAPPING_SHA256="$OPERATIONS_FAKE_SHA_3" \
+  EXPECTED_SIGNING_CERT_SHA256="$OPERATIONS_FAKE_SHA_4" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-stale-commit.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-stale-commit.properties" "ci-commit-sha-mismatch"
+expect_failure \
+  "release operations verifier rejects stale mapping context" \
+  env EXPECTED_COMMIT_SHA="$OPERATIONS_COMMIT_SHA" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$OPERATIONS_FAKE_SHA_1" \
+  EXPECTED_RELEASE_MAPPING_SHA256="$OPERATIONS_FAKE_SHA_2" \
+  EXPECTED_SIGNING_CERT_SHA256="$OPERATIONS_FAKE_SHA_4" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-stale-mapping.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-stale-mapping.properties" "ci-release-artifact-archive-mapping-sha-mismatch"
+expect_failure \
+  "release operations verifier rejects stale signing certificate context" \
+  env EXPECTED_COMMIT_SHA="$OPERATIONS_COMMIT_SHA" \
+  EXPECTED_RELEASE_ARTIFACT_TYPE=aab \
+  EXPECTED_RELEASE_ARTIFACT_SHA256="$OPERATIONS_FAKE_SHA_1" \
+  EXPECTED_RELEASE_MAPPING_SHA256="$OPERATIONS_FAKE_SHA_3" \
+  EXPECTED_SIGNING_CERT_SHA256="$OPERATIONS_FAKE_SHA_2" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_APPROVED" --report "$ARTIFACT_DIR/release-operations-stale-signing-cert.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-stale-signing-cert.properties" "ci-protected-signing-cert-sha-mismatch"
+OPERATIONS_CI_STALE_LOCAL_EVIDENCE="$TMP_DIR/release-operations-ci-local-stale-commit.properties"
+sed "s/commitSha=$OPERATIONS_COMMIT_SHA/commitSha=0000000000000000000000000000000000000000/" \
+  "$OPERATIONS_CI_LOCAL_EVIDENCE" > "$OPERATIONS_CI_STALE_LOCAL_EVIDENCE"
+OPERATIONS_CI_STALE_LOCAL_SHA="$(shasum -a 256 "$OPERATIONS_CI_STALE_LOCAL_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_STALE_LOCAL_RECORD="$TMP_DIR/release-operations-ci-stale-local.json"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_CI_STALE_LOCAL_RECORD" "$OPERATIONS_CI_STALE_LOCAL_EVIDENCE" "$OPERATIONS_CI_STALE_LOCAL_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["ci"]["localVerification"]["evidence"]["path"] = sys.argv[3]
+record["ci"]["localVerification"]["evidence"]["sha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects stale local CI evidence commit" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_CI_STALE_LOCAL_RECORD" --report "$ARTIFACT_DIR/release-operations-ci-stale-local.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-stale-local.properties" "ci-local-verification-evidence-commit-sha-mismatch"
+OPERATIONS_CI_STALE_ARTIFACT_EVIDENCE="$TMP_DIR/release-operations-ci-artifact-stale-run.properties"
+sed 's/runId=123456/runId=654321/' "$OPERATIONS_CI_ARTIFACT_EVIDENCE" > "$OPERATIONS_CI_STALE_ARTIFACT_EVIDENCE"
+OPERATIONS_CI_STALE_ARTIFACT_SHA="$(shasum -a 256 "$OPERATIONS_CI_STALE_ARTIFACT_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_STALE_ARTIFACT_RECORD="$TMP_DIR/release-operations-ci-stale-artifact-run.json"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_CI_STALE_ARTIFACT_RECORD" "$OPERATIONS_CI_STALE_ARTIFACT_EVIDENCE" "$OPERATIONS_CI_STALE_ARTIFACT_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["ci"]["releaseArtifactArchive"]["evidence"]["path"] = sys.argv[3]
+record["ci"]["releaseArtifactArchive"]["evidence"]["sha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects stale artifact CI evidence run" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_CI_STALE_ARTIFACT_RECORD" --report "$ARTIFACT_DIR/release-operations-ci-stale-artifact-run.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-stale-artifact-run.properties" "ci-release-artifact-archive-evidence-run-id-mismatch"
 OPERATIONS_CI_WEAK_CONNECTED="$TMP_DIR/release-operations-ci-weak-connected.json"
 python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_CI_WEAK_CONNECTED" "$OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE" "$OPERATIONS_CI_CONNECTED_WEAK_SHA" <<'PY'
 import json
@@ -1786,6 +1930,7 @@ PY
   printf 'api_level=36\n'
   printf 'abi=arm64-v8a\n'
   printf 'avd=test-avd\n'
+  printf 'releaseArtifactSha256=%s\n' "$VALID_PERF_SHA"
   printf 'screenshot_dir=%s\n' "$TMP_DIR/validation-screenshots"
   for screenshot_name in chat-home model-manager confirmation-sheet background-tasks-or-audit; do
     screenshot_path="$TMP_DIR/validation-screenshots/$screenshot_name.png"
@@ -1900,6 +2045,7 @@ clean_device=1
 source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+releaseArtifactSha256=$VALID_PERF_SHA
 serial=emulator-$api_level
 api_level=$api_level
 abi=arm64-v8a
@@ -1919,6 +2065,7 @@ status=passed
 target=manual-acceptance
 manualKey=$manual_key
 manualAcceptance=true
+releaseArtifactSha256=$VALID_PERF_SHA
 VALIDATION_MANUAL_EVIDENCE_PROPERTIES
 done
 for flow_key in \
@@ -1931,6 +2078,7 @@ status=passed
 target=release-flow
 flowKey=$flow_key
 releaseFlowPassed=true
+releaseArtifactSha256=$VALID_PERF_SHA
 VALIDATION_FLOW_EVIDENCE_PROPERTIES
   write_model_release_flow_contract_fixture "$flow_key" >> "$TMP_DIR/validation-flow-evidence/$flow_key.properties"
 done
@@ -1993,6 +2141,7 @@ clean_device=1
 source_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 expected_android_test_count=$SOURCE_ANDROID_TEST_COUNT
 actual_android_test_count=$SOURCE_ANDROID_TEST_COUNT
+releaseArtifactSha256=$VALID_PERF_SHA
 serial=emulator-5554
 avd=test-avd
 api_level=36
@@ -2016,6 +2165,7 @@ clean_device=1
 data_free_kb=4194304
 instrumentation=passed
 instrumentation_test_count=$SOURCE_ANDROID_TEST_COUNT
+releaseArtifactSha256=$VALID_PERF_SHA
 instrumentation_output_file=$VALIDATION_INSTRUMENTATION_OUTPUT
 debug_apk=app/build/outputs/apk/debug/app-debug.apk
 android_test_apk=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
@@ -2180,6 +2330,22 @@ expect_success \
   "release validation verifier accepts approved evidence record" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-validation-approved.properties" "status=passed"
+expect_success \
+  "release validation verifier accepts current release artifact context" \
+  env EXPECTED_RELEASE_ARTIFACT_SHA256="$VALID_PERF_SHA" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-current-artifact.properties"
+assert_report_contains "$ARTIFACT_DIR/release-validation-current-artifact.properties" "status=passed"
+expect_failure \
+  "release validation verifier rejects stale release artifact context" \
+  env EXPECTED_RELEASE_ARTIFACT_SHA256=2222222222222222222222222222222222222222222222222222222222222222 \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_APPROVED" --report "$ARTIFACT_DIR/release-validation-stale-artifact.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "emulator-report-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "physical-device-report-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "api-28-evidence-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "manual-modelSetup-evidence-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "flow-firstInstall-evidence-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "chat-home-screenshot-report-release-artifact-sha-mismatch"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-stale-artifact.properties" "performance-firstLaunch-evidence-expected-artifact-sha-mismatch"
 VALIDATION_CANDIDATE_FLOW="$TMP_DIR/release-validation-candidate-flow.json"
 VALIDATION_CANDIDATE_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/candidate-firstInstall.properties"
 cat > "$VALIDATION_CANDIDATE_FLOW_EVIDENCE" <<'VALIDATION_CANDIDATE_FLOW_EVIDENCE_PROPERTIES'
@@ -3575,12 +3741,20 @@ assert_report_contains "$ARTIFACT_DIR/privacy.properties" "status=passed"
 
 UNSAFE_PRIVACY_DIR="$TMP_DIR/privacy-unsafe"
 mkdir -p "$UNSAFE_PRIVACY_DIR"
-printf 'token=sk-%s\n' "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" > "$UNSAFE_PRIVACY_DIR/secret.txt"
+PRIVACY_SCAN_SECRET_BODY="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+PRIVACY_SCAN_SECRET="sk-${PRIVACY_SCAN_SECRET_BODY}"
+printf 'token=%s\n' "$PRIVACY_SCAN_SECRET" > "$UNSAFE_PRIVACY_DIR/secret.txt"
 expect_failure \
   "privacy scan rejects high-confidence token" \
   scripts/privacy_scan.sh --report "$ARTIFACT_DIR/privacy-failed.properties" "$UNSAFE_PRIVACY_DIR"
 assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/privacy-failed.properties" "reason=secret-pattern-detected"
+if grep -q "$PRIVACY_SCAN_SECRET" <<<"$LAST_OUTPUT"; then
+  fail "privacy scan stderr must redact raw secret values"
+fi
+if grep -q "$PRIVACY_SCAN_SECRET" "$ARTIFACT_DIR/privacy-failed.properties"; then
+  fail "privacy scan report must not contain raw secret values"
+fi
 
 PRIVACY_NOTICE="$TMP_DIR/privacy-notice.md"
 PRIVACY_REVIEW_PENDING="$TMP_DIR/privacy-review-pending.json"
@@ -3589,10 +3763,24 @@ PRIVACY_REVIEW_RELEASE_EVIDENCE="$TMP_DIR/privacy-review-release.properties"
 PRIVACY_REVIEW_SECURITY_EVIDENCE="$TMP_DIR/privacy-review-security.properties"
 PRIVACY_REVIEW_LEGAL_EVIDENCE="$TMP_DIR/privacy-review-legal.properties"
 printf 'PocketMind privacy notice\n' > "$PRIVACY_NOTICE"
-printf 'status=approved\nrole=release\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_RELEASE_EVIDENCE"
-printf 'status=approved\nrole=security\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_SECURITY_EVIDENCE"
-printf 'status=approved\nrole=legal\nscope=privacy-notice\n' > "$PRIVACY_REVIEW_LEGAL_EVIDENCE"
 PRIVACY_NOTICE_SHA="$(shasum -a 256 "$PRIVACY_NOTICE" | awk '{print $1}')"
+for privacy_review_role in release security legal; do
+  case "$privacy_review_role" in
+    release) privacy_review_evidence="$PRIVACY_REVIEW_RELEASE_EVIDENCE" ;;
+    security) privacy_review_evidence="$PRIVACY_REVIEW_SECURITY_EVIDENCE" ;;
+    legal) privacy_review_evidence="$PRIVACY_REVIEW_LEGAL_EVIDENCE" ;;
+  esac
+  cat > "$privacy_review_evidence" <<PRIVACY_REVIEW_EVIDENCE_PROPERTIES
+status=approved
+target=privacy-review-approved-evidence
+role=$privacy_review_role
+noticePath=$PRIVACY_NOTICE
+noticeSha256=$PRIVACY_NOTICE_SHA
+scope=privacy-notice
+requiredDecision=approved
+approvalStatus=approved
+PRIVACY_REVIEW_EVIDENCE_PROPERTIES
+done
 PRIVACY_REVIEW_RELEASE_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_RELEASE_EVIDENCE" | awk '{print $1}')"
 PRIVACY_REVIEW_SECURITY_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_SECURITY_EVIDENCE" | awk '{print $1}')"
 PRIVACY_REVIEW_LEGAL_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_LEGAL_EVIDENCE" | awk '{print $1}')"
@@ -3663,6 +3851,74 @@ expect_failure \
   env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_BAD_EVIDENCE_SHA" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
   scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-bad-evidence-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/privacy-review-bad-evidence-sha.properties" "release-evidence-sha-mismatch"
+PRIVACY_REVIEW_PENDING_EVIDENCE="$TMP_DIR/privacy-review-release-pending.properties"
+cat > "$PRIVACY_REVIEW_PENDING_EVIDENCE" <<PRIVACY_REVIEW_PENDING_EVIDENCE_PROPERTIES
+status=pending
+target=privacy-review-candidate-evidence
+role=release
+noticePath=$PRIVACY_NOTICE
+noticeSha256=$PRIVACY_NOTICE_SHA
+scope=privacy-notice
+requiredDecision=approved
+approvalStatus=not-approved
+PRIVACY_REVIEW_PENDING_EVIDENCE_PROPERTIES
+PRIVACY_REVIEW_PENDING_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_PENDING_EVIDENCE" | awk '{print $1}')"
+PRIVACY_REVIEW_PENDING_EVIDENCE_RECORD="$TMP_DIR/privacy-review-pending-evidence.json"
+python3 - "$PRIVACY_REVIEW_APPROVED" "$PRIVACY_REVIEW_PENDING_EVIDENCE_RECORD" "$PRIVACY_REVIEW_PENDING_EVIDENCE" "$PRIVACY_REVIEW_PENDING_EVIDENCE_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["reviews"][0]["evidencePath"] = sys.argv[3]
+record["reviews"][0]["evidenceSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "privacy review verifier rejects pending evidence content" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_PENDING_EVIDENCE_RECORD" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-pending-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/privacy-review-pending-evidence.properties" "release-evidence-status-not-approved"
+assert_report_contains_text "$ARTIFACT_DIR/privacy-review-pending-evidence.properties" "release-evidence-approval-status-not-approved"
+PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE="$TMP_DIR/privacy-review-release-role-mismatch.properties"
+sed 's/role=release/role=security/' "$PRIVACY_REVIEW_RELEASE_EVIDENCE" > "$PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE"
+PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE" | awk '{print $1}')"
+PRIVACY_REVIEW_ROLE_MISMATCH_RECORD="$TMP_DIR/privacy-review-role-mismatch-evidence.json"
+python3 - "$PRIVACY_REVIEW_APPROVED" "$PRIVACY_REVIEW_ROLE_MISMATCH_RECORD" "$PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE" "$PRIVACY_REVIEW_ROLE_MISMATCH_EVIDENCE_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["reviews"][0]["evidencePath"] = sys.argv[3]
+record["reviews"][0]["evidenceSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "privacy review verifier rejects evidence role mismatch" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_ROLE_MISMATCH_RECORD" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-role-mismatch-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/privacy-review-role-mismatch-evidence.properties" "release-evidence-role-mismatch"
+PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE="$TMP_DIR/privacy-review-release-notice-mismatch.properties"
+sed "s/noticeSha256=$PRIVACY_NOTICE_SHA/noticeSha256=0000000000000000000000000000000000000000000000000000000000000000/" \
+  "$PRIVACY_REVIEW_RELEASE_EVIDENCE" > "$PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE"
+PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE_SHA="$(shasum -a 256 "$PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE" | awk '{print $1}')"
+PRIVACY_REVIEW_NOTICE_MISMATCH_RECORD="$TMP_DIR/privacy-review-notice-mismatch-evidence.json"
+python3 - "$PRIVACY_REVIEW_APPROVED" "$PRIVACY_REVIEW_NOTICE_MISMATCH_RECORD" "$PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE" "$PRIVACY_REVIEW_NOTICE_MISMATCH_EVIDENCE_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["reviews"][0]["evidencePath"] = sys.argv[3]
+record["reviews"][0]["evidenceSha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "privacy review verifier rejects evidence notice sha mismatch" \
+  env PRIVACY_REVIEW_FILE="$PRIVACY_REVIEW_NOTICE_MISMATCH_RECORD" PRIVACY_NOTICE_FILE="$PRIVACY_NOTICE" \
+  scripts/verify_privacy_review.sh --report "$ARTIFACT_DIR/privacy-review-notice-mismatch-evidence.properties"
+assert_report_contains_text "$ARTIFACT_DIR/privacy-review-notice-mismatch-evidence.properties" "release-evidence-notice-sha-mismatch"
 
 MODEL_LICENSE_METADATA="$TMP_DIR/model-license-metadata.json"
 MODEL_LICENSE_MANIFEST="$TMP_DIR/model-manifest.md"
@@ -3880,6 +4136,9 @@ printf '<manifest />\n' > "$TMP_DIR/safe-aab/base/manifest/AndroidManifest.xml"
 printf 'ok\n' > "$TMP_DIR/safe-apk/assets/readme.txt"
 printf 'ok\n' > "$TMP_DIR/safe-aab/base/readme.txt"
 printf 'model\n' > "$TMP_DIR/unsafe-zip/assets/model.litertlm"
+ARTIFACT_SCAN_SECRET_BODY="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+ARTIFACT_SCAN_SECRET="sk-${ARTIFACT_SCAN_SECRET_BODY}"
+printf 'token=%s\n' "$ARTIFACT_SCAN_SECRET" > "$TMP_DIR/unsafe-zip/assets/secret.txt"
 (cd "$TMP_DIR/safe-apk" && zip -qr "$SAFE_APK" .)
 (cd "$TMP_DIR/safe-aab" && zip -qr "$SAFE_AAB" .)
 (cd "$TMP_DIR/unsafe-zip" && zip -qr "$UNSAFE_APK" .)
@@ -3897,6 +4156,13 @@ expect_failure \
   scripts/scan_android_artifacts.sh --apk "$UNSAFE_APK" --report "$ARTIFACT_DIR/artifact-failed.properties"
 assert_report_contains "$ARTIFACT_DIR/artifact-failed.properties" "status=failed"
 assert_report_contains_text "$ARTIFACT_DIR/artifact-failed.properties" "forbidden-artifact-file"
+assert_report_contains_text "$ARTIFACT_DIR/artifact-failed.properties" "sensitive-string"
+if grep -q "$ARTIFACT_SCAN_SECRET" <<<"$LAST_OUTPUT"; then
+  fail "artifact scan stderr must redact raw secret values"
+fi
+if grep -q "$ARTIFACT_SCAN_SECRET" "$ARTIFACT_DIR/artifact-failed.properties"; then
+  fail "artifact scan report must not contain raw secret values"
+fi
 expect_failure \
   "artifact scan rejects unreadable aab" \
   scripts/scan_android_artifacts.sh --aab "$BAD_AAB" --report "$ARTIFACT_DIR/artifact-bad-aab.properties"
@@ -4435,7 +4701,8 @@ reset_logs
 expect_success \
   "install helper selects the only authorized device" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
-  FAKE_ADB_DEVICES=$'device-a\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' RELEASE_ARTIFACT_SHA256="$VALID_PERF_SHA" \
+  GRADLE_CMD="$FAKE_GRADLE" \
   scripts/install_and_test_device.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
@@ -4447,6 +4714,7 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "abi=arm64
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_test_count=20"
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "releaseArtifactSha256=$VALID_PERF_SHA"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "logcat_file=$ARTIFACT_DIR/logcat.txt"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "logcat_captured=1"

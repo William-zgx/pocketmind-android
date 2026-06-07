@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 VALIDATION_RECORD_FILE="${VALIDATION_RECORD_FILE:-docs/release_validation_record.json}"
 ANDROID_TEST_SOURCE_DIR="${ANDROID_TEST_SOURCE_DIR:-app/src/androidTest}"
+EXPECTED_RELEASE_ARTIFACT_SHA256="${EXPECTED_RELEASE_ARTIFACT_SHA256:-}"
 REPORT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -35,6 +36,7 @@ write_report() {
       printf 'target=release-validation-record\n'
       printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
       printf 'androidTestSourceDir=%s\n' "$ANDROID_TEST_SOURCE_DIR"
+      printf 'expectedReleaseArtifactSha256=%s\n' "$EXPECTED_RELEASE_ARTIFACT_SHA256"
       printf 'reason=%s\n' "$reason"
     } > "$REPORT_FILE"
   fi
@@ -50,7 +52,7 @@ TMP_FAILURES="$(mktemp)"
 trap 'rm -f "$TMP_FAILURES"' EXIT
 
 set +e
-python3 - "$VALIDATION_RECORD_FILE" "$ANDROID_TEST_SOURCE_DIR" > "$TMP_FAILURES" <<'PY'
+python3 - "$VALIDATION_RECORD_FILE" "$ANDROID_TEST_SOURCE_DIR" "$EXPECTED_RELEASE_ARTIFACT_SHA256" > "$TMP_FAILURES" <<'PY'
 import json
 import hashlib
 import re
@@ -60,6 +62,7 @@ from pathlib import Path
 
 record_path = Path(sys.argv[1])
 android_test_source_dir = Path(sys.argv[2])
+expected_release_artifact_sha = sys.argv[3]
 
 try:
     record = json.loads(record_path.read_text())
@@ -124,6 +127,17 @@ def validate_file_sha(prefix, path, expected_sha):
     if actual_sha != expected_sha:
         failures.append(f"{prefix}-sha-mismatch")
 
+def validate_release_artifact_binding(prefix, props):
+    if not expected_release_artifact_sha:
+        return
+    actual_sha = props.get("releaseArtifactSha256", "")
+    if not non_empty_string(actual_sha):
+        failures.append(f"{prefix}-release-artifact-sha-missing")
+    elif not re.match(r"^[0-9a-fA-F]{64}$", actual_sha):
+        failures.append(f"{prefix}-release-artifact-sha-invalid")
+    elif actual_sha.lower() != expected_release_artifact_sha.lower():
+        failures.append(f"{prefix}-release-artifact-sha-mismatch")
+
 def validate_evidence_record(section, key, value):
     prefix = f"{section}-{key}"
     if isinstance(value, str):
@@ -157,6 +171,7 @@ def validate_evidence_record(section, key, value):
 def validate_api_matrix_evidence(api_level, evidence_path):
     prefix = f"api-{api_level}-evidence"
     props = properties_for(evidence_path)
+    validate_release_artifact_binding(prefix, props)
     if props.get("status") != "passed":
         failures.append(f"{prefix}-status-not-passed")
     if props.get("exit_code") != "0":
@@ -455,6 +470,8 @@ def validate_performance_evidence(key, evidence_path):
     expected_sha = props.get("expectedArtifactSha256", "")
     if not re.match(r"^[0-9a-fA-F]{64}$", expected_sha):
         failures.append(f"{prefix}-expected-artifact-sha-invalid")
+    elif expected_release_artifact_sha and expected_sha.lower() != expected_release_artifact_sha.lower():
+        failures.append(f"{prefix}-expected-artifact-sha-mismatch")
     expected_app_version = props.get("expectedAppVersion", "")
     if not non_empty_string(expected_app_version):
         failures.append(f"{prefix}-expected-app-version-missing")
@@ -496,6 +513,7 @@ def validate_performance_evidence(key, evidence_path):
 def validate_manual_evidence(key, evidence_path):
     prefix = f"manual-{key}-evidence"
     props = properties_for(evidence_path)
+    validate_release_artifact_binding(prefix, props)
     if props.get("status") != "passed":
         failures.append(f"{prefix}-status-not-passed")
     if props.get("target") != "manual-acceptance":
@@ -509,6 +527,7 @@ def validate_flow_evidence(key, evidence_path):
     prefix = f"flow-{key}"
     evidence_prefix = f"{prefix}-evidence"
     props = properties_for(evidence_path)
+    validate_release_artifact_binding(evidence_prefix, props)
     if props.get("status") != "passed":
         failures.append(f"{evidence_prefix}-status-not-passed")
     if props.get("target") != "release-flow":
@@ -630,6 +649,7 @@ def validate_screenshot_report(name, entry, path):
         return
     validate_file_sha(f"{name}-screenshot-report", report_path, entry.get("reportSha256", ""))
     props = properties_for(report_path)
+    validate_release_artifact_binding(f"{name}-screenshot-report", props)
     if props.get("status") != "passed":
         failures.append(f"{name}-screenshot-report-status-not-passed")
     if props.get("target") != "release-screenshots":
@@ -766,6 +786,7 @@ elif not Path(emulator_report).is_file():
 else:
     validate_file_sha("emulator-report", emulator_report, emulator.get("reportSha256", ""))
     props = properties_for(emulator_report)
+    validate_release_artifact_binding("emulator-report", props)
     if props.get("status") != "passed":
         failures.append("emulator-report-status-not-passed")
     if props.get("target") != "regression-emulator":
@@ -810,6 +831,7 @@ elif not Path(device_report).is_file():
 else:
     validate_file_sha("physical-device-report", device_report, physical.get("reportSha256", ""))
     props = properties_for(device_report)
+    validate_release_artifact_binding("physical-device-report", props)
     report_serial = props.get("serial", "")
     if props.get("status") != "passed":
         failures.append("physical-device-report-status-not-passed")

@@ -94,6 +94,40 @@ def validate_file_sha(prefix, path, expected_sha):
     if actual_sha != expected_sha:
         failures.append(f"{prefix}-sha-mismatch")
 
+def properties_for(path):
+    props = {}
+    try:
+        with Path(path).open() as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip("\n")
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                props[key] = value
+    except OSError:
+        pass
+    return props
+
+def validate_review_evidence(role, path):
+    prefix = role or "unknown"
+    props = properties_for(path)
+    if props.get("status") != "approved":
+        failures.append(f"{prefix}-evidence-status-not-approved")
+    if props.get("approvalStatus") != "approved":
+        failures.append(f"{prefix}-evidence-approval-status-not-approved")
+    if props.get("target") != "privacy-review-approved-evidence":
+        failures.append(f"{prefix}-evidence-target-invalid")
+    if props.get("role") != role:
+        failures.append(f"{prefix}-evidence-role-mismatch")
+    if props.get("noticePath") != str(notice_path):
+        failures.append(f"{prefix}-evidence-notice-path-mismatch")
+    if props.get("noticeSha256") != notice_sha:
+        failures.append(f"{prefix}-evidence-notice-sha-mismatch")
+    if not non_empty_string(props.get("scope")):
+        failures.append(f"{prefix}-evidence-scope-missing")
+    if props.get("requiredDecision") != "approved":
+        failures.append(f"{prefix}-evidence-required-decision-invalid")
+
 reviews = review.get("reviews")
 if not isinstance(reviews, list):
     failures.append("reviews-missing")
@@ -124,6 +158,7 @@ for entry in reviews:
             evidence_path,
             entry.get("evidenceSha256", ""),
         )
+        validate_review_evidence(role, evidence_path)
     review_date = entry.get("reviewDate", "")
     if not review_date:
         failures.append(f"{role or 'unknown'}-review-date-missing")

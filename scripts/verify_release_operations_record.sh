@@ -5,6 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 OPERATIONS_RECORD_FILE="${OPERATIONS_RECORD_FILE:-docs/release_operations_record.json}"
+EXPECTED_COMMIT_SHA="${EXPECTED_COMMIT_SHA:-}"
+EXPECTED_RELEASE_ARTIFACT_TYPE="${EXPECTED_RELEASE_ARTIFACT_TYPE:-}"
+EXPECTED_RELEASE_ARTIFACT_SHA256="${EXPECTED_RELEASE_ARTIFACT_SHA256:-}"
+EXPECTED_RELEASE_MAPPING_SHA256="${EXPECTED_RELEASE_MAPPING_SHA256:-}"
+EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256:-}"
 REPORT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -33,6 +38,11 @@ write_report() {
       printf 'status=%s\n' "$status"
       printf 'target=release-operations-record\n'
       printf 'operationsRecordFile=%s\n' "$OPERATIONS_RECORD_FILE"
+      printf 'expectedCommitSha=%s\n' "$EXPECTED_COMMIT_SHA"
+      printf 'expectedReleaseArtifactType=%s\n' "$EXPECTED_RELEASE_ARTIFACT_TYPE"
+      printf 'expectedReleaseArtifactSha256=%s\n' "$EXPECTED_RELEASE_ARTIFACT_SHA256"
+      printf 'expectedReleaseMappingSha256=%s\n' "$EXPECTED_RELEASE_MAPPING_SHA256"
+      printf 'expectedSigningCertSha256=%s\n' "$EXPECTED_SIGNING_CERT_SHA256"
       printf 'reason=%s\n' "$reason"
     } > "$REPORT_FILE"
   fi
@@ -48,7 +58,12 @@ TMP_FAILURES="$(mktemp)"
 trap 'rm -f "$TMP_FAILURES"' EXIT
 
 set +e
-python3 - "$OPERATIONS_RECORD_FILE" > "$TMP_FAILURES" <<'PY'
+python3 - "$OPERATIONS_RECORD_FILE" \
+  "$EXPECTED_COMMIT_SHA" \
+  "$EXPECTED_RELEASE_ARTIFACT_TYPE" \
+  "$EXPECTED_RELEASE_ARTIFACT_SHA256" \
+  "$EXPECTED_RELEASE_MAPPING_SHA256" \
+  "$EXPECTED_SIGNING_CERT_SHA256" > "$TMP_FAILURES" <<'PY'
 import hashlib
 import json
 import re
@@ -58,6 +73,11 @@ from datetime import date
 from pathlib import Path
 
 record_path = Path(sys.argv[1])
+expected_commit_sha = sys.argv[2]
+expected_release_artifact_type = sys.argv[3]
+expected_release_artifact_sha = sys.argv[4]
+expected_release_mapping_sha = sys.argv[5]
+expected_signing_cert_sha = sys.argv[6].lower()
 
 try:
     record = json.loads(record_path.read_text())
@@ -177,6 +197,25 @@ def validate_ci_evidence_record(section, entry, expected_target):
         failures.append(f"ci-{section}-evidence-target-invalid")
     return props
 
+def validate_ci_identity(section, props, expected_job="", required=False):
+    checks = (
+        ("workflow", ci.get("workflowName", ""), "workflow"),
+        ("runId", ci.get("runId", ""), "run-id"),
+        ("commitSha", ci_commit, "commit-sha"),
+    )
+    for prop_key, expected_value, label in checks:
+        actual_value = props.get(prop_key, "")
+        if required and not non_empty_string(actual_value):
+            failures.append(f"ci-{section}-evidence-{label}-missing")
+            continue
+        if non_empty_string(actual_value) and non_empty_string(expected_value) and actual_value != expected_value:
+            failures.append(f"ci-{section}-evidence-{label}-mismatch")
+    actual_job = props.get("job", "")
+    if required and not non_empty_string(actual_job):
+        failures.append(f"ci-{section}-evidence-job-missing")
+    elif non_empty_string(actual_job) and non_empty_string(expected_job) and actual_job != expected_job:
+        failures.append(f"ci-{section}-evidence-job-mismatch")
+
 def csv_values(value):
     if not isinstance(value, str) or not value:
         return []
@@ -248,12 +287,15 @@ if not re.fullmatch(r"[0-9a-f]{40}", ci_commit):
     failures.append("ci-commit-sha-invalid")
 elif not git_success("cat-file", "-e", f"{ci_commit}^{{commit}}"):
     failures.append("ci-commit-sha-missing")
+elif expected_commit_sha and ci_commit != expected_commit_sha:
+    failures.append("ci-commit-sha-mismatch")
 
 local_ci_props = validate_ci_evidence_record(
     "local-verification",
     ci.get("localVerification"),
     "ci-local-verification",
 )
+validate_ci_identity("local-verification", local_ci_props, expected_job="verify", required=True)
 if local_ci_props.get("command") != "scripts/verify_local.sh":
     failures.append("ci-local-verification-command-invalid")
 
@@ -286,12 +328,19 @@ artifact_ci_props = validate_ci_evidence_record(
     artifact_entry,
     "ci-release-artifact-archive",
 )
+validate_ci_identity("release-artifact-archive", artifact_ci_props, expected_job="release-artifact-archive", required=True)
 if isinstance(artifact_entry, dict) and not non_empty_string(artifact_entry.get("artifactName")):
     failures.append("ci-release-artifact-archive-name-missing")
 if not is_sha256(artifact_ci_props.get("aabSha256", "")):
     failures.append("ci-release-artifact-archive-aab-sha-invalid")
+elif expected_release_artifact_sha and expected_release_artifact_type != "apk" and artifact_ci_props.get("aabSha256", "") != expected_release_artifact_sha:
+    failures.append("ci-release-artifact-archive-aab-sha-mismatch")
+if expected_release_artifact_sha and expected_release_artifact_type == "apk" and artifact_ci_props.get("apkSha256", "") != expected_release_artifact_sha:
+    failures.append("ci-release-artifact-archive-apk-sha-mismatch")
 if not is_sha256(artifact_ci_props.get("mappingSha256", "")):
     failures.append("ci-release-artifact-archive-mapping-sha-invalid")
+elif expected_release_mapping_sha and artifact_ci_props.get("mappingSha256", "") != expected_release_mapping_sha:
+    failures.append("ci-release-artifact-archive-mapping-sha-mismatch")
 if artifact_ci_props.get("artifactScanStatus") != "passed":
     failures.append("ci-release-artifact-archive-scan-not-passed")
 if not non_empty_string(artifact_ci_props.get("artifactUploadName")):
@@ -303,6 +352,7 @@ signing_ci_props = validate_ci_evidence_record(
     signing_entry,
     "release-signing",
 )
+validate_ci_identity("protected-signing", signing_ci_props, expected_job="protected-signing")
 if isinstance(signing_entry, dict) and not non_empty_string(signing_entry.get("signingEnvironment")):
     failures.append("ci-protected-signing-environment-missing")
 if signing_ci_props.get("signingMode") != "production":
@@ -311,8 +361,12 @@ if signing_ci_props.get("artifactScanStatus") != "passed":
     failures.append("ci-protected-signing-artifact-scan-not-passed")
 if not is_sha256(signing_ci_props.get("expectedSigningCertSha256", "")):
     failures.append("ci-protected-signing-cert-sha-invalid")
+elif expected_signing_cert_sha and signing_ci_props.get("expectedSigningCertSha256", "").lower() != expected_signing_cert_sha:
+    failures.append("ci-protected-signing-cert-sha-mismatch")
 if not is_sha256(signing_ci_props.get("signedAabSha256", "")):
     failures.append("ci-protected-signing-aab-sha-invalid")
+elif expected_release_artifact_sha and expected_release_artifact_type != "apk" and signing_ci_props.get("signedAabSha256", "") != expected_release_artifact_sha:
+    failures.append("ci-protected-signing-aab-sha-mismatch")
 
 monitoring = record.get("monitoring")
 if not isinstance(monitoring, dict):

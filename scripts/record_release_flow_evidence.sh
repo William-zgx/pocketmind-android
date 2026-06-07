@@ -12,6 +12,7 @@ VALIDATION_DATE="${VALIDATION_DATE:-$(date +%F)}"
 RELEASE_FLOW_KEYS="${RELEASE_FLOW_KEYS:-}"
 RELEASE_FLOW_ALL="${RELEASE_FLOW_ALL:-0}"
 RELEASE_FLOW_NOTE="${RELEASE_FLOW_NOTE:-Release flow was explicitly confirmed by the named owner.}"
+RELEASE_ARTIFACT_SHA256="${RELEASE_ARTIFACT_SHA256:-}"
 
 REQUIRED_RELEASE_FLOWS=(
   firstInstall
@@ -76,6 +77,7 @@ write_report() {
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
+    printf 'releaseArtifactSha256=%s\n' "$RELEASE_ARTIFACT_SHA256"
     printf 'requiredFlows=%s\n' "$(join_csv "${REQUIRED_RELEASE_FLOWS[@]}")"
     printf 'acceptedFlows=%s\n' "$accepted"
     printf 'pendingFlows=%s\n' "$pending"
@@ -213,6 +215,7 @@ for flow in "${accepted_flows[@]}"; do
     printf 'evidenceKind=formal-release-flow\n'
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
+    printf 'releaseArtifactSha256=%s\n' "$RELEASE_ARTIFACT_SHA256"
     printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
     printf 'evidenceSummary=%s\n' "$RELEASE_FLOW_NOTE"
     write_flow_contract_fields "$flow"

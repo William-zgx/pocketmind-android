@@ -11137,3 +11137,42 @@ scripts/verify_release_validation_record.sh \
   真机、性能基线、视觉回归截图或人工验收。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
+
+## 2026-06-07 release gate review hardening
+
+本轮覆盖项：
+
+- 隐私扫描和 Android 制品扫描不再向 stderr/report 暴露 raw secret；artifact 扫描也不再把
+  sensitive string grep 结果落到可预测 `/tmp` 文件。
+- Store policy 和 Privacy review record 不再只信任 evidence 路径/SHA，同时校验
+  approved status、approval target、notice path/SHA、scope 和 required decision。
+- Release operations record 绑定当前 commit、release artifact、mapping 和 signing cert；
+  local/archive CI 子 evidence 必须声明并匹配 workflow/runId/commit/job。
+- Release validation record 在传入当前 artifact SHA 时，同时校验 emulator、physical device、
+  API matrix、manual acceptance、release flow、screenshots 和 performance evidence。
+- manual/flow/screenshot/emulator evidence 生成脚本新增 `RELEASE_ARTIFACT_SHA256` 输出支持。
+
+验证命令：
+
+```bash
+bash -n scripts/privacy_scan.sh scripts/scan_android_artifacts.sh \
+  scripts/verify_store_policy_record.sh scripts/verify_privacy_review.sh \
+  scripts/verify_release_operations_record.sh scripts/verify_release_validation_record.sh \
+  scripts/verify_release_gate.sh scripts/test_validation_scripts.sh
+
+bash scripts/test_validation_scripts.sh
+
+git diff --check
+```
+
+结果：
+
+- 通过：validation script tests 全量通过。
+- 通过：新增 negative tests 覆盖 pending/candidate review evidence、raw secret redaction、
+  stale release artifact、stale mapping/signing cert 和 stale CI child evidence。
+- 通过：diff whitespace 检查。
+
+剩余风险：
+
+- 本轮强化的是门禁和证据契约，不替代真实 API matrix、真机、性能基线、截图视觉回归和人工审批。
+- 已有 pending release record 会继续 fail-closed，直到重新生成并批准绑定当前 artifact 的证据。

@@ -31,6 +31,7 @@ DEBUG_SCREENSHOT_REMOTE_MODEL_NAME_EXTRA="com.bytedance.zgx.pocketmind.extra.DEB
 SCREENSHOT_REMOTE_BASE_URL="${POCKETMIND_SCREENSHOT_REMOTE_BASE_URL:-https://api.example.com/v1}"
 SCREENSHOT_REMOTE_MODEL="${POCKETMIND_SCREENSHOT_REMOTE_MODEL:-screenshot-evidence-model}"
 CONFIRMATION_PROMPT="${POCKETMIND_SCREENSHOT_CONFIRMATION_PROMPT:-summarize my clipboard and share it}"
+RELEASE_ARTIFACT_SHA256="${RELEASE_ARTIFACT_SHA256:-}"
 
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SELECTED_SERIAL=""
@@ -73,6 +74,7 @@ write_report() {
     echo "clean_device=1"
     echo "package=$PACKAGE_NAME"
     echo "debug_apk=$DEBUG_APK"
+    echo "releaseArtifactSha256=$RELEASE_ARTIFACT_SHA256"
     echo "evidence_dir=$ARTIFACT_DIR"
     echo "screenshot_dir=$SCREENSHOT_DIR"
     echo "ui_dump_dir=$UI_DUMP_DIR"

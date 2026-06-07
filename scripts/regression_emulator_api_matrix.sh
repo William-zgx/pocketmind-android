@@ -23,6 +23,7 @@ CHECK_EMULATOR_API_MATRIX_SCRIPT="${CHECK_EMULATOR_API_MATRIX_SCRIPT:-scripts/ch
 REGRESSION_EMULATOR_SCRIPT="${REGRESSION_EMULATOR_SCRIPT:-scripts/regression_emulator.sh}"
 STOP_EMULATOR_AFTER_EACH="${STOP_EMULATOR_AFTER_EACH:-1}"
 ALLOW_EXISTING_EMULATORS="${ALLOW_EXISTING_EMULATORS:-0}"
+RELEASE_ARTIFACT_SHA256="${RELEASE_ARTIFACT_SHA256:-}"
 ADB_BIN="${ANDROID_SDK}/platform-tools/adb"
 
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -155,6 +156,7 @@ write_report() {
     printf 'started_at_utc=%s\n' "$STARTED_AT_UTC"
     printf 'finished_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
+    printf 'releaseArtifactSha256=%s\n' "$RELEASE_ARTIFACT_SHA256"
     printf 'requiredApis=%s\n' "$(join_csv $REQUIRED_APIS)"
     printf 'tag=%s\n' "$EMULATOR_TAG"
     printf 'abi=%s\n' "$EMULATOR_ABI"
@@ -250,6 +252,7 @@ for api in $REQUIRED_APIS; do
     ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
     AVD_NAME="$avd_name" \
     ARTIFACT_DIR="$api_artifact_dir" \
+    RELEASE_ARTIFACT_SHA256="$RELEASE_ARTIFACT_SHA256" \
     REGRESSION_REPORT_FILE="$api_report_file" \
     EMULATOR_REPORT_FILE="$api_artifact_dir/emulator-verification.properties" \
     DEVICE_REPORT_FILE="$api_artifact_dir/device-verification.properties" \

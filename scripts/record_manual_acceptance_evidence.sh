@@ -12,6 +12,7 @@ VALIDATION_DATE="${VALIDATION_DATE:-$(date +%F)}"
 MANUAL_ACCEPTANCE_KEYS="${MANUAL_ACCEPTANCE_KEYS:-}"
 MANUAL_ACCEPTANCE_ALL="${MANUAL_ACCEPTANCE_ALL:-0}"
 MANUAL_ACCEPTANCE_NOTE="${MANUAL_ACCEPTANCE_NOTE:-Manual acceptance was explicitly confirmed by the named owner.}"
+RELEASE_ARTIFACT_SHA256="${RELEASE_ARTIFACT_SHA256:-}"
 
 REQUIRED_MANUAL_KEYS=(
   modelSetup
@@ -73,6 +74,7 @@ write_report() {
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
+    printf 'releaseArtifactSha256=%s\n' "$RELEASE_ARTIFACT_SHA256"
     printf 'requiredManualKeys=%s\n' "$(join_csv "${REQUIRED_MANUAL_KEYS[@]}")"
     printf 'acceptedManualKeys=%s\n' "$accepted"
     printf 'pendingManualKeys=%s\n' "$pending"
@@ -127,6 +129,7 @@ for key in "${accepted_keys[@]}"; do
     printf 'manualAcceptance=true\n'
     printf 'owner=%s\n' "$OWNER"
     printf 'date=%s\n' "$VALIDATION_DATE"
+    printf 'releaseArtifactSha256=%s\n' "$RELEASE_ARTIFACT_SHA256"
     printf 'validationRecordFile=%s\n' "$VALIDATION_RECORD_FILE"
     printf 'evidenceSummary=%s\n' "$MANUAL_ACCEPTANCE_NOTE"
   } > "$evidence_path"

@@ -108,6 +108,37 @@ def validate_file_sha(prefix, path, expected_sha):
     if actual_sha != expected_sha:
         failures.append(f"{prefix}-sha-mismatch")
 
+def properties_for(path):
+    props = {}
+    try:
+        with Path(path).open() as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip("\n")
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                props[key] = value
+    except OSError:
+        pass
+    return props
+
+def validate_store_review_evidence(path):
+    props = properties_for(path)
+    if props.get("status") != "approved":
+        failures.append("review-evidence-status-not-approved")
+    if props.get("approvalStatus") != "approved":
+        failures.append("review-evidence-approval-status-not-approved")
+    if props.get("target") != "store-policy-review-approved-evidence":
+        failures.append("review-evidence-target-invalid")
+    if props.get("privacyNoticePath") != str(notice_path):
+        failures.append("review-evidence-privacy-notice-path-mismatch")
+    if props.get("privacyNoticeSha256") != notice_sha:
+        failures.append("review-evidence-privacy-notice-sha-mismatch")
+    if not non_empty_string(props.get("scope")):
+        failures.append("review-evidence-scope-missing")
+    if props.get("requiredDecision") != "approved":
+        failures.append("review-evidence-required-decision-invalid")
+
 notice_sha = hashlib.sha256(notice_path.read_bytes()).hexdigest()
 if record.get("privacyNoticePath") != str(notice_path):
     failures.append("privacy-notice-path-mismatch")
@@ -328,6 +359,7 @@ else:
         review_evidence_path,
         review.get("evidenceSha256", ""),
     )
+    validate_store_review_evidence(review_evidence_path)
 review_date = review.get("reviewDate", "")
 date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 if not review_date:

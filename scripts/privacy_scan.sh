@@ -45,7 +45,12 @@ PATTERN='(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|A
 
 for target in "${SCAN_TARGETS[@]}"; do
   [[ -e "$target" ]] || continue
-  grep -R -n -I -E "$PATTERN" "$target" \
+  while IFS= read -r finding; do
+    finding_path="${finding%%:*}"
+    finding_rest="${finding#*:}"
+    finding_line="${finding_rest%%:*}"
+    printf '%s:%s:secret-pattern-detected\n' "$finding_path" "$finding_line" >> "$TMP_FINDINGS"
+  done < <(grep -R -n -I -E "$PATTERN" "$target" \
     --exclude-dir=.git \
     --exclude-dir=.gradle \
     --exclude-dir=build \
@@ -60,14 +65,14 @@ for target in "${SCAN_TARGETS[@]}"; do
     --exclude='privacy_scan.sh' \
     --exclude='scan_android_artifacts.sh' \
     --exclude='verify_release_gate.sh' \
-    >> "$TMP_FINDINGS" || true
+    || true)
 done
 
 FINDING_COUNT="$(grep -c . "$TMP_FINDINGS" || true)"
 if [[ "$FINDING_COUNT" -gt 0 ]]; then
   write_report failed "$FINDING_COUNT" secret-pattern-detected
   cat "$TMP_FINDINGS" >&2
-  echo "Privacy scan found high-confidence secret patterns." >&2
+  echo "Privacy scan found high-confidence secret patterns; matched values are redacted." >&2
   exit 1
 fi
 
