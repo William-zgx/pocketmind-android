@@ -67,12 +67,12 @@ internal fun createCustomModelDownloadSource(downloadUrl: String): ModelDownload
         "http" -> if (!host.isLocalDebugHost()) return null
         else -> return null
     }
-    val fileName = ModelCatalog.sanitizeModelName(
-        uri.path
-            ?.substringAfterLast('/')
-            ?.takeIf { it.isNotBlank() }
-            ?: "custom-model$MODEL_FILE_EXTENSION",
-    )
+    val rawFileName = uri.path
+        ?.substringAfterLast('/')
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    if (!ModelCatalog.isAcceptedModelName(rawFileName)) return null
+    val fileName = ModelCatalog.sanitizeModelName(rawFileName)
     return ModelDownloadSource(
         title = "自定义模型",
         fileName = fileName,

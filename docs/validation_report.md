@@ -10066,3 +10066,37 @@ scripts/test_validation_scripts.sh
 
 - 通过：validation script self-tests，覆盖 `voiceInput` 正式证据字段和弱证据拒绝。
 - 通过：目标 JVM 测试，覆盖麦克风权限失败后的业务恢复和 no-auto-send 边界。
+
+## 2026-06-07 Model download failure recovery gate
+
+本轮覆盖项：
+
+- 自定义模型下载源现在必须显式指向 `.litertlm` 文件；HTTPS 下的 `.bin`、`.gguf`、
+  空路径或目录路径会被拒绝，不再被自动改名成 `.litertlm`。
+- 自定义下载失败文案明确提示需要 HTTPS `.litertlm` 模型链接。
+- `localModelDownloadVerification` release flow evidence 新增必填字段：下载目录不可用、
+  SHA 失败清理、pending 下载任务丢失恢复。
+- `customModelImportOrUrlRejection` release flow evidence 新增必填字段：
+  非 `.litertlm` 自定义下载 URL 必须被拒绝。
+- `PocketMindViewModelTest` 新增下载失败恢复契约：目录不可用不 enqueue、下载失败清
+  pending 并删除目标、SHA 失败删除坏文件且不注册模型、启动恢复时下载任务丢失会清理 pending。
+- `ModelRepositoryTest` 新增下载源和校验契约：非 `.litertlm` HTTPS URL 拒绝、
+  expected size 不匹配拒绝、SHA 不匹配拒绝、无 SHA 的自定义文件仅在大小匹配时接受。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.data.ModelRepositoryTest' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startModelDownloadReportsUnavailableDirectoryWithoutEnqueueing' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startCustomModelDownloadRejectsInvalidUrlWithoutEnqueueing' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.monitorDownloadFailureClearsPendingDeletesTargetAndShowsReason' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.monitorDownloadShaFailureDeletesFileClearsPendingAndStopsDownloading' --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.restoreStartupStateClearsPendingDownloadWhenDownloadTaskMissing'
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/model-download-gate-smoke-current INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：目标 JVM 测试覆盖模型下载 URL 边界、失败原因、坏文件清理和 pending 恢复。
+- 通过：validation script self-tests，覆盖新增 release flow 字段和弱证据拒绝。
+- 通过：`verify_local` 全链路，包括 unit test、lint、debug/release APK、release AAB 和 artifact scan。
+- 通过：API 36 targeted emulator，`build/verification/model-download-gate-smoke-current`
+  记录 `MainActivitySmokeTest` 的 `OK (6 tests)`，覆盖启动、模型管理、远程配置入口、
+  隐私入口、会话管理和后台任务空态。

@@ -302,10 +302,12 @@ release ticket or PR.
   flow evidence files are not accepted.
 - [ ] `localModelDownloadVerification` release flow evidence must explicitly
   record local download verification, SHA-256 verification, storage preflight,
-  failure recovery, remote fallback explanation, and lightweight alternative
+  failure recovery, unavailable download directory handling, SHA failure cleanup,
+  missing pending-download task recovery, remote fallback explanation, and lightweight alternative
   explanation. `customModelImportOrUrlRejection` evidence must explicitly
   record `.litertlm` import coverage, HTTPS-only custom download policy,
-  invalid/credentialed URL rejection, and the unverified custom model marker.
+  non-`.litertlm` URL rejection, invalid/credentialed URL rejection, and the
+  unverified custom model marker.
 - [ ] `shareAndPickerInput` release flow evidence must explicitly record
   ACTION_SEND text staging, remote-mode text-share protection, remote vision
   image attachment staging, unsupported-vision protection, no implicit image

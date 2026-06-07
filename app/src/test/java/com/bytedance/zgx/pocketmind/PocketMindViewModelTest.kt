@@ -1,6 +1,7 @@
 package com.bytedance.zgx.pocketmind
 
 import android.Manifest
+import android.app.DownloadManager
 import android.net.Uri
 import android.provider.Settings
 import com.bytedance.zgx.pocketmind.action.ActionDraft
@@ -374,6 +375,153 @@ class PocketMindViewModelTest {
         assertFalse(viewModel.uiState.value.showFirstRunSetup)
         assertTrue(viewModel.uiState.value.isReady)
         assertEquals("远程模型已就绪", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun startModelDownloadReportsUnavailableDirectoryWithoutEnqueueing() = runTest(dispatcher) {
+        val modelRepository = FakeModelRepository(downloadedModelFileProvider = { null })
+        val downloadClient = FakeModelDownloadClient()
+        val viewModel = createViewModel(
+            modelRepository = modelRepository,
+            downloadClient = downloadClient,
+        )
+
+        viewModel.startModelDownload()
+        advanceUntilIdle()
+
+        assertEquals("下载目录不可用，请导入已有模型", viewModel.uiState.value.statusText)
+        assertFalse(viewModel.uiState.value.isDownloading)
+        assertTrue(downloadClient.enqueuedDownloads.isEmpty())
+        assertTrue(modelRepository.savedPendingDownloads.isEmpty())
+    }
+
+    @Test
+    fun startCustomModelDownloadRejectsInvalidUrlWithoutEnqueueing() = runTest(dispatcher) {
+        val modelRepository = FakeModelRepository(customDownloadSource = null)
+        val downloadClient = FakeModelDownloadClient()
+        val viewModel = createViewModel(
+            modelRepository = modelRepository,
+            downloadClient = downloadClient,
+        )
+
+        viewModel.startCustomModelDownload("https://models.example.com/model.bin")
+        advanceUntilIdle()
+
+        assertEquals(
+            "请输入有效的 HTTPS .litertlm 模型下载链接；HTTP 仅支持本地调试地址",
+            viewModel.uiState.value.statusText,
+        )
+        assertFalse(viewModel.uiState.value.isDownloading)
+        assertTrue(downloadClient.enqueuedDownloads.isEmpty())
+        assertTrue(modelRepository.savedPendingDownloads.isEmpty())
+    }
+
+    @Test
+    fun monitorDownloadFailureClearsPendingDeletesTargetAndShowsReason() = runTest(dispatcher) {
+        withTempDownloadTarget { target ->
+            val modelRepository = FakeModelRepository(downloadedModelFileProvider = { target })
+            val downloadClient = FakeModelDownloadClient(
+                queryResults = mutableListOf(
+                    DownloadInfo(
+                        status = DownloadManager.STATUS_FAILED,
+                        reason = DownloadManager.ERROR_INSUFFICIENT_SPACE,
+                        downloadedBytes = 0L,
+                        totalBytes = 100L,
+                    ),
+                ),
+                onEnqueue = { _, file -> file.writeText("partial", Charsets.UTF_8) },
+            )
+            val viewModel = createViewModel(
+                modelRepository = modelRepository,
+                downloadClient = downloadClient,
+            )
+
+            viewModel.startModelDownload()
+            advanceUntilIdle()
+
+            assertEquals("下载失败：存储空间不足", viewModel.uiState.value.statusText)
+            assertFalse(viewModel.uiState.value.isBusy)
+            assertFalse(viewModel.uiState.value.isDownloading)
+            assertFalse(target.exists())
+            assertEquals(1, modelRepository.clearPendingDownloadCount)
+            assertTrue(modelRepository.registeredModels.isEmpty())
+        }
+    }
+
+    @Test
+    fun monitorDownloadShaFailureDeletesFileClearsPendingAndStopsDownloading() = runTest(dispatcher) {
+        withTempDownloadTarget { target ->
+            val source = ModelDownloadSource(
+                title = "自定义模型",
+                fileName = target.name,
+                downloadUrl = "https://models.example.com/custom.litertlm",
+                expectedBytes = 5L,
+                expectedSha256 = "0".repeat(64),
+                modelId = null,
+            )
+            val modelRepository = FakeModelRepository(
+                customDownloadSource = source,
+                downloadedModelFileProvider = { target },
+            )
+            val downloadClient = FakeModelDownloadClient(
+                queryResults = mutableListOf(
+                    DownloadInfo(
+                        status = DownloadManager.STATUS_SUCCESSFUL,
+                        reason = 0,
+                        downloadedBytes = 5L,
+                        totalBytes = 5L,
+                    ),
+                ),
+                onEnqueue = { _, file -> file.writeText("model", Charsets.UTF_8) },
+            )
+            val viewModel = createViewModel(
+                modelRepository = modelRepository,
+                downloadClient = downloadClient,
+            )
+
+            viewModel.startCustomModelDownload(source.downloadUrl)
+            advanceUntilIdle()
+
+            assertEquals("模型校验失败，请重新下载", viewModel.uiState.value.statusText)
+            assertFalse(viewModel.uiState.value.isBusy)
+            assertFalse(viewModel.uiState.value.isDownloading)
+            assertFalse(target.exists())
+            assertEquals(1, modelRepository.clearPendingDownloadCount)
+            assertTrue(modelRepository.registeredModels.isEmpty())
+        }
+    }
+
+    @Test
+    fun restoreStartupStateClearsPendingDownloadWhenDownloadTaskMissing() = runTest(dispatcher) {
+        withTempDownloadTarget { target ->
+            val source = ModelDownloadSource(
+                title = "自定义模型",
+                fileName = target.name,
+                downloadUrl = "https://models.example.com/custom.litertlm",
+                expectedBytes = null,
+                expectedSha256 = null,
+                modelId = null,
+            )
+            val modelRepository = FakeModelRepository(
+                activeModelPath = null,
+                downloadedModelFileProvider = { target },
+                pendingDownloadId = 42L,
+                pendingDownloadSource = source,
+            )
+            val downloadClient = FakeModelDownloadClient()
+            val viewModel = createViewModel(
+                modelRepository = modelRepository,
+                downloadClient = downloadClient,
+            )
+
+            viewModel.restoreStartupState()
+            advanceUntilIdle()
+
+            assertEquals("下载任务不存在", viewModel.uiState.value.statusText)
+            assertFalse(viewModel.uiState.value.isDownloading)
+            assertEquals(1, modelRepository.clearPendingDownloadCount)
+            assertEquals(listOf(42L), downloadClient.queriedDownloadIds)
+        }
     }
 
     @Test
@@ -7103,7 +7251,15 @@ class PocketMindViewModelTest {
     private class FakeModelRepository(
         activeModelPath: String? = null,
         private var memoryEmbeddingModelPath: String? = null,
+        private val customDownloadSource: ModelDownloadSource? = null,
+        private val downloadedModelFileProvider: ((String) -> File?)? = null,
+        private var pendingDownloadId: Long = -1L,
+        private var pendingDownloadSource: ModelDownloadSource? = null,
     ) : ModelRepositoryFacade {
+        val registeredModels = mutableListOf<InstalledModelSummary>()
+        val savedPendingDownloads = mutableListOf<Pair<Long, ModelDownloadSource>>()
+        var clearPendingDownloadCount = 0
+
         private var state = ModelSelectionState(
             selectedModelId = DEFAULT_CHAT_MODEL_ID,
             activeInstalledModelId = null,
@@ -7139,6 +7295,7 @@ class PocketMindViewModelTest {
                 verifiedSha256 = verifiedSha256,
                 verificationStatus = verificationStatus,
             )
+            registeredModels += summary
             state = state.copy(
                 activeInstalledModelId = summary.id,
                 activeModelPath = path,
@@ -7147,9 +7304,14 @@ class PocketMindViewModelTest {
             return summary
         }
 
-        override fun createCustomDownloadSource(downloadUrl: String): ModelDownloadSource? = null
+        override fun createCustomDownloadSource(downloadUrl: String): ModelDownloadSource? = customDownloadSource
 
-        override fun downloadedModelFile(fileName: String): File? = File("/tmp/$fileName")
+        override fun downloadedModelFile(fileName: String): File? =
+            if (downloadedModelFileProvider != null) {
+                downloadedModelFileProvider.invoke(fileName)
+            } else {
+                File("/tmp/$fileName")
+            }
 
         override fun resolveModelStorageBytes(): Long = 1024L * 1024L * 1024L
 
@@ -7162,13 +7324,21 @@ class PocketMindViewModelTest {
         override fun importModel(uri: Uri, onProgress: (TransferProgress) -> Unit): String =
             "/tmp/imported.litertlm"
 
-        override fun pendingDownloadId(): Long = -1L
+        override fun pendingDownloadId(): Long = pendingDownloadId
 
-        override fun savePendingDownload(downloadId: Long, source: ModelDownloadSource) = Unit
+        override fun savePendingDownload(downloadId: Long, source: ModelDownloadSource) {
+            pendingDownloadId = downloadId
+            pendingDownloadSource = source
+            savedPendingDownloads += downloadId to source
+        }
 
-        override fun clearPendingDownload() = Unit
+        override fun clearPendingDownload() {
+            clearPendingDownloadCount += 1
+            pendingDownloadId = -1L
+            pendingDownloadSource = null
+        }
 
-        override fun loadPendingDownloadSource(): ModelDownloadSource? = null
+        override fun loadPendingDownloadSource(): ModelDownloadSource? = pendingDownloadSource
     }
 
     private class FakeGenerationParametersStore : GenerationParametersStore {
@@ -7230,13 +7400,39 @@ class PocketMindViewModelTest {
         }
     }
 
-    private class FakeModelDownloadClient : ModelDownloadClient {
-        override fun enqueue(source: ModelDownloadSource, targetFile: File): Result<Long> =
-            Result.success(1L)
+    private class FakeModelDownloadClient(
+        private val enqueueResult: Result<Long> = Result.success(1L),
+        private val queryResults: MutableList<DownloadInfo?> = mutableListOf(),
+        private val onEnqueue: (ModelDownloadSource, File) -> Unit = { _, _ -> },
+    ) : ModelDownloadClient {
+        val enqueuedDownloads = mutableListOf<Pair<ModelDownloadSource, File>>()
+        val queriedDownloadIds = mutableListOf<Long>()
+        val cancelledDownloadIds = mutableListOf<Long>()
 
-        override fun cancel(downloadId: Long) = Unit
+        override fun enqueue(source: ModelDownloadSource, targetFile: File): Result<Long> {
+            enqueuedDownloads += source to targetFile
+            onEnqueue(source, targetFile)
+            return enqueueResult
+        }
 
-        override fun query(downloadId: Long): DownloadInfo? = null
+        override fun cancel(downloadId: Long) {
+            cancelledDownloadIds += downloadId
+        }
+
+        override fun query(downloadId: Long): DownloadInfo? {
+            queriedDownloadIds += downloadId
+            return if (queryResults.isEmpty()) null else queryResults.removeAt(0)
+        }
+    }
+
+    private fun withTempDownloadTarget(block: (File) -> Unit) {
+        val file = File.createTempFile("pocketmind-download", ".litertlm")
+        file.delete()
+        try {
+            block(file)
+        } finally {
+            file.delete()
+        }
     }
 
     private fun scheduledTask(

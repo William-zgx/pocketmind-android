@@ -303,12 +303,16 @@ write_flow_contract_fields() {
       printf 'modelSha256VerificationCovered=true\n'
       printf 'storagePreflightCovered=true\n'
       printf 'downloadFailureRecoveryCovered=true\n'
+      printf 'downloadDirectoryUnavailableCovered=true\n'
+      printf 'downloadShaFailureCleanupCovered=true\n'
+      printf 'pendingDownloadMissingTaskRecoveryCovered=true\n'
       printf 'remoteFallbackExplained=true\n'
       printf 'lightweightAlternativeExplained=true\n'
       ;;
     customModelImportOrUrlRejection)
       printf 'customLitertlmImportCovered=true\n'
       printf 'customDownloadHttpsOnly=true\n'
+      printf 'customNonLitertlmDownloadRejected=true\n'
       printf 'customInvalidUrlRejected=true\n'
       printf 'customCredentialedUrlRejected=true\n'
       printf 'customUnverifiedModelMarked=true\n'
@@ -500,12 +504,16 @@ def is_valid_evidence(flow, value):
             "modelSha256VerificationCovered",
             "storagePreflightCovered",
             "downloadFailureRecoveryCovered",
+            "downloadDirectoryUnavailableCovered",
+            "downloadShaFailureCleanupCovered",
+            "pendingDownloadMissingTaskRecoveryCovered",
             "remoteFallbackExplained",
             "lightweightAlternativeExplained",
         ],
         "customModelImportOrUrlRejection": [
             "customLitertlmImportCovered",
             "customDownloadHttpsOnly",
+            "customNonLitertlmDownloadRejected",
             "customInvalidUrlRejected",
             "customCredentialedUrlRejected",
             "customUnverifiedModelMarked",

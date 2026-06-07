@@ -462,12 +462,16 @@ write_model_release_flow_contract_fixture() {
       printf 'modelSha256VerificationCovered=true\n'
       printf 'storagePreflightCovered=true\n'
       printf 'downloadFailureRecoveryCovered=true\n'
+      printf 'downloadDirectoryUnavailableCovered=true\n'
+      printf 'downloadShaFailureCleanupCovered=true\n'
+      printf 'pendingDownloadMissingTaskRecoveryCovered=true\n'
       printf 'remoteFallbackExplained=true\n'
       printf 'lightweightAlternativeExplained=true\n'
       ;;
     customModelImportOrUrlRejection)
       printf 'customLitertlmImportCovered=true\n'
       printf 'customDownloadHttpsOnly=true\n'
+      printf 'customNonLitertlmDownloadRejected=true\n'
       printf 'customInvalidUrlRejected=true\n'
       printf 'customCredentialedUrlRejected=true\n'
       printf 'customUnverifiedModelMarked=true\n'
@@ -1975,6 +1979,9 @@ expect_failure \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_LOCAL_MODEL_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-model-download-verification-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-storage-preflight-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-download-directory-unavailable-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-download-sha-failure-cleanup-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-pending-download-missing-task-recovery-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-local-model-flow.properties" "flow-localModelDownloadVerification-lightweight-alternative-explanation-missing"
 VALIDATION_WEAK_CUSTOM_MODEL_FLOW="$TMP_DIR/release-validation-weak-custom-model-flow.json"
 VALIDATION_WEAK_CUSTOM_MODEL_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-custom-model.properties"
@@ -2003,6 +2010,7 @@ expect_failure \
   "release validation verifier rejects weak custom model evidence" \
   scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_CUSTOM_MODEL_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-https-only-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-non-litertlm-rejection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-invalid-url-rejection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-custom-model-flow.properties" "flow-customModelImportOrUrlRejection-custom-unverified-marker-missing"
 VALIDATION_WEAK_SHARE_FLOW="$TMP_DIR/release-validation-weak-share-flow.json"
@@ -2735,8 +2743,12 @@ done
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "localModelDownloadVerified=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "modelSha256VerificationCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "storagePreflightCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "downloadDirectoryUnavailableCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "downloadShaFailureCleanupCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "pendingDownloadMissingTaskRecoveryCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-localModelDownloadVerification.properties" "lightweightAlternativeExplained=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customDownloadHttpsOnly=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customNonLitertlmDownloadRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customInvalidUrlRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "actionSendTextStaged=true"
@@ -2993,8 +3005,12 @@ done
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "localModelDownloadVerified=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "modelSha256VerificationCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "downloadFailureRecoveryCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "downloadDirectoryUnavailableCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "downloadShaFailureCleanupCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "pendingDownloadMissingTaskRecoveryCovered=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-localModelDownloadVerification.properties" "remoteFallbackExplained=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customLitertlmImportCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customNonLitertlmDownloadRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customCredentialedUrlRejected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-customModelImportOrUrlRejection.properties" "customUnverifiedModelMarked=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "actionSendTextStaged=true"

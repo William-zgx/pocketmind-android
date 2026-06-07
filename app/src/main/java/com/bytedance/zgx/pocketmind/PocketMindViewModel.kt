@@ -627,7 +627,7 @@ class PocketMindViewModel(
         val source = modelRepository.createCustomDownloadSource(downloadUrl)
         if (source == null) {
             _uiState.update {
-                it.copy(statusText = "请输入有效的 HTTPS 模型下载链接；HTTP 仅支持本地调试地址")
+                it.copy(statusText = "请输入有效的 HTTPS .litertlm 模型下载链接；HTTP 仅支持本地调试地址")
             }
             return
         }
