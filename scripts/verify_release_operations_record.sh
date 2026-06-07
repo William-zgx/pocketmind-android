@@ -98,6 +98,10 @@ def validate_evidence_file(section, entry):
         failures.append(f"{section}-evidence-sha-mismatch")
     return path
 
+def kebab(value):
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", value)
+    return re.sub(r"[^a-zA-Z0-9]+", "-", spaced).lower().strip("-")
+
 def properties_for(path):
     props = {}
     if path is None:
@@ -119,6 +123,43 @@ def is_sha256(value):
 
 def positive_int_string(value):
     return isinstance(value, str) and bool(re.fullmatch(r"[1-9][0-9]*", value))
+
+def non_negative_int_string(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"0|[1-9][0-9]*", value))
+
+def validate_property_artifact(section, props, path_key, sha_key, size_key):
+    artifact_value = props.get(path_key, "")
+    artifact_label = kebab(path_key)
+    if not non_empty_string(artifact_value):
+        failures.append(f"{section}-{artifact_label}-missing")
+        return None
+    artifact_path = Path(artifact_value)
+    if not artifact_path.is_file():
+        failures.append(f"{section}-{artifact_label}-file-missing")
+        return None
+
+    expected_sha = props.get(sha_key, "")
+    if not is_sha256(expected_sha):
+        failures.append(f"{section}-{kebab(sha_key)}-invalid")
+    else:
+        actual_sha = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        if expected_sha != actual_sha:
+            failures.append(f"{section}-{kebab(sha_key)}-mismatch")
+
+    expected_size = props.get(size_key, "")
+    if not positive_int_string(expected_size):
+        failures.append(f"{section}-{kebab(size_key)}-invalid")
+    elif int(expected_size) != artifact_path.stat().st_size:
+        failures.append(f"{section}-{kebab(size_key)}-mismatch")
+
+    return artifact_path
+
+def validate_zero_count(section, props, key):
+    value = props.get(key, "")
+    if not non_negative_int_string(value):
+        failures.append(f"{section}-{kebab(key)}-invalid")
+    elif value != "0":
+        failures.append(f"{section}-{kebab(key)}-not-zero")
 
 def validate_ci_evidence_record(section, entry, expected_target):
     if not isinstance(entry, dict):
@@ -249,7 +290,89 @@ for field in (
 ):
     if smoke.get(field) is not True:
         failures.append(f"{field}-not-true")
-validate_evidence_file("crash-anr-smoke", smoke.get("evidence"))
+smoke_evidence_path = validate_evidence_file("crash-anr-smoke", smoke.get("evidence"))
+if smoke_evidence_path is not None:
+    smoke_props = properties_for(smoke_evidence_path)
+    if smoke_props.get("status") != "passed":
+        failures.append("crash-anr-smoke-evidence-status-not-passed")
+    if smoke_props.get("target") != "crash-anr-smoke-evidence":
+        failures.append("crash-anr-smoke-evidence-target-invalid")
+    if smoke_props.get("operationsRecordField") != "crashAnrSmoke.evidence":
+        failures.append("crash-anr-smoke-evidence-operations-record-field-invalid")
+    for field in ("window", "track", "failureEvidencePolicy"):
+        if non_empty_string(smoke.get(field)) and smoke_props.get(field) != smoke.get(field):
+            failures.append(f"crash-anr-smoke-evidence-{kebab(field)}-mismatch")
+    if not non_empty_string(smoke_props.get("packageName")):
+        failures.append("crash-anr-smoke-evidence-package-name-missing")
+    if smoke_props.get("deviceStatus") != "passed":
+        failures.append("crash-anr-smoke-evidence-device-status-not-passed")
+    if smoke_props.get("instrumentationStatus") != "passed":
+        failures.append("crash-anr-smoke-evidence-instrumentation-status-not-passed")
+    if not positive_int_string(smoke_props.get("instrumentationTestCount", "")):
+        failures.append("crash-anr-smoke-evidence-instrumentation-test-count-invalid")
+    for field in ("serial", "apiLevel", "abi"):
+        if not non_empty_string(smoke_props.get(field)):
+            failures.append(f"crash-anr-smoke-evidence-{kebab(field)}-missing")
+    if smoke_props.get("logcatAnalyzed") != "true":
+        failures.append("crash-anr-smoke-evidence-logcat-not-analyzed")
+    for field in (
+        "noLaunchCrash",
+        "noInstallCrash",
+        "noCrashLoop",
+        "noFatalNativeLiteRtLmFailure",
+        "noReproducibleAnr",
+    ):
+        if smoke_props.get(field) != "true":
+            failures.append(f"crash-anr-smoke-evidence-{kebab(field)}-not-true")
+    for field in (
+        "instrumentationCrashSignalCount",
+        "instrumentationFailureSignalCount",
+        "crashSignalCount",
+        "installCrashSignalCount",
+        "anrSignalCount",
+        "fatalLiteRtLmSignalCount",
+    ):
+        validate_zero_count("crash-anr-smoke-evidence", smoke_props, field)
+
+    device_report_path = validate_property_artifact(
+        "crash-anr-smoke-device-report",
+        smoke_props,
+        "deviceReportFile",
+        "deviceReportSha256",
+        "deviceReportSizeBytes",
+    )
+    instrumentation_output_path = validate_property_artifact(
+        "crash-anr-smoke-instrumentation-output",
+        smoke_props,
+        "instrumentationOutputFile",
+        "instrumentationOutputSha256",
+        "instrumentationOutputSizeBytes",
+    )
+    logcat_path = validate_property_artifact(
+        "crash-anr-smoke-logcat",
+        smoke_props,
+        "logcatFile",
+        "logcatSha256",
+        "logcatSizeBytes",
+    )
+    device_report_props = properties_for(device_report_path)
+    if device_report_path is not None:
+        if device_report_props.get("status") != "passed":
+            failures.append("crash-anr-smoke-device-report-status-not-passed")
+        if device_report_props.get("instrumentation") != "passed":
+            failures.append("crash-anr-smoke-device-report-instrumentation-not-passed")
+        if device_report_props.get("instrumentation_test_count") != smoke_props.get("instrumentationTestCount"):
+            failures.append("crash-anr-smoke-device-report-test-count-mismatch")
+        if device_report_props.get("serial") != smoke_props.get("serial"):
+            failures.append("crash-anr-smoke-device-report-serial-mismatch")
+        if device_report_props.get("api_level") != smoke_props.get("apiLevel"):
+            failures.append("crash-anr-smoke-device-report-api-level-mismatch")
+        if device_report_props.get("abi") != smoke_props.get("abi"):
+            failures.append("crash-anr-smoke-device-report-abi-mismatch")
+        if non_empty_string(device_report_props.get("instrumentation_output_file")) and device_report_props.get("instrumentation_output_file") != str(instrumentation_output_path):
+            failures.append("crash-anr-smoke-device-report-instrumentation-output-mismatch")
+        if non_empty_string(device_report_props.get("logcat_file")) and device_report_props.get("logcat_file") != str(logcat_path):
+            failures.append("crash-anr-smoke-device-report-logcat-mismatch")
 
 rollback = record.get("rollback")
 if not isinstance(rollback, dict):

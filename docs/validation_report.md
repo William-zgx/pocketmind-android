@@ -23,6 +23,49 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Crash/ANR operations evidence binding
+
+本轮覆盖项：
+
+- `verify_release_operations_record.sh` 不再只接受 `crashAnrSmoke.evidence`
+  的 path/SHA；必须解析 smoke report，并要求 `status=passed`、
+  `target=crash-anr-smoke-evidence`、`operationsRecordField=crashAnrSmoke.evidence`、
+  `logcatAnalyzed=true`。
+- operations 记录里的 `window`、`track`、`failureEvidencePolicy` 必须和 smoke
+  report 一致；五个 `no*` 结果必须为 true，六个 crash/ANR/LiteRT signal counter
+  必须为 0。
+- smoke report 引用的 device report、instrumentation output、logcat 必须存在，并且
+  SHA-256 与 size 都匹配；device report 的 serial/API/ABI/test count/logcat 路径也必须和
+  smoke report 对齐。
+- 不修改 `docs/release_operations_record.json` 的 pending 状态，不把模拟器 evidence
+  伪装成正式运营审批。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_operations_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/crash-anr-operations-smoke-clean-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 approved operations 正例、
+  failed smoke report 但 SHA 匹配的负例，以及 logcat SHA 被篡改的负例。
+- 通过：API 36 arm64 `pocketmind_api36_arm64` clean-device smoke，
+  `MainActivitySmokeTest` 6 个测试通过。
+- 通过：`build/verification/crash-anr-operations-smoke-clean-current/crash-anr-smoke.properties`
+  记录 `status=passed`、`instrumentationTestCount=6`、`logcatSizeBytes=665048`、
+  所有 crash/ANR/LiteRT counters 为 0，SHA-256 为
+  `8f13e172a916da88725c94f339cd1d180d5154649be032536636a169e9b64930`。
+- 未完成：正式 release operations 仍需要真实 CI artifact、production signing、Android
+  Vitals/值班、rollback owner 和人工 review 后才能从 pending 变为 approved。
+
 ## 2026-06-07 Store data safety privacy notice consistency
 
 本轮覆盖项：

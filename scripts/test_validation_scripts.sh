@@ -1270,6 +1270,10 @@ OPERATIONS_APPROVED="$TMP_DIR/release-operations-approved.json"
 OPERATIONS_DATE="$(date +%F)"
 OPERATIONS_MONITORING_EVIDENCE="$TMP_DIR/release-operations-monitoring.properties"
 OPERATIONS_SMOKE_EVIDENCE="$TMP_DIR/release-operations-smoke.properties"
+OPERATIONS_SMOKE_FAILED_EVIDENCE="$TMP_DIR/release-operations-smoke-failed.properties"
+OPERATIONS_SMOKE_FAILED_RECORD="$TMP_DIR/release-operations-smoke-failed.json"
+OPERATIONS_SMOKE_BAD_LOGCAT_EVIDENCE="$TMP_DIR/release-operations-smoke-bad-logcat.properties"
+OPERATIONS_SMOKE_BAD_LOGCAT_RECORD="$TMP_DIR/release-operations-smoke-bad-logcat.json"
 OPERATIONS_SMOKE_DEVICE_REPORT="$TMP_DIR/release-operations-smoke-device.properties"
 OPERATIONS_SMOKE_INSTRUMENTATION="$TMP_DIR/release-operations-smoke-instrumentation.txt"
 OPERATIONS_SMOKE_LOGCAT="$TMP_DIR/release-operations-smoke-logcat.txt"
@@ -1594,6 +1598,53 @@ expect_failure \
   "release operations verifier rejects crash smoke evidence sha mismatch" \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_SMOKE_BAD_SHA" --report "$ARTIFACT_DIR/release-operations-smoke-bad-sha.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-bad-sha.properties" "crash-anr-smoke-evidence-sha-mismatch"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_SMOKE_FAILED_RECORD" "$OPERATIONS_SMOKE_EVIDENCE" "$OPERATIONS_SMOKE_FAILED_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+record_path, target_path, source_evidence_path, failed_evidence_path = map(Path, sys.argv[1:])
+text = source_evidence_path.read_text()
+text = text.replace("status=passed\n", "status=failed\n", 1)
+text = text.replace("noLaunchCrash=true\n", "noLaunchCrash=false\n", 1)
+failed_evidence_path.write_text(text)
+record = json.loads(record_path.read_text())
+record["crashAnrSmoke"]["evidence"]["path"] = str(failed_evidence_path)
+record["crashAnrSmoke"]["evidence"]["sha256"] = hashlib.sha256(failed_evidence_path.read_bytes()).hexdigest()
+target_path.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects failed crash smoke evidence with matching sha" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_SMOKE_FAILED_RECORD" --report "$ARTIFACT_DIR/release-operations-smoke-failed.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-failed.properties" "crash-anr-smoke-evidence-status-not-passed"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-failed.properties" "crash-anr-smoke-evidence-no-launch-crash-not-true"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_SMOKE_BAD_LOGCAT_RECORD" "$OPERATIONS_SMOKE_EVIDENCE" "$OPERATIONS_SMOKE_BAD_LOGCAT_EVIDENCE" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+record_path, target_path, source_evidence_path, bad_logcat_evidence_path = map(Path, sys.argv[1:])
+text = source_evidence_path.read_text()
+text = re.sub(
+    r"^logcatSha256=[0-9a-f]{64}$",
+    "logcatSha256=0000000000000000000000000000000000000000000000000000000000000000",
+    text,
+    count=1,
+    flags=re.MULTILINE,
+)
+bad_logcat_evidence_path.write_text(text)
+record = json.loads(record_path.read_text())
+record["crashAnrSmoke"]["evidence"]["path"] = str(bad_logcat_evidence_path)
+record["crashAnrSmoke"]["evidence"]["sha256"] = hashlib.sha256(bad_logcat_evidence_path.read_bytes()).hexdigest()
+target_path.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects crash smoke evidence with bad logcat sha" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_SMOKE_BAD_LOGCAT_RECORD" --report "$ARTIFACT_DIR/release-operations-smoke-bad-logcat.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-smoke-bad-logcat.properties" "crash-anr-smoke-logcat-logcat-sha256-mismatch"
 
 VALIDATION_PENDING="$TMP_DIR/release-validation-pending.json"
 VALIDATION_APPROVED="$TMP_DIR/release-validation-approved.json"
