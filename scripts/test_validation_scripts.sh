@@ -269,7 +269,7 @@ FAKE_FRESH_START_FIRST_RUN_UI
   <node text="PocketMind" enabled="true" clickable="false" bounds="[76,150][303,223]" />
   <node text="隐私优先的随身 AI 助手" enabled="true" clickable="false" bounds="[76,226][303,275]" />
   <node content-desc="模型管理" enabled="true" clickable="true" bounds="[471,149][597,275]" />
-  <node text="开始和 PocketMind 对话" enabled="true" clickable="false" bounds="[94,600][778,691]" />
+  <node text="为什么装它" enabled="true" clickable="false" bounds="[94,600][778,691]" />
 </hierarchy>
 FAKE_FRESH_START_AFTER_SKIP_UI
           fi
@@ -281,7 +281,7 @@ FAKE_FRESH_START_AFTER_SKIP_UI
   <node text="PocketMind" enabled="true" clickable="false" bounds="[76,150][303,223]" />
   <node text="隐私优先的随身 AI 助手" enabled="true" clickable="false" bounds="[76,226][303,275]" />
   <node content-desc="模型管理" enabled="true" clickable="true" bounds="[471,149][597,275]" />
-  <node text="开始和 PocketMind 对话" enabled="true" clickable="false" bounds="[94,600][778,691]" />
+  <node text="为什么装它" enabled="true" clickable="false" bounds="[94,600][778,691]" />
 </hierarchy>
 FAKE_FRESH_START_UI
         fi
@@ -294,7 +294,7 @@ FAKE_FRESH_START_UI
 <hierarchy>
   <node text="PocketMind" bounds="[80,80][360,140]" />
   <node text="隐私优先的随身 AI 助手" bounds="[80,145][640,205]" />
-  <node text="开始和 PocketMind 对话" bounds="[80,460][780,560]" />
+  <node text="为什么装它" bounds="[80,460][780,560]" />
   <node text="模型管理" content-desc="模型管理" bounds="[760,80][980,180]" />
   <node text="当前模型" bounds="[80,260][420,340]" />
   <node text="本地可用" bounds="[80,360][420,430]" />
@@ -1161,8 +1161,8 @@ cat > "$STORE_POLICY_APPROVED" <<STORE_POLICY_APPROVED_JSON
   "privacyNoticeSha256": "$STORE_POLICY_NOTICE_SHA",
   "appListing": {
     "appName": "PocketMind",
-    "shortDescription": "Local-first AI assistant.",
-    "fullDescription": "PocketMind is a local-first personal AI assistant for internal testing. It stores user sessions locally, protects private context with confirmation, and clearly separates optional remote model calls from local-only data.",
+    "shortDescription": "Privacy-first pocket AI: local, optional remote, confirmed actions.",
+    "fullDescription": "PocketMind is a privacy-first pocket AI assistant for Android: it is locally usable with downloaded or imported models, can optionally use user-configured remote multimodal models for text and image requests, and only executes device actions after explicit confirmation. It stores user sessions locally, protects private context with confirmation, and clearly separates optional remote model calls from local-only data.",
     "category": "Productivity",
     "contactEmail": "release@pocketmind.app",
     "privacyPolicyUrl": "https://pocketmind.app/privacy"
@@ -1232,6 +1232,18 @@ expect_failure \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_INCOMPLETE_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_APPROVED" --report "$ARTIFACT_DIR/store-policy-notice-mismatch.properties"
 assert_report_contains_text "$ARTIFACT_DIR/store-policy-notice-mismatch.properties" "privacy-notice-mismatch"
+STORE_POLICY_BAD_POSITIONING="$TMP_DIR/store-policy-bad-positioning.json"
+sed \
+  -e 's#Privacy-first pocket AI: local, optional remote, confirmed actions.#Local-first AI assistant.#' \
+  -e 's#PocketMind is a privacy-first pocket AI assistant for Android: it is locally usable with downloaded or imported models, can optionally use user-configured remote multimodal models for text and image requests, and only executes device actions after explicit confirmation. ##' \
+  "$STORE_POLICY_APPROVED" > "$STORE_POLICY_BAD_POSITIONING"
+expect_failure \
+  "store policy verifier rejects app listing without product positioning" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_BAD_POSITIONING" --report "$ARTIFACT_DIR/store-policy-bad-positioning.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-positioning.properties" "app-listing-privacy-first-missing"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-positioning.properties" "app-listing-remote-multimodal-missing"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-bad-positioning.properties" "app-listing-confirmed-actions-missing"
 STORE_POLICY_BAD_SHA="$TMP_DIR/store-policy-bad-sha.json"
 sed 's/"privacyNoticeSha256": "'"$STORE_POLICY_NOTICE_SHA"'"/"privacyNoticeSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_BAD_SHA"
 expect_failure \
@@ -1689,7 +1701,7 @@ PY
     screenshot_sha="$(shasum -a 256 "$screenshot_path" | awk '{print $1}')"
     case "$screenshot_name" in
       chat-home)
-        screenshot_required_text="PocketMind|隐私优先的随身 AI 助手|开始和 PocketMind 对话|模型管理"
+        screenshot_required_text="PocketMind|隐私优先的随身 AI 助手|为什么装它|模型管理"
         ;;
       model-manager)
         screenshot_required_text="模型管理|当前模型|本地可用|远程多模态可选"
@@ -2669,7 +2681,7 @@ ui_dump.write_text(
             "<hierarchy>",
             '  <node text="PocketMind" />',
             '  <node text="隐私优先的随身 AI 助手" />',
-            '  <node text="开始和 PocketMind 对话" />',
+            '  <node text="为什么装它" />',
             '  <node text="模型管理" />',
             "</hierarchy>",
             "",
@@ -2694,7 +2706,7 @@ report.write_text(
             f"screenshot.chat-home.uiDump={ui_dump}",
             f"screenshot.chat-home.uiDumpSha256={ui_dump_sha}",
             "screenshot.chat-home.visualRegression=passed",
-            "screenshot.chat-home.requiredText=PocketMind|隐私优先的随身 AI 助手|开始和 PocketMind 对话|模型管理",
+            "screenshot.chat-home.requiredText=PocketMind|隐私优先的随身 AI 助手|为什么装它|模型管理",
             "",
         ]
     )

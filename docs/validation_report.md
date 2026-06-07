@@ -10622,3 +10622,46 @@ adb exec-out screencap -p > /tmp/pocketmind-positioning-first-screen.png
 - 通过：API 36 emulator `MainActivitySmokeTest#chatShellShowsModelManager`。
 - 通过：截图 `/tmp/pocketmind-positioning-first-screen.png` 显示首屏主卡标题为
   “隐私优先的随身 AI 助手”，顶栏完整显示 `PocketMind` 与定位副标题。
+
+## 2026-06-07 Store positioning, privacy entry, and release screenshot contract
+
+本轮覆盖项：
+
+- 首页空状态主卡新增可见“隐私说明”入口；不再只依赖顶栏盾牌图标。
+- `MainActivitySmokeTest` 新增首页隐私入口打开 App 内隐私说明页的模拟器合同，并把
+  首屏可滚动区域的能力胶囊断言改为滚动可达。
+- `docs/store_policy_record.json` 的 Store listing 草稿收敛为：
+  privacy-first pocket AI、local usable、optional remote multimodal、confirmed device actions。
+- `verify_store_policy_record.sh` 新增 Store listing 主定位检查；脚本自测新增缺失主定位的负例。
+- `docs/privacy_notice.md` 开头从 internal testing 草稿口径收敛为 Android release candidate
+  隐私边界说明；同步 store policy 和 privacy review 的 notice SHA / evidence SHA。
+- release screenshot capture / validation 合同不再要求旧文案“开始和 PocketMind 对话”，
+  改为要求 `PocketMind | 隐私优先的随身 AI 助手 | 为什么装它 | 模型管理`。
+
+验证命令：
+
+```bash
+bash -n scripts/capture_release_screenshots.sh scripts/verify_release_validation_record.sh scripts/verify_store_policy_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+scripts/verify_store_policy_record.sh --report build/verification/store-policy-current/store-policy.properties || true
+scripts/verify_privacy_review.sh --report build/verification/privacy-review-current/privacy-review.properties || true
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySmokeTest#chatShellShowsModelManager,com.bytedance.zgx.pocketmind.MainActivitySmokeTest#homePrivacyEntryOpensAppPrivacyNotice
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 Store listing 主定位正例和缺失主定位负例。
+- 通过：目标 JVM display contract。
+- 通过：API 36 emulator 两条 Smoke 测试，覆盖首页主定位和首页隐私说明入口。
+- 通过：store policy 当前记录只因 pending approval、占位联系邮箱/隐私政策 URL、
+  reviewer/date 缺失失败；不再因 privacy SHA 或 listing 主定位失败。
+- 通过：privacy review 当前记录只因 release/security/legal pending 失败；不再因
+  notice SHA 或 evidence SHA 失败。
+
+剩余风险：
+
+- 麦克风系统权限拒绝/恢复、设备动作确认后 ActivityResult 权限拒绝、远程视觉不支持的
+  Activity 分享整链路仍需补模拟器测试。
+- 真实联系邮箱、公开隐私政策 URL、release/security/legal/store reviewer 和日期仍未填写；
+  因此公发门禁继续 fail-closed。

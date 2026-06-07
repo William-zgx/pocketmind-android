@@ -45,7 +45,8 @@ class MainActivitySmokeTest {
         composeRule.waitForText("本地可用")
         composeRule.waitForText("远程多模态可选")
         composeRule.waitForText("动作确认执行")
-        composeRule.onNodeWithTag("home_capability_pills").assertIsDisplayed()
+        composeRule.onNodeWithTag("home_privacy_notice_button").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("home_capability_pills").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("model_startup_banner").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("top_model_button").assertIsDisplayed()
         composeRule.onNodeWithTag("top_session_button").assertIsDisplayed()
@@ -110,6 +111,19 @@ class MainActivitySmokeTest {
         composeRule.waitForText("设备动作和外部 App")
         composeRule.waitForText("Usage Stats 前台应用估计")
         composeRule.waitForText("当前屏幕截图 OCR")
+    }
+
+    @Test
+    fun homePrivacyEntryOpensAppPrivacyNotice() {
+        composeRule.waitForTag("app_title")
+
+        composeRule.onNodeWithTag("home_privacy_notice_button").performScrollTo().performClick()
+        composeRule.waitForTag("model_manager_sheet")
+
+        composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
+        composeRule.waitForText("敏感能力披露")
+        composeRule.waitForText("设备动作和外部 App")
+        composeRule.waitForText("用户控制")
     }
 
     @Test

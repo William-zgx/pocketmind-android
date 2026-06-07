@@ -1,8 +1,9 @@
 # Privacy Notice
 
-This notice describes the privacy boundary implemented in this repository for
-internal testing. It is not a final public legal policy. Review it with release,
-security, and legal owners before broad distribution.
+This notice describes the privacy boundary implemented by PocketMind for Android
+release candidates. Public distribution still requires release, security, and
+legal approval for the current app behavior, support process, and publication
+channel.
 
 ## Local Storage
 

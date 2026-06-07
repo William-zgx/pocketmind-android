@@ -279,6 +279,10 @@ fun PocketMindScreen(
                                 modelManagerInitialTab = MODEL_MANAGER_CURRENT_TAB_INDEX
                                 showModelManager = true
                             },
+                            onOpenPrivacyNotice = {
+                                modelManagerInitialTab = MODEL_MANAGER_PRIVACY_TAB_INDEX
+                                showModelManager = true
+                            },
                             onOpenRemoteModelConfig = {
                                 modelManagerInitialTab = MODEL_MANAGER_REMOTE_TAB_INDEX
                                 showModelManager = true
@@ -750,6 +754,7 @@ private fun RuntimeStatusBadge(state: ChatUiState) {
 private fun ChatEmptyState(
     state: ChatUiState,
     onOpenModelManager: () -> Unit,
+    onOpenPrivacyNotice: () -> Unit,
     onOpenRemoteModelConfig: () -> Unit,
     onPickModel: () -> Unit,
     onDownloadModel: () -> Unit,
@@ -809,6 +814,19 @@ private fun ChatEmptyState(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 HomePositioningPanel()
+                OutlinedButton(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_privacy_notice_button"),
+                    onClick = onOpenPrivacyNotice,
+                    enabled = !state.isBusy,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Security,
+                        contentDescription = null,
+                    )
+                    Text(" 隐私说明")
+                }
                 if (state.isReady) {
                     StatusSummaryRow(state)
                     PromptSuggestionList(

@@ -658,7 +658,7 @@ def validate_screenshot_report(name, entry, path):
 
 def required_screenshot_texts(name):
     return {
-        "chat-home": ["PocketMind", "隐私优先的随身 AI 助手", "开始和 PocketMind 对话", "模型管理"],
+        "chat-home": ["PocketMind", "隐私优先的随身 AI 助手", "为什么装它", "模型管理"],
         "model-manager": ["模型管理", "当前模型", "本地可用", "远程多模态可选"],
         "confirmation-sheet": ["确认执行", "读取剪贴板", "取消"],
         "background-tasks-or-audit": ["后台任务", "最近审计日志", "最近 Agent 轨迹", "暂无运行中的后台任务"],

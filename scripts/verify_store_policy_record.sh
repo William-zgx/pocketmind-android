@@ -148,6 +148,23 @@ if isinstance(listing.get("shortDescription"), str) and len(listing["shortDescri
     failures.append("short-description-too-long")
 if isinstance(listing.get("fullDescription"), str) and len(listing["fullDescription"].strip()) < 120:
     failures.append("full-description-too-short")
+listing_text = " ".join(
+    value for value in (
+        listing.get("shortDescription", ""),
+        listing.get("fullDescription", ""),
+    ) if isinstance(value, str)
+).lower()
+if "privacy-first" not in listing_text and "privacy first" not in listing_text:
+    failures.append("app-listing-privacy-first-missing")
+if "local" not in listing_text and "on-device" not in listing_text:
+    failures.append("app-listing-local-use-missing")
+if "remote multimodal" not in listing_text and not ("remote" in listing_text and "multimodal" in listing_text):
+    failures.append("app-listing-remote-multimodal-missing")
+if not (
+    ("device action" in listing_text or "actions" in listing_text) and
+    ("confirmation" in listing_text or "confirmed" in listing_text)
+):
+    failures.append("app-listing-confirmed-actions-missing")
 
 data_safety = record.get("dataSafety")
 if not isinstance(data_safety, dict):
