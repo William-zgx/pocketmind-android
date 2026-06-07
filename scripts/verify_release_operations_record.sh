@@ -177,6 +177,59 @@ def validate_ci_evidence_record(section, entry, expected_target):
         failures.append(f"ci-{section}-evidence-target-invalid")
     return props
 
+def csv_values(value):
+    if not isinstance(value, str) or not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+def validate_api_matrix_report(props):
+    required_apis = ["28", "32", "33", "34", "36"]
+    if csv_values(props.get("requiredApis", "")) != required_apis:
+        failures.append("ci-api-matrix-required-apis-invalid")
+    if csv_values(props.get("passedApis", "")) != required_apis:
+        failures.append("ci-api-matrix-passed-apis-invalid")
+    if csv_values(props.get("failedApis", "")):
+        failures.append("ci-api-matrix-failed-apis-not-empty")
+    readiness_report = props.get("readinessReportFile", "")
+    if not non_empty_string(readiness_report):
+        failures.append("ci-api-matrix-readiness-report-missing")
+    elif not Path(readiness_report).is_file():
+        failures.append("ci-api-matrix-readiness-report-file-missing")
+    for api in required_apis:
+        prefix = f"api{api}"
+        if props.get(f"{prefix}Status") != "passed":
+            failures.append(f"ci-api-matrix-api-{api}-not-passed")
+        report_file = props.get(f"{prefix}ReportFile", "")
+        if not non_empty_string(report_file):
+            failures.append(f"ci-api-matrix-api-{api}-report-file-missing")
+            continue
+        path = Path(report_file)
+        if not path.is_file():
+            failures.append(f"ci-api-matrix-api-{api}-report-file-not-found")
+            continue
+        expected_sha = props.get(f"{prefix}ReportSha256", "")
+        if not is_sha256(expected_sha):
+            failures.append(f"ci-api-matrix-api-{api}-report-sha-invalid")
+        else:
+            actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            if expected_sha != actual_sha:
+                failures.append(f"ci-api-matrix-api-{api}-report-sha-mismatch")
+        child_props = properties_for(path)
+        if child_props.get("status") != "passed":
+            failures.append(f"ci-api-matrix-api-{api}-child-status-not-passed")
+        if child_props.get("target") != "regression-emulator":
+            failures.append(f"ci-api-matrix-api-{api}-child-target-invalid")
+        if child_props.get("api_level") != api:
+            failures.append(f"ci-api-matrix-api-{api}-child-api-mismatch")
+        if child_props.get("clean_device") != "1":
+            failures.append(f"ci-api-matrix-api-{api}-child-not-clean")
+        if not positive_int_string(child_props.get("actual_android_test_count", "")):
+            failures.append(f"ci-api-matrix-api-{api}-child-count-invalid")
+        if not non_empty_string(child_props.get("device_report_file")):
+            failures.append(f"ci-api-matrix-api-{api}-child-device-report-missing")
+        if not non_empty_string(child_props.get("instrumentation_output_file")):
+            failures.append(f"ci-api-matrix-api-{api}-child-instrumentation-output-missing")
+
 failures = []
 if record.get("version") != 1:
     failures.append("version-invalid")
@@ -217,6 +270,15 @@ if not non_empty_string(connected_ci_props.get("device_report_file")):
     failures.append("ci-connected-android-tests-device-report-missing")
 if not non_empty_string(connected_ci_props.get("instrumentation_output_file")):
     failures.append("ci-connected-android-tests-instrumentation-output-missing")
+
+api_matrix_ci_props = validate_ci_evidence_record(
+    "api-matrix",
+    ci.get("apiMatrix"),
+    "regression-emulator-api-matrix",
+)
+if isinstance(ci.get("apiMatrix"), dict) and ci["apiMatrix"].get("artifactName") != "android-emulator-api-matrix-evidence":
+    failures.append("ci-api-matrix-artifact-name-invalid")
+validate_api_matrix_report(api_matrix_ci_props)
 
 artifact_entry = ci.get("releaseArtifactArchive")
 artifact_ci_props = validate_ci_evidence_record(

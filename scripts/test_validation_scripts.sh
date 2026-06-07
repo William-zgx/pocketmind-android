@@ -1308,6 +1308,8 @@ OPERATIONS_SMOKE_INSTRUMENTATION_CRASH_REPORT="$TMP_DIR/release-operations-smoke
 OPERATIONS_ROLLBACK_EVIDENCE="$TMP_DIR/release-operations-rollback.properties"
 OPERATIONS_CI_LOCAL_EVIDENCE="$TMP_DIR/release-operations-ci-local.properties"
 OPERATIONS_CI_CONNECTED_EVIDENCE="$TMP_DIR/release-operations-ci-connected.properties"
+OPERATIONS_CI_API_MATRIX_EVIDENCE="$TMP_DIR/release-operations-ci-api-matrix.properties"
+OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE="$TMP_DIR/release-operations-ci-api-matrix-weak.properties"
 OPERATIONS_CI_ARTIFACT_EVIDENCE="$TMP_DIR/release-operations-ci-artifact-archive.properties"
 OPERATIONS_CI_SIGNING_EVIDENCE="$TMP_DIR/release-operations-ci-signing.properties"
 OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE="$TMP_DIR/release-operations-ci-connected-weak.properties"
@@ -1343,6 +1345,59 @@ avd=pocketmind_ci_api36_arm64
 instrumentation_output_file=$TMP_DIR/ci-instrumentation.txt
 device_report_file=$TMP_DIR/ci-device-verification.properties
 OPERATIONS_CI_CONNECTED_EVIDENCE_PROPERTIES
+OPERATIONS_CI_API_MATRIX_READINESS="$TMP_DIR/ci-api-matrix-readiness.properties"
+cat > "$OPERATIONS_CI_API_MATRIX_READINESS" <<OPERATIONS_CI_API_MATRIX_READINESS_PROPERTIES
+status=passed
+target=emulator-api-matrix-readiness
+requiredApis=28,32,33,34,36
+installedSystemImageApis=28,32,33,34,36
+availableAvdApis=28,32,33,34,36
+OPERATIONS_CI_API_MATRIX_READINESS_PROPERTIES
+OPERATIONS_CI_API_MATRIX_LINES=()
+for api_level in 28 32 33 34 36; do
+  api_report="$TMP_DIR/ci-api-${api_level}-regression.properties"
+  cat > "$api_report" <<OPERATIONS_CI_API_REGRESSION_PROPERTIES
+status=passed
+target=regression-emulator
+clean_device=1
+source_android_test_count=20
+expected_android_test_count=20
+actual_android_test_count=20
+serial=emulator-${api_level}
+api_level=${api_level}
+abi=arm64-v8a
+avd=pocketmind_ci_api${api_level}_arm64_v8a
+instrumentation_output_file=$TMP_DIR/ci-api-${api_level}-instrumentation.txt
+device_report_file=$TMP_DIR/ci-api-${api_level}-device-verification.properties
+OPERATIONS_CI_API_REGRESSION_PROPERTIES
+  api_report_sha="$(shasum -a 256 "$api_report" | awk '{print $1}')"
+  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}Status=passed")
+  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}Avd=pocketmind_ci_api${api_level}_arm64_v8a")
+  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}ReportFile=$api_report")
+  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}ReportSha256=$api_report_sha")
+done
+{
+  printf 'status=passed\n'
+  printf 'target=regression-emulator-api-matrix\n'
+  printf 'failedTarget=\n'
+  printf 'reason=\n'
+  printf 'artifactDir=%s\n' "$TMP_DIR/ci-api-matrix"
+  printf 'requiredApis=28,32,33,34,36\n'
+  printf 'tag=google_apis\n'
+  printf 'abi=arm64-v8a\n'
+  printf 'readinessReportFile=%s\n' "$OPERATIONS_CI_API_MATRIX_READINESS"
+  printf 'passedApis=28,32,33,34,36\n'
+  printf 'failedApis=\n'
+  printf '%s\n' "${OPERATIONS_CI_API_MATRIX_LINES[@]}"
+} > "$OPERATIONS_CI_API_MATRIX_EVIDENCE"
+cat > "$OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE" <<OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE_PROPERTIES
+status=passed
+target=regression-emulator-api-matrix
+requiredApis=28,32
+passedApis=28
+failedApis=32
+readinessReportFile=$OPERATIONS_CI_API_MATRIX_READINESS
+OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE_PROPERTIES
 cat > "$OPERATIONS_CI_ARTIFACT_EVIDENCE" <<OPERATIONS_CI_ARTIFACT_EVIDENCE_PROPERTIES
 status=passed
 target=ci-release-artifact-archive
@@ -1464,6 +1519,8 @@ OPERATIONS_SMOKE_SHA="$(shasum -a 256 "$OPERATIONS_SMOKE_EVIDENCE" | awk '{print
 OPERATIONS_ROLLBACK_SHA="$(shasum -a 256 "$OPERATIONS_ROLLBACK_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_CI_LOCAL_SHA="$(shasum -a 256 "$OPERATIONS_CI_LOCAL_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_CI_CONNECTED_SHA="$(shasum -a 256 "$OPERATIONS_CI_CONNECTED_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_API_MATRIX_SHA="$(shasum -a 256 "$OPERATIONS_CI_API_MATRIX_EVIDENCE" | awk '{print $1}')"
+OPERATIONS_CI_API_MATRIX_WEAK_SHA="$(shasum -a 256 "$OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_CI_ARTIFACT_SHA="$(shasum -a 256 "$OPERATIONS_CI_ARTIFACT_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_CI_SIGNING_SHA="$(shasum -a 256 "$OPERATIONS_CI_SIGNING_EVIDENCE" | awk '{print $1}')"
 OPERATIONS_CI_CONNECTED_WEAK_SHA="$(shasum -a 256 "$OPERATIONS_CI_CONNECTED_WEAK_EVIDENCE" | awk '{print $1}')"
@@ -1501,6 +1558,15 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
       "evidence": {
         "path": "$OPERATIONS_CI_CONNECTED_EVIDENCE",
         "sha256": "$OPERATIONS_CI_CONNECTED_SHA"
+      }
+    },
+    "apiMatrix": {
+      "status": "passed",
+      "jobName": "emulator-api-matrix",
+      "artifactName": "android-emulator-api-matrix-evidence",
+      "evidence": {
+        "path": "$OPERATIONS_CI_API_MATRIX_EVIDENCE",
+        "sha256": "$OPERATIONS_CI_API_MATRIX_SHA"
       }
     },
     "releaseArtifactArchive": {
@@ -1602,6 +1668,22 @@ expect_failure \
   scripts/verify_release_operations_record.sh --file "$OPERATIONS_CI_WEAK_CONNECTED" --report "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties"
 assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties" "ci-connected-android-tests-evidence-target-invalid"
 assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-connected.properties" "ci-connected-android-tests-count-invalid"
+OPERATIONS_CI_WEAK_API_MATRIX="$TMP_DIR/release-operations-ci-weak-api-matrix.json"
+python3 - "$OPERATIONS_APPROVED" "$OPERATIONS_CI_WEAK_API_MATRIX" "$OPERATIONS_CI_API_MATRIX_WEAK_EVIDENCE" "$OPERATIONS_CI_API_MATRIX_WEAK_SHA" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+record = json.loads(Path(sys.argv[1]).read_text())
+record["ci"]["apiMatrix"]["evidence"]["path"] = sys.argv[3]
+record["ci"]["apiMatrix"]["evidence"]["sha256"] = sys.argv[4]
+Path(sys.argv[2]).write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release operations verifier rejects weak API matrix evidence" \
+  scripts/verify_release_operations_record.sh --file "$OPERATIONS_CI_WEAK_API_MATRIX" --report "$ARTIFACT_DIR/release-operations-ci-weak-api-matrix.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-api-matrix.properties" "ci-api-matrix-required-apis-invalid"
+assert_report_contains_text "$ARTIFACT_DIR/release-operations-ci-weak-api-matrix.properties" "ci-api-matrix-passed-apis-invalid"
 OPERATIONS_NO_VITALS="$TMP_DIR/release-operations-no-vitals.json"
 sed 's/"Android Vitals", //' "$OPERATIONS_APPROVED" > "$OPERATIONS_NO_VITALS"
 expect_failure \

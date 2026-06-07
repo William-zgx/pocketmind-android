@@ -150,6 +150,35 @@ scripts/test_validation_scripts.sh
 - 仍需真机：`performanceSanity` 不能用 emulator evidence 闭合；`verify_perf_baseline.sh`
   会拒绝 `deviceSerial=emulator-*`。
 
+## 2026-06-07 Release operations API matrix evidence gate
+
+本轮覆盖项：
+
+- `docs/release_operations_record.json` 的 `ci` 区块新增 `apiMatrix` evidence 槽位，
+  记录 `jobName`、`artifactName` 和矩阵 report path/SHA。
+- `scripts/verify_release_operations_record.sh` 现在要求 `ci.apiMatrix` 指向
+  `target=regression-emulator-api-matrix` 的通过报告，并校验：
+  `requiredApis=28,32,33,34,36`、`passedApis=28,32,33,34,36`、`failedApis` 为空、
+  readiness report 存在，以及每个 API child regression report 的 path/SHA/API level、
+  clean-device、AndroidTest count、device report 和 instrumentation output 字段。
+- `scripts/test_validation_scripts.sh` 的 operations approved fixture 补齐 API matrix
+  evidence，并增加弱 matrix report 负例，防止缺 API 或失败 API 被误收。
+
+验证命令：
+
+```bash
+bash -n scripts/verify_release_operations_record.sh scripts/test_validation_scripts.sh
+python3 -m json.tool docs/release_operations_record.json >/dev/null
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script tests，覆盖 release operations verifier 对 CI API matrix evidence
+  的正例与弱证据拒绝。
+- 未执行：本轮未产生真实 GitHub Actions API matrix artifact；该证据仍需
+  `emulator-api-matrix` workflow job 实际运行后绑定到 operations record。
+
 ## 2026-06-07 Product positioning and first-run model recovery
 
 本轮覆盖项：

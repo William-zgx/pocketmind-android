@@ -24,6 +24,15 @@
         "sha256": ""
       }
     },
+    "apiMatrix": {
+      "status": "pending",
+      "jobName": "",
+      "artifactName": "",
+      "evidence": {
+        "path": "",
+        "sha256": ""
+      }
+    },
     "releaseArtifactArchive": {
       "status": "pending",
       "jobName": "",
