@@ -153,6 +153,60 @@ jobs:
             build/verification/ci-emulator-regression
             build/verification/ci-emulator-regression-emulator.log
 
+  emulator-api-matrix:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: macos-14
+    timeout-minutes: 240
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK base packages
+        run: |
+          sdkmanager \
+            "cmdline-tools;latest" \
+            "platform-tools" \
+            "emulator" \
+            "build-tools;36.0.0"
+
+      - name: Prepare API matrix AVDs
+        run: |
+          APPLY=1 \
+          REQUIRED_APIS="28 32 33 34 36" \
+          AVD_NAME_PREFIX=pocketmind_ci_api \
+          REPORT_FILE=build/verification/ci-emulator-api-matrix-prepare/prepare.properties \
+          scripts/prepare_emulator_api_matrix.sh
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run connected API matrix regression
+        run: |
+          REQUIRED_APIS="28 32 33 34 36" \
+          EMULATOR_SELECT_TIMEOUT_SECONDS=180 \
+          BOOT_TIMEOUT_SECONDS=600 \
+          ARTIFACT_DIR=build/verification/ci-emulator-api-matrix \
+          scripts/regression_emulator_api_matrix.sh
+
+      - name: Upload API matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-api-matrix-evidence
+          path: |
+            build/verification/ci-emulator-api-matrix-prepare
+            build/verification/ci-emulator-api-matrix
+
   release-artifact-archive:
     if: github.event_name == 'workflow_dispatch'
     needs: [verify, emulator-regression]
@@ -300,7 +354,7 @@ jobs:
 
   final-release-gate:
     if: github.event_name == 'workflow_dispatch'
-    needs: [verify, emulator-regression, release-artifact-archive, protected-signing]
+    needs: [verify, emulator-regression, emulator-api-matrix, release-artifact-archive, protected-signing]
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -332,6 +386,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-emulator-regression-evidence
+
+      - name: Download API matrix evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: android-emulator-api-matrix-evidence
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4

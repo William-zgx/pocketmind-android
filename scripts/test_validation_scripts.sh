@@ -766,23 +766,33 @@ def job_block(name):
     return match.group("body")
 
 verify_block = job_block("verify")
+emulator_api_matrix_block = job_block("emulator-api-matrix")
 release_archive_block = job_block("release-artifact-archive")
 protected_signing_block = job_block("protected-signing")
 final_release_gate_block = job_block("final-release-gate")
 
 if "workflow_dispatch" not in verify_block:
     fail("verify job must run on workflow_dispatch before release artifacts are archived")
+for required in (
+    'REQUIRED_APIS="28 32 33 34 36"',
+    "scripts/prepare_emulator_api_matrix.sh",
+    "scripts/regression_emulator_api_matrix.sh",
+    "android-emulator-api-matrix-evidence",
+):
+    if required not in emulator_api_matrix_block:
+        fail(f"emulator-api-matrix missing matrix marker: {required}")
 if "needs: [verify, emulator-regression]" not in release_archive_block:
     fail("release-artifact-archive must depend on verify and emulator-regression")
 if "needs: [verify, emulator-regression, release-artifact-archive]" not in protected_signing_block:
     fail("protected-signing must explicitly depend on verify, emulator-regression, and release-artifact-archive")
-if "needs: [verify, emulator-regression, release-artifact-archive, protected-signing]" not in final_release_gate_block:
-    fail("final-release-gate must explicitly depend on verify, emulator regression, release artifacts, and protected signing")
+if "needs: [verify, emulator-regression, emulator-api-matrix, release-artifact-archive, protected-signing]" not in final_release_gate_block:
+    fail("final-release-gate must explicitly depend on verify, emulator regression, API matrix, release artifacts, and protected signing")
 for required in (
     "PUBLIC_RELEASE=1",
     "scripts/verify_release_gate.sh",
     "PERF_BASELINE_FILE",
     "EXPECTED_SIGNING_CERT_SHA256",
+    "android-emulator-api-matrix-evidence",
     "android-final-release-gate-evidence",
 ):
     if required not in final_release_gate_block:

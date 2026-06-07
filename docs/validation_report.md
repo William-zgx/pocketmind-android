@@ -118,6 +118,38 @@ scripts/verify_release_validation_record.sh \
 - 预期失败：release validation record 仍未 approved；剩余失败为真机、API 28/32/33/34、
   manual acceptance、flow matrix、performance sanity、reviewer/date，截图相关失败已消失。
 
+## 2026-06-07 CI API matrix release path
+
+本轮覆盖项：
+
+- `.github/workflows/android.yml` 新增 `emulator-api-matrix` job，只在
+  `workflow_dispatch` 和 weekly schedule 运行，避免拉高普通 PR 成本。
+- 该 job 使用 `scripts/prepare_emulator_api_matrix.sh` 准备 API 28、32、33、34、36
+  的 `google_apis/arm64-v8a` system image 与 AVD，然后运行
+  `scripts/regression_emulator_api_matrix.sh` 生成矩阵 evidence。
+- `final-release-gate` 现在显式依赖 `emulator-api-matrix`，并下载
+  `android-emulator-api-matrix-evidence` artifact，防止 public release gate 在没有
+  API matrix 证据的情况下继续。
+- `scripts/test_validation_scripts.sh` 增加 workflow 合同检查，锁住 matrix job、
+  required API 列表、prepare/regression 脚本和 artifact 名称。
+
+验证命令：
+
+```bash
+bash -n scripts/test_validation_scripts.sh scripts/verify_local.sh \
+  scripts/prepare_emulator_api_matrix.sh scripts/regression_emulator_api_matrix.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script tests，覆盖新增 CI API matrix workflow 合同。
+- 未执行：本轮未在 GitHub Actions 实际跑 API matrix；本地 Android SDK 仍只具备 API 36
+  AVD，API 28/32/33/34 需要由 CI job 或本机 `prepare_emulator_api_matrix.sh --apply`
+  准备后才能产生真实 matrix report。
+- 仍需真机：`performanceSanity` 不能用 emulator evidence 闭合；`verify_perf_baseline.sh`
+  会拒绝 `deviceSerial=emulator-*`。
+
 ## 2026-06-07 Product positioning and first-run model recovery
 
 本轮覆盖项：
