@@ -9879,3 +9879,36 @@ git diff --check
 - 通过：仓库源码扫描未命中用户提供的 API key、endpoint 或 model literal。
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Share and picker release evidence hardening
+
+本轮覆盖项：
+
+- `shareAndPickerInput` release flow evidence 现在必须显式记录 ACTION_SEND 文本暂存、
+  远程模式文本分享保护、远程视觉图片附件暂存、远程视觉不支持时的保护信号、
+  不做隐式 OCR、文档摘录边界和 picker 附件提示。
+- `scripts/verify_release_validation_record.sh` 会拒绝只有粗粒度分享证据的 release
+  record；`scripts/record_release_flow_evidence.sh` 和
+  `scripts/collect_release_flow_matrix_evidence.sh` 会输出对应结构化字段。
+- 现有 Android/JVM 用例已经覆盖 ACTION_SEND 文本、远程模式文本保护、远程视觉图片暂存、
+  远程视觉不支持保护、图片不强制 OCR、文档摘录边界和 picker 提示，本轮把这些能力变成
+  release gate 的必填证据。
+- `docs/release_checklist.md` 新增 share/picker 输入验收项，避免正式包只凭“流程存在”
+  而未证明多模态和隐私边界。
+
+验证命令：
+
+```bash
+bash -n scripts/record_release_flow_evidence.sh scripts/collect_release_flow_matrix_evidence.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+bash scripts/verify_local.sh
+git diff --check
+```
+
+结果：
+
+- 通过：弱 `shareAndPickerInput` flow evidence 会被拒绝，并返回远程文本保护、远程视觉图片暂存、
+  不做隐式 OCR 等缺失原因。
+- 通过：候选 release flow 和 formal release flow 均生成新的 share/picker 必填字段。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。

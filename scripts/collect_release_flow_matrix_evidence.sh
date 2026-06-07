@@ -292,6 +292,15 @@ write_flow_contract_fields() {
       printf 'customCredentialedUrlRejected=true\n'
       printf 'customUnverifiedModelMarked=true\n'
       ;;
+    shareAndPickerInput)
+      printf 'actionSendTextStaged=true\n'
+      printf 'remoteTextShareProtected=true\n'
+      printf 'remoteVisionImageAttachmentStaged=true\n'
+      printf 'remoteVisionUnsupportedProtected=true\n'
+      printf 'noImplicitImageOcr=true\n'
+      printf 'documentExcerptBounded=true\n'
+      printf 'pickerAttachmentPromptCovered=true\n'
+      ;;
   esac
 }
 
@@ -460,6 +469,15 @@ def is_valid_evidence(flow, value):
             "customInvalidUrlRejected",
             "customCredentialedUrlRejected",
             "customUnverifiedModelMarked",
+        ],
+        "shareAndPickerInput": [
+            "actionSendTextStaged",
+            "remoteTextShareProtected",
+            "remoteVisionImageAttachmentStaged",
+            "remoteVisionUnsupportedProtected",
+            "noImplicitImageOcr",
+            "documentExcerptBounded",
+            "pickerAttachmentPromptCovered",
         ],
     }.get(flow, [])
     for field in required_true_fields:

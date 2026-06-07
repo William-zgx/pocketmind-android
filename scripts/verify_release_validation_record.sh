@@ -535,6 +535,15 @@ def validate_flow_evidence(key, evidence_path):
             "customCredentialedUrlRejected": "credentialed-url-rejection-missing",
             "customUnverifiedModelMarked": "custom-unverified-marker-missing",
         },
+        "shareAndPickerInput": {
+            "actionSendTextStaged": "action-send-text-staging-missing",
+            "remoteTextShareProtected": "remote-text-share-protection-missing",
+            "remoteVisionImageAttachmentStaged": "remote-vision-image-staging-missing",
+            "remoteVisionUnsupportedProtected": "remote-vision-unsupported-protection-missing",
+            "noImplicitImageOcr": "no-implicit-image-ocr-missing",
+            "documentExcerptBounded": "document-excerpt-boundary-missing",
+            "pickerAttachmentPromptCovered": "picker-attachment-prompt-missing",
+        },
     }.get(key, {})
     for field, reason in required_true_fields.items():
         if props.get(field, "").lower() not in {"true", "1", "yes"}:

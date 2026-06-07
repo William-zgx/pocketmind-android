@@ -107,6 +107,15 @@ write_flow_contract_fields() {
       printf 'customCredentialedUrlRejected=true\n'
       printf 'customUnverifiedModelMarked=true\n'
       ;;
+    shareAndPickerInput)
+      printf 'actionSendTextStaged=true\n'
+      printf 'remoteTextShareProtected=true\n'
+      printf 'remoteVisionImageAttachmentStaged=true\n'
+      printf 'remoteVisionUnsupportedProtected=true\n'
+      printf 'noImplicitImageOcr=true\n'
+      printf 'documentExcerptBounded=true\n'
+      printf 'pickerAttachmentPromptCovered=true\n'
+      ;;
   esac
 }
 

@@ -294,6 +294,10 @@ release ticket or PR.
   explanation. `customModelImportOrUrlRejection` evidence must explicitly
   record `.litertlm` import coverage, HTTPS-only custom download policy,
   invalid/credentialed URL rejection, and the unverified custom model marker.
+- [ ] `shareAndPickerInput` release flow evidence must explicitly record
+  ACTION_SEND text staging, remote-mode text-share protection, remote vision
+  image attachment staging, unsupported-vision protection, no implicit image
+  OCR, bounded document excerpts, and picker attachment prompting.
 - [ ] Release flow evidence is generated from explicit owner sign-off, for
   example `OWNER="<reviewer>" RELEASE_FLOW_ALL=1
   scripts/record_release_flow_evidence.sh`; partial runs must remain failed
