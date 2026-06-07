@@ -689,6 +689,49 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun remoteModeUnconfiguredSharedImageSignalShowsConfigNoticeWithoutReadingOrSending() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime()
+        val sessionStore = FakeSessionStore()
+        val assistantRouter = FakeAssistantRouter()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = RemoteModelConfig(),
+            ),
+            assistantRouter = assistantRouter,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.ingestSharedInput(
+            SharedInput(
+                text = "",
+                attachments = emptyList(),
+                protectedSourceCount = 1,
+                protectedImageSourceCount = 1,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(remoteRuntime.calls.isEmpty())
+        assertEquals(0, assistantRouter.routeCallCount)
+        assertEquals(null, viewModel.uiState.value.pendingSharedInputDraft)
+        assertEquals("请配置远程模型", viewModel.uiState.value.statusText)
+        assertEquals(ModelHealthState.LoadFailed, viewModel.uiState.value.modelHealth.state)
+        assertEquals("远程模型未配置", viewModel.uiState.value.modelHealth.failureReason)
+        val notice = sessionStore.messages.single()
+        assertEquals(MessageRole.Assistant, notice.role)
+        assertEquals(MessagePrivacy.LocalOnly, notice.privacy)
+        assertTrue(notice.text.contains("配置远程模型地址和模型名"))
+        assertTrue(notice.text.contains("没有读取、OCR 或发送"))
+        assertTrue(notice.text.contains("确认发送"))
+        assertFalse(notice.text.contains("1"))
+        assertFalse(notice.text.contains("data:image"))
+    }
+
+    @Test
     fun remoteModeFiltersSensitiveRemoteEligibleHistoryBeforeCallingRemoteRuntime() = runTest(dispatcher) {
         val remoteRuntime = RecordingRemoteChatRuntime()
         val sessionStore = FakeSessionStore(
@@ -1069,13 +1112,17 @@ class PocketMindViewModelTest {
 
         assertTrue(remoteRuntime.calls.isEmpty())
         assertEquals(
-            listOf(MessagePrivacy.LocalOnly, MessagePrivacy.LocalOnly),
+            listOf(MessagePrivacy.LocalOnly),
             sessionStore.messages.map { it.privacy },
         )
-        assertTrue(sessionStore.messages.first().text.contains("已附加 1 张图片"))
-        assertFalse(sessionStore.messages.first().text.contains("screen.png"))
-        assertFalse(sessionStore.messages.first().text.contains("image/png"))
-        assertFalse(sessionStore.messages.first().text.contains("12"))
+        assertEquals(MessageRole.Assistant, sessionStore.messages.single().role)
+        assertTrue(sessionStore.messages.single().text.contains("配置远程模型地址和模型名"))
+        assertTrue(sessionStore.messages.single().text.contains("没有发送这次分享内容"))
+        assertTrue(sessionStore.messages.single().text.contains("不会被自动 OCR"))
+        assertFalse(sessionStore.messages.single().text.contains("screen.png"))
+        assertFalse(sessionStore.messages.single().text.contains("image/png"))
+        assertFalse(sessionStore.messages.single().text.contains("12"))
+        assertEquals("请配置远程模型", viewModel.uiState.value.statusText)
 
         viewModel.updateRemoteModelConfig(configuredRemoteModel())
         viewModel.sendMessage("普通远程问题")
@@ -3311,6 +3358,47 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun stopGenerationCancelsActiveAgentRunForRemoteChat() = runTest(dispatcher) {
+        val remoteRuntime = RecordingRemoteChatRuntime(hangDuringSend = true)
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-stop",
+                promptForModel = "远程生成 prompt",
+                memoryHits = emptyList(),
+            ),
+        )
+        val viewModel = createViewModel(
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("远程生成 prompt")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isGenerating)
+        assertEquals("远程生成 prompt", remoteRuntime.calls.single().prompt)
+
+        viewModel.stopGeneration()
+        advanceUntilIdle()
+
+        assertEquals(1, remoteRuntime.stopCallCount)
+        assertEquals(1, assistantRouter.cancelRunCallCount)
+        assertEquals("run-remote-stop", assistantRouter.lastCancelledRunId)
+        assertTrue(assistantRouter.lastCancelledRunReason.orEmpty().contains("stopped"))
+        assertFalse(viewModel.uiState.value.isGenerating)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertEquals(listOf("run-remote-stop"), viewModel.uiState.value.agentTraceRuns.map { it.id })
+        assertEquals(AgentRunState.Cancelled, viewModel.uiState.value.agentTraceRuns.single().state)
+    }
+
+    @Test
     fun remoteWebSearchToolCallExecutesWithoutPendingConfirmation() = runTest(dispatcher) {
         val request = ToolRequest(
             id = "call-1",
@@ -3634,6 +3722,132 @@ class PocketMindViewModelTest {
         assertEquals("北京和上海今天温差约 3 度。", sessionStore.messages.last().text)
         assertEquals(MessagePrivacy.RemoteEligible, sessionStore.messages.last().privacy)
         assertEquals("就绪 · 远程", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun remoteContinuationDisclosureCancelFailsRunWithoutSecondRemoteCall() = runTest(dispatcher) {
+        val requests = listOf(
+            ToolRequest(
+                id = "call-beijing",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "北京 今天 天气"),
+                reason = "remote tool call",
+            ),
+            ToolRequest(
+                id = "call-shanghai",
+                toolName = MobileActionFunctions.WEB_SEARCH,
+                arguments = mapOf("query" to "上海 今天 天气"),
+                reason = "remote tool call",
+            ),
+        )
+        val plans = requests.map { request ->
+            AgentPlan.UseTool(
+                request = request,
+                draft = ActionDraft(
+                    functionName = MobileActionFunctions.WEB_SEARCH,
+                    title = "Web 搜索",
+                    summary = "将使用 Web 搜索工具查询并整理结果：${request.arguments["query"]}",
+                    parameters = request.arguments,
+                ),
+                plannedByModel = true,
+                fallbackReason = "remote tool batch",
+                safetyDecision = SafetyDecision(
+                    outcome = SafetyOutcome.Allow,
+                    reason = "Read-only web search can execute without confirmation.",
+                ),
+            )
+        }
+        val assistantRouter = FakeAssistantRouter(
+            routeResult = AssistantRoute.Chat(
+                runId = "run-remote-tool-batch-cancel",
+                promptForModel = "北京和上海今天温差多少？",
+                memoryHits = emptyList(),
+            ),
+            modelToolBatchObservation = AgentModelObservationResult(
+                run = AgentRun(
+                    "run-remote-tool-batch-cancel",
+                    "北京和上海今天温差多少？",
+                    AgentRunState.ExecutingTool,
+                    1L,
+                    2L,
+                ),
+                decision = AgentObservationDecision.PlanToolBatch(
+                    plans = plans,
+                    reason = "Remote model requested 2 parallel public evidence tool calls.",
+                ),
+                steps = emptyList(),
+            ),
+            toolBatchObservation = AgentObservationResult(
+                run = AgentRun(
+                    "run-remote-tool-batch-cancel",
+                    "北京和上海今天温差多少？",
+                    AgentRunState.GeneratingAnswer,
+                    1L,
+                    3L,
+                ),
+                result = ToolResult(
+                    requestId = "public-evidence-batch",
+                    status = ToolStatus.Succeeded,
+                    summary = "工具执行结果：已完成 2 个公开只读工具调用。",
+                    data = mapOf("toolName" to "public_evidence_batch", "toolCount" to "2"),
+                ),
+                assistantMessage = "工具执行结果：已完成 2 个公开只读工具调用。",
+                decision = AgentObservationDecision.ContinueWithModel(
+                    requiresLocalModel = false,
+                    reason = "Parallel public evidence tools completed.",
+                ),
+                continuationPromptForModel = "请综合北京和上海的天气结果计算温差。",
+                steps = emptyList(),
+            ),
+        )
+        val remoteRuntime = RecordingRemoteChatRuntime(
+            eventBatches = listOf(
+                listOf(RemoteChatEvent.ToolCalls(requests)),
+                listOf(RemoteChatEvent.TextDelta("不应发起第二次远程续写。")),
+            ),
+        )
+        val executor = RecordingToolExecutor()
+        val sessionStore = FakeSessionStore()
+        val viewModel = createViewModel(
+            sessionStore = sessionStore,
+            remoteRuntime = remoteRuntime,
+            remoteStore = FakeRemoteModelStore(
+                mode = InferenceMode.Remote,
+                config = configuredRemoteModel(),
+            ),
+            assistantRouter = assistantRouter,
+            actionExecutor = executor,
+            modelRepository = FakeModelRepository(activeModelPath = "/tmp/model.litertlm"),
+            requireRemoteSendDisclosure = true,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        viewModel.sendMessage("北京和上海今天温差多少？")
+        advanceUntilIdle()
+        viewModel.confirmRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals("远程续写待确认", viewModel.uiState.value.statusText)
+        assertEquals(
+            RemoteSendDisclosureKind.ToolResultContinuation,
+            requireNotNull(viewModel.uiState.value.pendingRemoteSendDisclosure).kind,
+        )
+        assertEquals(1, remoteRuntime.calls.size)
+
+        viewModel.dismissRemoteSendDisclosure()
+        advanceUntilIdle()
+
+        assertEquals(1, remoteRuntime.calls.size)
+        assertEquals(1, assistantRouter.failModelGenerationCallCount)
+        assertEquals("run-remote-tool-batch-cancel", assistantRouter.lastFailedModelRunId)
+        assertTrue(assistantRouter.lastFailedModelReason.orEmpty().contains("用户取消远程工具结果续写"))
+        assertEquals(null, viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertFalse(viewModel.uiState.value.isGenerating)
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertEquals("已取消远程发送", viewModel.uiState.value.statusText)
+        assertTrue(sessionStore.messages.last().text.contains("工具结果未发送到远程模型"))
+        assertEquals(MessagePrivacy.LocalOnly, sessionStore.messages.last().privacy)
     }
 
     @Test
@@ -6689,8 +6903,11 @@ class PocketMindViewModelTest {
         private val events: List<RemoteChatEvent> = listOf(RemoteChatEvent.TextDelta("远程回复")),
         private val eventBatches: List<List<RemoteChatEvent>> = emptyList(),
         private val failure: Throwable? = null,
+        private val hangDuringSend: Boolean = false,
     ) : RemoteChatRuntime {
         val calls = mutableListOf<RemoteCall>()
+        var stopCallCount: Int = 0
+            private set
 
         override fun send(
             prompt: String,
@@ -6702,6 +6919,9 @@ class PocketMindViewModelTest {
             calls += RemoteCall(prompt, history, imageAttachments = imageAttachments)
             failure?.let { throwable ->
                 return flow { throw throwable }
+            }
+            if (hangDuringSend) {
+                return flow { awaitCancellation() }
             }
             return flowOf("远程回复")
         }
@@ -6719,11 +6939,16 @@ class PocketMindViewModelTest {
             failure?.let { throwable ->
                 return flow { throw throwable }
             }
+            if (hangDuringSend) {
+                return flow { awaitCancellation() }
+            }
             val eventsForCall = eventBatches.getOrNull(callIndex) ?: events
             return flowOf(*eventsForCall.toTypedArray())
         }
 
-        override fun stop() = Unit
+        override fun stop() {
+            stopCallCount += 1
+        }
     }
 
     private class RecordingToolExecutor : ToolExecutor {

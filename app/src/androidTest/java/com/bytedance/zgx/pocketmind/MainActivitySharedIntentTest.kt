@@ -66,7 +66,11 @@ class MainActivitySharedIntentTest {
     @Test
     fun actionSendTextUsesProtectedSignalWhenActivityStartsInRemoteMode() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        resetMainActivityPersistentState(context, inferenceMode = InferenceMode.Remote)
+        resetMainActivityPersistentState(
+            context,
+            inferenceMode = InferenceMode.Remote,
+            remoteModelConfig = ReadyRemoteModelConfig,
+        )
 
         val protectedText = "REMOTE_SHARE_SENTINEL_should_not_render_73"
         val launchIntent = Intent(Intent.ACTION_SEND).apply {
@@ -74,6 +78,8 @@ class MainActivitySharedIntentTest {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, protectedText)
             putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)
+            putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_BASE_URL, ReadyRemoteModelConfig.baseUrl)
+            putExtra(MainActivity.EXTRA_DEBUG_SCREENSHOT_REMOTE_MODEL_NAME, ReadyRemoteModelConfig.modelName)
         }
 
         ActivityScenario.launch<MainActivity>(launchIntent).use {
@@ -114,6 +120,34 @@ class MainActivitySharedIntentTest {
                 .onFirst()
                 .assertIsDisplayed()
             composeRule.assertTextAbsent("data:image")
+        }
+    }
+
+    @Test
+    fun actionSendImageInUnconfiguredRemoteModeShowsConfigNoticeWithoutReadingImage() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        CountingSharedContentProvider.resetCounters(context)
+        resetMainActivityPersistentState(context, inferenceMode = InferenceMode.Remote)
+
+        val launchIntent = Intent(Intent.ACTION_SEND).apply {
+            setClass(context, MainActivity::class.java)
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, CountingSharedContentProvider.imageUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(MainActivity.EXTRA_SKIP_STARTUP_MODEL_RUNTIME_WORK, true)
+        }
+
+        ActivityScenario.launch<MainActivity>(launchIntent).use {
+            composeRule.waitForTag("app_title")
+            composeRule.waitForText("配置远程模型地址和模型名", substring = true)
+
+            composeRule.onNodeWithText("配置远程模型地址和模型名", substring = true)
+                .assertIsDisplayed()
+            composeRule.assertTagAbsent("pending_shared_input_strip")
+            composeRule.assertTextAbsent("counting-image.png")
+            composeRule.assertTextAbsent("data:image")
+            assertEquals(0, CountingSharedContentProvider.imageOpenCount(context))
+            assertEquals(0, CountingSharedContentProvider.textOpenCount(context))
         }
     }
 
@@ -206,6 +240,12 @@ class MainActivitySharedIntentTest {
     private fun ComposeTestRule.assertTextAbsent(text: String) {
         waitUntil(timeoutMillis = 5_000) {
             onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    private fun ComposeTestRule.assertTagAbsent(tag: String) {
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
         }
     }
 

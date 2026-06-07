@@ -336,6 +336,35 @@ class PocketMindScreenDisplayTest {
         assertTrue(text.contains("工具结果续写提示"))
         assertTrue(!text.contains("当前输入"))
         assertTrue(text.contains("记录或保留请求"))
+        assertTrue(text.contains("本次没有图片字节发送"))
+        assertTrue(!text.contains("图片字节会发往该远程地址"))
+        assertTrue(!text.contains("图片和响应"))
+    }
+
+    @Test
+    fun remoteSendDisclosureRowsDoNotMentionImageBytesWhenNoImages() {
+        val text = remoteSendDisclosureDisplayRows(
+            PendingRemoteSendDisclosure(
+                kind = RemoteSendDisclosureKind.CurrentInput,
+                prompt = "普通问题",
+                messagePrivacy = MessagePrivacy.RemoteEligible,
+                remoteHost = "api.example.com",
+                remoteModelName = "model-a",
+                remoteHistoryCount = 0,
+                localOnlyHistoryFilteredCount = 1,
+                imageAttachmentCount = 0,
+                protectedSourceCount = 0,
+                apiKeyConfigured = false,
+            ),
+        ).joinToString("\n")
+
+        assertTrue(text.contains("当前输入"))
+        assertTrue(text.contains("本次没有图片字节发送"))
+        assertTrue(!text.contains("图片 0 张"))
+        assertTrue(!text.contains("图片字节会发往该远程地址"))
+        assertTrue(text.contains("记录或保留请求和响应"))
+        assertTrue(!text.contains("图片和响应"))
+        assertTrue(text.contains("未配置 API Key"))
     }
 
     @Test

@@ -1780,7 +1780,12 @@ class PocketMindViewModel(
     fun ingestSharedInput(sharedInput: SharedInput) {
         if (sharedInput.isEmpty) return
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            val remoteSupportsVisionInput = _uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            val remoteConfig = _uiState.value.remoteModelConfig
+            if (!remoteConfig.isConfigured) {
+                protectUnconfiguredRemoteSharedInput(alreadyStaged = false)
+                return
+            }
+            val remoteSupportsVisionInput = remoteConfig.modelProfile().supportsVisionInput
             if ((sharedInput.hasRemoteImageAttachment() || sharedInput.hasProtectedImageSource()) &&
                 !remoteSupportsVisionInput
             ) {
@@ -1797,7 +1802,12 @@ class PocketMindViewModel(
 
     fun stageSharedInput(sharedInput: SharedInput) {
         if (_uiState.value.inferenceMode == InferenceMode.Remote) {
-            val remoteSupportsVisionInput = _uiState.value.remoteModelConfig.modelProfile().supportsVisionInput
+            val remoteConfig = _uiState.value.remoteModelConfig
+            if (!remoteConfig.isConfigured) {
+                protectUnconfiguredRemoteSharedInput(alreadyStaged = false)
+                return
+            }
+            val remoteSupportsVisionInput = remoteConfig.modelProfile().supportsVisionInput
             if ((sharedInput.hasRemoteImageAttachment() || sharedInput.hasProtectedImageSource()) &&
                 !remoteSupportsVisionInput
             ) {
@@ -1854,6 +1864,38 @@ class PocketMindViewModel(
         )
         _uiState.update {
             it.copy(statusText = "已保护分享内容")
+        }
+    }
+
+    private fun protectUnconfiguredRemoteSharedInput(alreadyStaged: Boolean) {
+        val notice = buildString {
+            append("请先在模型管理中配置远程模型地址和模型名；")
+            if (alreadyStaged) {
+                append("我没有发送这次分享内容，图片不会被自动 OCR，也不会发送到远程模型。")
+            } else {
+                append("我没有读取、OCR 或发送这次分享内容。")
+            }
+            append("远程模式只会在远程模型配置完成、且你确认发送后，把主动选择的图片发送给远程视觉模型。")
+        }
+        replaceActiveSessionMessages(
+            _uiState.value.messages + ChatMessage(
+                role = MessageRole.Assistant,
+                text = notice,
+                privacy = MessagePrivacy.LocalOnly,
+            ),
+            persistNow = true,
+        )
+        _uiState.update {
+            it.copy(
+                pendingSharedInputDraft = null,
+                pendingRemoteSendDisclosure = null,
+                statusText = "请配置远程模型",
+                modelHealth = ModelHealth(
+                    profileId = it.remoteModelConfig.modelProfile().id,
+                    state = ModelHealthState.LoadFailed,
+                    failureReason = "远程模型未配置",
+                ),
+            )
         }
     }
 
@@ -1968,6 +2010,12 @@ class PocketMindViewModel(
             }
         }
         if (!_uiState.value.isReady) {
+            if (_uiState.value.inferenceMode == InferenceMode.Remote &&
+                !_uiState.value.remoteModelConfig.isConfigured
+            ) {
+                protectUnconfiguredRemoteSharedInput(alreadyStaged = true)
+                return
+            }
             replaceActiveSessionMessages(
                 _uiState.value.messages + ChatMessage(
                     role = MessageRole.User,

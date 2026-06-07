@@ -1196,21 +1196,34 @@ private fun RemoteSendDisclosureRows(disclosure: PendingRemoteSendDisclosure) {
     }
 }
 
-internal fun remoteSendDisclosureDisplayRows(disclosure: PendingRemoteSendDisclosure): List<String> =
-    listOf(
+internal fun remoteSendDisclosureDisplayRows(disclosure: PendingRemoteSendDisclosure): List<String> {
+    val sendSummary = when (disclosure.kind) {
+        RemoteSendDisclosureKind.CurrentInput ->
+            "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条"
+
+        RemoteSendDisclosureKind.ToolResultContinuation ->
+            "本次会发送：工具结果续写提示、可远程发送历史 ${disclosure.remoteHistoryCount} 条"
+    }.let { summary ->
+        if (disclosure.imageAttachmentCount > 0) {
+            "$summary、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址"
+        } else {
+            "$summary；本次没有图片字节发送"
+        }
+    }
+    val retentionNotice = if (disclosure.imageAttachmentCount > 0) {
+        "远程服务方可能按其政策记录或保留请求、图片和响应；请只发送你愿意交给该服务处理的内容。"
+    } else {
+        "远程服务方可能按其政策记录或保留请求和响应；请只发送你愿意交给该服务处理的内容。"
+    }
+    return listOf(
         "远程地址：${disclosure.remoteHost}",
         "模型：${disclosure.remoteModelName}",
-        when (disclosure.kind) {
-            RemoteSendDisclosureKind.CurrentInput ->
-                "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址"
-
-            RemoteSendDisclosureKind.ToolResultContinuation ->
-                "本次会发送：工具结果续写提示、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址"
-        },
+        sendSummary,
         "不会发送：LocalOnly 历史 ${disclosure.localOnlyHistoryFilteredCount} 条、本地记忆、设备上下文、非图片附件",
-        "远程服务方可能按其政策记录或保留请求、图片和响应；请只发送你愿意交给该服务处理的内容。",
+        retentionNotice,
         "凭据状态：${if (disclosure.apiKeyConfigured) "已配置 API Key" else "未配置 API Key"}",
     )
+}
 
 @Composable
 private fun ActionDraftSheet(

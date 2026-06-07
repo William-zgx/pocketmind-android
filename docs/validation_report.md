@@ -10552,3 +10552,41 @@ AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT
 - 通过：`verify_local` 全链路，包括 unit test、lint、debug/release APK、release AAB 和 artifact scan。
 - 通过：API 36 targeted emulator smoke，`build/verification/remote-vision-share-smoke-current`
   记录 `MainActivitySmokeTest` 的 `OK (6 tests)`。
+
+## 2026-06-07 Remote share unconfigured and cancellation polish
+
+本轮覆盖项：
+
+- 远程模式但远程模型未配置时，分享图片/附件不再只显示泛化“已保护分享内容”；
+  UI 会明确提示需要先配置远程模型，并声明本次未读取、OCR 或发送分享内容。
+- 已暂存的远程图片草稿如果在发送前远程配置被清空，发送时会 fail-closed：
+  不调用 remote runtime，不把图片 prompt 写入后续远程 history，并给出本地配置提示。
+- 远程生成 `stopGeneration()` 新增 ViewModel 级回归：远程流挂起时会调用
+  `remoteRuntime.stop()`、取消 active Agent run，并把 UI 恢复为非 busy/generating。
+- 远程工具结果续写确认新增取消回归：用户取消后不会发起第二次远程调用，
+  Agent run 进入失败路径，工具结果不会发送到远程模型。
+- 远程发送披露文案按图片数量分支：0 张图片时不再说“图片字节会发往该远程地址”
+  或“图片和响应”，避免隐私文案过度声明。
+- `MainActivitySharedIntentTest` 新增未配置远程图片分享的模拟器合同：
+  不出现附件草稿，不读取图片流，不暴露文件名或 `data:image`。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest' --tests 'com.bytedance.zgx.pocketmind.MainActivitySharedInputModeTest' --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySharedIntentTest#actionSendTextUsesProtectedSignalWhenActivityStartsInRemoteMode
+./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.bytedance.zgx.pocketmind.MainActivitySharedIntentTest
+git diff --check
+rg -n --hidden -g '!build/**' -g '!**/.git/**' 'sk-[A-Za-z0-9]{16,}' . || true
+```
+
+结果：
+
+- 通过：目标 JVM 测试覆盖远程未配置分享提示、远程图片草稿 fail-closed、
+  远程 stop、远程工具续写取消和披露文案分支。
+- 通过：API 36 emulator targeted 单测，远程文本分享保护可见。
+- 通过：API 36 emulator `MainActivitySharedIntentTest`，记录 `OK (6 tests)`，
+  覆盖 ACTION_SEND 文本、远程文本保护、远程视觉图片、未配置远程图片配置提示、
+  远程视觉不支持保护和 reader 流读取计数。
+- 通过：diff whitespace 检查。
+- 通过：工作区敏感配置扫描未命中用户提供的 API key、远程 endpoint 或模型名 literal。
