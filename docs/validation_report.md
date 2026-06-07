@@ -23,6 +23,30 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 CI final public release gate
+
+本轮覆盖项：
+
+- `workflow_dispatch` 发布路径新增必填 `perf_baseline_file` 输入，可选下载外部 release evidence artifact。
+- 新增 `final-release-gate` job，显式依赖 `verify`、`emulator-regression`、
+  `release-artifact-archive` 和 `protected-signing`；签名成功后下载 local/emulator/release/signed evidence，
+  再以 `PUBLIC_RELEASE=1` 运行 `scripts/verify_release_gate.sh`。
+- final gate 上传 `android-final-release-gate-evidence`；正式发布状态以该 job 成败为准。
+- `scripts/test_validation_scripts.sh` 锁定 workflow 合同，防止未来回退成“只签名不跑 release gate”。
+
+验证命令：
+
+```bash
+bash -n scripts/test_validation_scripts.sh scripts/verify_release_gate.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：workflow/release validation script self-tests。
+- 说明：本轮未把 pending release records 改成 approved；`PUBLIC_RELEASE=1` gate 仍会在
+  `docs/release_validation_record.json`、`docs/release_operations_record.json` 等真实 RC 证据未完成时 fail-closed。
+
 ## 2026-06-07 Voice input prominent consent gate
 
 本轮覆盖项：

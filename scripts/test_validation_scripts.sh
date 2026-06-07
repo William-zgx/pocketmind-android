@@ -768,6 +768,7 @@ def job_block(name):
 verify_block = job_block("verify")
 release_archive_block = job_block("release-artifact-archive")
 protected_signing_block = job_block("protected-signing")
+final_release_gate_block = job_block("final-release-gate")
 
 if "workflow_dispatch" not in verify_block:
     fail("verify job must run on workflow_dispatch before release artifacts are archived")
@@ -775,6 +776,17 @@ if "needs: [verify, emulator-regression]" not in release_archive_block:
     fail("release-artifact-archive must depend on verify and emulator-regression")
 if "needs: [verify, emulator-regression, release-artifact-archive]" not in protected_signing_block:
     fail("protected-signing must explicitly depend on verify, emulator-regression, and release-artifact-archive")
+if "needs: [verify, emulator-regression, release-artifact-archive, protected-signing]" not in final_release_gate_block:
+    fail("final-release-gate must explicitly depend on verify, emulator regression, release artifacts, and protected signing")
+for required in (
+    "PUBLIC_RELEASE=1",
+    "scripts/verify_release_gate.sh",
+    "PERF_BASELINE_FILE",
+    "EXPECTED_SIGNING_CERT_SHA256",
+    "android-final-release-gate-evidence",
+):
+    if required not in final_release_gate_block:
+        fail(f"final-release-gate missing release gate marker: {required}")
 if "status=skipped" in protected_signing_block:
     fail("protected-signing must not report skipped when production signing secrets are missing")
 for required in (

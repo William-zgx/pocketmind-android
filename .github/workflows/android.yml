@@ -6,6 +6,19 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      perf_baseline_file:
+        description: "Path to the RC perf-baseline.properties file available in the workflow workspace or evidence artifact."
+        required: true
+        type: string
+      release_evidence_artifact_name:
+        description: "Optional artifact name containing release validation evidence paths such as build/verification/**."
+        required: false
+        type: string
+      release_evidence_run_id:
+        description: "Optional GitHub Actions run id that produced the release evidence artifact."
+        required: false
+        type: string
   schedule:
     - cron: "17 3 * * 1"
 
@@ -284,3 +297,80 @@ jobs:
             app/build/outputs/apk/release/*signed*.apk
             app/build/outputs/bundle/release/*signed*.aab
             build/verification/ci-protected-signing
+
+  final-release-gate:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [verify, emulator-regression, release-artifact-archive, protected-signing]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download local verification evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: android-local-verification-evidence
+
+      - name: Download emulator regression evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: android-emulator-regression-evidence
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release-artifacts
+
+      - name: Download signed release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-signed-release-artifacts
+
+      - name: Download current-run release evidence bundle
+        if: inputs.release_evidence_artifact_name != '' && inputs.release_evidence_run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.release_evidence_artifact_name }}
+
+      - name: Download external release evidence bundle
+        if: inputs.release_evidence_artifact_name != '' && inputs.release_evidence_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.release_evidence_artifact_name }}
+          run-id: ${{ inputs.release_evidence_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Run final public release gate
+        env:
+          EXPECTED_SIGNING_CERT_SHA256: ${{ secrets.EXPECTED_SIGNING_CERT_SHA256 }}
+          PERF_BASELINE_FILE: ${{ inputs.perf_baseline_file }}
+        run: |
+          ARTIFACT_DIR=build/verification/ci-final-release-gate \
+          PUBLIC_RELEASE=1 \
+          EXPECTED_SIGNING_CERT_SHA256="${EXPECTED_SIGNING_CERT_SHA256}" \
+          PERF_BASELINE_FILE="${PERF_BASELINE_FILE}" \
+          scripts/verify_release_gate.sh
+
+      - name: Upload final release gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-final-release-gate-evidence
+          path: build/verification/ci-final-release-gate
