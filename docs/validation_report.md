@@ -10781,3 +10781,50 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
 - Android 设置页恢复授权、永久拒绝后的设置跳转和真实语音服务可用性仍属于手工验收或后续更专门的设备测试。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
+
+## 2026-06-07 External outcome fail-closed UI selections
+
+本轮覆盖项：
+
+- `PocketMindExternalOutcomeUiTest` 从单一“已完成”按钮覆盖扩展为三种外部结果选择：
+  `Completed`、`NotCompleted`、`OpenedOnly`。
+- 测试仍先断言外部结果确认 sheet 和三个按钮全部可见，再点击指定按钮，
+  验证 UI 写回同一个 `PendingExternalOutcomeConfirmation` 和对应
+  `AgentExternalOutcome`。
+- 这条证据锁定产品原则：外部 Activity、分享面板、草稿页或 App 启动页打开后，
+  UI 必须要求用户显式记录结果；“未完成”和“只是打开了”不能被误记成完成。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=0 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.PocketMindExternalOutcomeUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/external-outcome-ui-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：Debug AndroidTest Kotlin 编译。
+- 通过：API 36 emulator `PocketMindExternalOutcomeUiTest` 3/3：
+  `externalOutcomeSheetReportsCompletedSelection`、
+  `externalOutcomeSheetReportsNotCompletedSelection`、
+  `externalOutcomeSheetReportsOpenedOnlySelection`。
+- 通过：`scripts/verify_emulator.sh` 生成
+  `build/verification/external-outcome-ui-current/device-verification.properties`，
+  记录 `status=passed`、`instrumentation_test_count=3`、
+  `instrumentation_class=com.bytedance.zgx.pocketmind.PocketMindExternalOutcomeUiTest`。
+- 通过：敏感配置扫描未发现 DeepSeek endpoint、模型名或 API key 被写入仓库。
+
+剩余风险：
+
+- 本轮只覆盖外部结果确认 sheet 的 UI 写回；真实外部 App 内部操作结果仍只能由用户补录，
+  App 不应自动推断。
+- Godel 审计指出语音 `SpeechRecognizer.onResults()` 到 composer 输入框还缺 UI 自动化证据；
+  该项仍是下一条建议补齐的核心链路。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。
