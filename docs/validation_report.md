@@ -10876,3 +10876,54 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android
   语言识别质量、永久拒绝后设置页恢复仍属于真机/手工验收或后续专项设备测试。
 - production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
   公发门禁继续 fail-closed。
+
+## 2026-06-07 First-run download failure recovery
+
+本轮覆盖项：
+
+- 首启向导下载入队后不再立即持久标记 setup dismissed；下载期间仍临时隐藏首启面板，
+  但只有基础能力包成功准备后才写入 dismissed。
+- `DownloadManager.STATUS_FAILED + ERROR_INSUFFICIENT_SPACE` 等下载失败后，
+  如果这是首启向导触发且本地模型仍未就绪，UI 状态会恢复 `showFirstRunSetup=true`，
+  让用户继续看到“为什么下载、空间不足、可先远程/导入”的恢复入口。
+- 新增 `PocketMindViewModelTest.setupModelDownloadFailureAfterEnqueueRestoresFirstRunRecovery`，
+  覆盖下载已入队、目标文件写入 partial、随后存储不足失败的交叉状态。
+- 保留普通下载失败合同：pending download 清理、partial 文件删除、进度清零和
+  “下载失败：存储空间不足”文案。
+
+验证命令：
+
+```bash
+./gradlew :app:compileDebugKotlin
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.setupModelDownloadFailureAfterEnqueueRestoresFirstRunRecovery' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startSetupModelDownloadKeepsFirstRunOpenWhenPreflightFails' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.monitorDownloadFailureClearsPendingDeletesTargetAndShowsReason'
+./gradlew :app:compileDebugAndroidTestKotlin
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=0 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityFirstRunSetupUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/first-run-download-failure-recovery-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：Debug Kotlin 编译。
+- 通过：JVM 首启下载预检失败、入队后存储不足失败、普通下载失败三条定向回归。
+- 通过：Debug AndroidTest Kotlin 编译。
+- 通过：API 36 emulator `MainActivityFirstRunSetupUiTest` 1/1，
+  确认首启向导、默认基础对话模型、下载按钮和跳过恢复路径仍可用。
+- 通过：`scripts/verify_emulator.sh` 生成
+  `build/verification/first-run-download-failure-recovery-current/device-verification.properties`，
+  记录 `status=passed`、`instrumentation_test_count=1`、
+  `instrumentation_class=com.bytedance.zgx.pocketmind.MainActivityFirstRunSetupUiTest`。
+
+剩余风险：
+
+- 本轮通过 JVM 模拟 DownloadManager 存储不足，不等于真实低存储设备矩阵已经完成。
+- 真机/不同 Android 版本的真实下载、校验、加载耗时和空间压力仍需要发布前矩阵验收。
+- production signing、公开隐私政策 URL、Store/Legal/Security/Release 人工审批仍未完成；
+  公发门禁继续 fail-closed。

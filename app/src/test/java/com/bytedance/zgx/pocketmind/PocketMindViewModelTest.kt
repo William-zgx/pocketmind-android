@@ -547,6 +547,50 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun setupModelDownloadFailureAfterEnqueueRestoresFirstRunRecovery() = runTest(dispatcher) {
+        withTempDownloadTarget { target ->
+            val firstRunStore = FakeFirstRunSetupStore(setupDismissed = false)
+            val modelRepository = FakeModelRepository(
+                activeModelPath = null,
+                downloadedModelFileProvider = { target },
+            )
+            val downloadClient = FakeModelDownloadClient(
+                queryResults = mutableListOf(
+                    DownloadInfo(
+                        status = DownloadManager.STATUS_FAILED,
+                        reason = DownloadManager.ERROR_INSUFFICIENT_SPACE,
+                        downloadedBytes = 0L,
+                        totalBytes = 100L,
+                    ),
+                ),
+                onEnqueue = { _, file -> file.writeText("partial", Charsets.UTF_8) },
+            )
+            val viewModel = createViewModel(
+                modelRepository = modelRepository,
+                firstRunStore = firstRunStore,
+                downloadClient = downloadClient,
+            )
+
+            assertTrue(viewModel.uiState.value.showFirstRunSetup)
+
+            viewModel.startSetupModelDownload()
+            advanceUntilIdle()
+
+            assertEquals("下载失败：存储空间不足", viewModel.uiState.value.statusText)
+            assertTrue(viewModel.uiState.value.showFirstRunSetup)
+            assertFalse(firstRunStore.isSetupDismissed())
+            assertFalse(viewModel.uiState.value.isBusy)
+            assertFalse(viewModel.uiState.value.isDownloading)
+            assertEquals(0L, viewModel.uiState.value.downloadedBytes)
+            assertEquals(0L, viewModel.uiState.value.totalBytes)
+            assertFalse(target.exists())
+            assertEquals(1, modelRepository.clearPendingDownloadCount)
+            assertEquals(1, modelRepository.savedPendingDownloads.size)
+            assertTrue(modelRepository.registeredModels.isEmpty())
+        }
+    }
+
+    @Test
     fun monitorDownloadShaFailureDeletesFileClearsPendingAndStopsDownloading() = runTest(dispatcher) {
         withTempDownloadTarget { target ->
             val source = ModelDownloadSource(

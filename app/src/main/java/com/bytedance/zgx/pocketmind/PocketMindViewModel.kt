@@ -3271,7 +3271,10 @@ class PocketMindViewModel(
         }
         val downloadId = downloadResult.getOrThrow()
 
-        firstRunSetupRepository.markSetupDismissed()
+        val isFirstRunSetupDownload = setupDownloadInProgress
+        if (!isFirstRunSetupDownload) {
+            firstRunSetupRepository.markSetupDismissed()
+        }
         activeDownloadId = downloadId
         modelRepository.savePendingDownload(downloadId, source)
         _uiState.update {
@@ -3399,6 +3402,7 @@ class PocketMindViewModel(
                     }
 
                     DownloadManager.STATUS_FAILED -> {
+                        val restoreFirstRunSetup = shouldRestoreFirstRunSetupAfterDownloadFailure()
                         activeDownloadId = null
                         setupDownloadQueue.clear()
                         setupDownloadInProgress = false
@@ -3412,6 +3416,7 @@ class PocketMindViewModel(
                                 downloadedBytes = 0L,
                                 totalBytes = 0L,
                                 statusText = "下载失败：${info.reasonText}",
+                                showFirstRunSetup = restoreFirstRunSetup,
                             )
                         }
                         return@launch
@@ -3508,7 +3513,16 @@ class PocketMindViewModel(
         ) {
             loadModel()
         }
+        if (completedCapability == ModelCapability.Chat || _uiState.value.modelPath != null) {
+            firstRunSetupRepository.markSetupDismissed()
+            _uiState.update {
+                it.copy(showFirstRunSetup = false)
+            }
+        }
     }
+
+    private fun shouldRestoreFirstRunSetupAfterDownloadFailure(): Boolean =
+        setupDownloadInProgress && _uiState.value.modelPath == null && !_uiState.value.isReady
 
     private fun recreateConversationForActiveSession(successPrefix: String) {
         val sessionId = sessionRepository.activeSessionId
