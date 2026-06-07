@@ -49,6 +49,31 @@ report；screenshots 必须链接通过的 `release-screenshots` report，并且
   `build/verification/product-contract-regression-current/regression-emulator.properties`
   的 51/51 结果为当前完整自动回归证据。
 
+## 2026-06-07 Emulator API matrix readiness check
+
+本轮覆盖项：
+
+- 按 release matrix 要求检查 API 28、32、33、34、36 的 `google_apis/arm64-v8a`
+  system image 和 AVD readiness。
+- 该检查只判断本地 Android SDK/AVD 环境是否能启动矩阵回归；不代表应用测试失败。
+
+验证命令：
+
+```bash
+scripts/check_emulator_api_matrix.sh --required-apis "28 32 33 34 36"
+shasum -a 256 build/verification/emulator-api-matrix-readiness.properties
+```
+
+结果：
+
+- 失败：`build/verification/emulator-api-matrix-readiness.properties`
+  记录 `status=failed`、`failedTarget=api-matrix-readiness`。
+- 缺失项：API 28、32、33、34 均缺 system image 和 AVD；API 36 已具备。
+- evidence SHA-256：
+  `deff3969e6a85e9c58e7967115d242538367a6d41da60f6aabd626dc35992b91`。
+- 下一步：补齐 API 28/32/33/34 的 `system-images;android-<api>;google_apis;arm64-v8a`
+  和对应 AVD 后，才能运行完整 `scripts/regression_emulator_api_matrix.sh`。
+
 ## 2026-06-07 Product positioning and first-run model recovery
 
 本轮覆盖项：
