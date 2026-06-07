@@ -2,6 +2,7 @@ package com.bytedance.zgx.pocketmind
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -82,6 +84,29 @@ class MainActivityAdaptiveUiTest {
             composeRule.waitForReadyComposer()
             composeRule.onNodeWithTag("composer_input").performTextInput("你好")
             composeRule.assertLabeledAction("composer_send_button", "发送")
+        }
+    }
+
+    @Test
+    fun landscapeRemoteSendDisclosureRemainsReachable() {
+        resetMainActivityPersistentState(
+            context = targetContext,
+            inferenceMode = InferenceMode.Remote,
+            remoteModelConfig = ReadyRemoteModelConfig,
+        )
+
+        ActivityScenario.launch<MainActivity>(skipStartupIntent(ReadyRemoteModelConfig)).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            composeRule.waitForTag("app_title")
+            composeRule.waitForReadyComposer()
+
+            composeRule.onNodeWithTag("composer_input").performTextInput("横屏确认远程发送")
+            composeRule.onNodeWithTag("composer_send_button").performClick()
+            composeRule.waitForTag("remote_send_disclosure_sheet")
+            composeRule.onNodeWithTag("remote_send_confirm_button").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("remote_send_dismiss_button").performScrollTo().assertIsDisplayed()
         }
     }
 

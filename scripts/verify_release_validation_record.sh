@@ -552,6 +552,11 @@ def validate_flow_evidence(key, evidence_path):
             "remoteConfigClearCovered": "remote-config-clear-control-missing",
             "dataDeletionCopyCovered": "data-deletion-copy-missing",
         },
+        "adaptiveUi": {
+            "largeFontReachabilityCovered": "large-font-reachability-missing",
+            "landscapeReachabilityCovered": "landscape-reachability-missing",
+            "accessibleLabelsCovered": "accessible-labels-missing",
+        },
     }.get(key, {})
     for field, reason in required_true_fields.items():
         if props.get(field, "").lower() not in {"true", "1", "yes"}:
@@ -877,6 +882,7 @@ required_flows = {
     "remindersAfterReboot",
     "shareAndPickerInput",
     "voiceInput",
+    "adaptiveUi",
     "accessibilityText",
     "recentMediaOcr",
     "mediaProjectionCancellation",

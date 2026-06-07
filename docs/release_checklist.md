@@ -314,6 +314,9 @@ release ticket or PR.
   the App privacy notice entry, long-term memory clear and forget controls,
   current-session deletion, remote configuration clearing, and deletion/control
   copy visible to the user.
+- [ ] `adaptiveUi` release flow evidence must explicitly record large-font
+  reachability, landscape reachability, and accessible labels/actions for core
+  controls.
 - [ ] Release flow evidence is generated from explicit owner sign-off, for
   example `OWNER="<reviewer>" RELEASE_FLOW_ALL=1
   scripts/record_release_flow_evidence.sh`; partial runs must remain failed

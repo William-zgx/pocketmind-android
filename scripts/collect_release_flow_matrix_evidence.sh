@@ -24,6 +24,7 @@ REQUIRED_FLOWS=(
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
+  adaptiveUi
   accessibilityText
   recentMediaOcr
   mediaProjectionCancellation
@@ -41,6 +42,7 @@ GENERATED_FLOWS=(
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
+  adaptiveUi
   accessibilityText
   recentMediaOcr
   mediaProjectionCancellation
@@ -192,6 +194,9 @@ flow_summary() {
     voiceInput)
       printf 'API 36 emulator accessibility regression covers the voice entry disclosure and button label; ViewModel tests cover one-shot transcript drafts, partial transcript state, cancellation, and no auto-send.'
       ;;
+    adaptiveUi)
+      printf 'API 36 emulator adaptive UI regression covers large font reachability, landscape confirmation reachability, and accessible labels/actions for core controls.'
+      ;;
     accessibilityText)
       printf 'API 36 emulator regression covers current screen Accessibility text confirmation, cancellation, audit evidence, and trace recording.'
       ;;
@@ -267,6 +272,10 @@ flow_source_files() {
         app/src/test/java/com/bytedance/zgx/pocketmind/PocketMindViewModelTest.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt
       ;;
+    adaptiveUi)
+      printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityAdaptiveUiTest.kt
+      ;;
     accessibilityText)
       printf '%s\n' \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySkillUiTest.kt \
@@ -320,6 +329,11 @@ write_flow_contract_fields() {
       printf 'sessionDeleteControlCovered=true\n'
       printf 'remoteConfigClearCovered=true\n'
       printf 'dataDeletionCopyCovered=true\n'
+      ;;
+    adaptiveUi)
+      printf 'largeFontReachabilityCovered=true\n'
+      printf 'landscapeReachabilityCovered=true\n'
+      printf 'accessibleLabelsCovered=true\n'
       ;;
   esac
 }
@@ -506,6 +520,11 @@ def is_valid_evidence(flow, value):
             "sessionDeleteControlCovered",
             "remoteConfigClearCovered",
             "dataDeletionCopyCovered",
+        ],
+        "adaptiveUi": [
+            "largeFontReachabilityCovered",
+            "landscapeReachabilityCovered",
+            "accessibleLabelsCovered",
         ],
     }.get(flow, [])
     for field in required_true_fields:

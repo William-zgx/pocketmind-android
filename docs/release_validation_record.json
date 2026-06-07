@@ -85,6 +85,7 @@
     "remindersAfterReboot": "pending",
     "shareAndPickerInput": "pending",
     "voiceInput": "pending",
+    "adaptiveUi": "pending",
     "accessibilityText": "pending",
     "recentMediaOcr": "pending",
     "mediaProjectionCancellation": "pending"

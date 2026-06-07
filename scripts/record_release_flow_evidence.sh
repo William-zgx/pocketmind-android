@@ -26,6 +26,7 @@ REQUIRED_RELEASE_FLOWS=(
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
+  adaptiveUi
   accessibilityText
   recentMediaOcr
   mediaProjectionCancellation
@@ -124,6 +125,11 @@ write_flow_contract_fields() {
       printf 'sessionDeleteControlCovered=true\n'
       printf 'remoteConfigClearCovered=true\n'
       printf 'dataDeletionCopyCovered=true\n'
+      ;;
+    adaptiveUi)
+      printf 'largeFontReachabilityCovered=true\n'
+      printf 'landscapeReachabilityCovered=true\n'
+      printf 'accessibleLabelsCovered=true\n'
       ;;
   esac
 }

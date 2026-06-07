@@ -10006,3 +10006,35 @@ scripts/test_validation_scripts.sh
 
 - 预期：approved release validation record 必须携带 release screenshot visual contract 才能通过。
 - 预期：缺少 UI dump 或 `visualRegression=passed` 的截图报告会被 release validation verifier 拒绝。
+
+## 2026-06-07 Adaptive UI release flow gate
+
+本轮覆盖项：
+
+- `adaptiveUi` 新增为正式 `flowMatrix` 必填项，当前
+  `docs/release_validation_record.json` 中保持 `pending`，等待真实 release owner 证据绑定。
+- `scripts/collect_release_flow_matrix_evidence.sh` 和
+  `scripts/record_release_flow_evidence.sh` 都会生成/要求 `adaptiveUi` 证据。
+- `scripts/verify_release_validation_record.sh` 对 `adaptiveUi` 正式 flow evidence
+  强制校验 3 个字段：大字体可达、横屏可达、核心控件可访问标签/动作。
+- `MainActivityAdaptiveUiTest` 新增横屏远程发送确认可达测试；横屏下会滚动确认 sheet，
+  确认“确认发送”和“取消”按钮可见。
+
+验证命令：
+
+```bash
+bash -n scripts/collect_release_flow_matrix_evidence.sh scripts/record_release_flow_evidence.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=360 ARTIFACT_DIR=build/verification/adaptive-ui-flow-gate-current3 INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityAdaptiveUiTest' INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+bash scripts/verify_local.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 `adaptiveUi` 正式证据字段、弱证据拒绝、
+  recorder 全量/部分 flow 行为。
+- 通过：API 36 targeted emulator，`build/verification/adaptive-ui-flow-gate-current3`
+  记录 `MainActivityAdaptiveUiTest` 的 `OK (3 tests)`，覆盖大字体、横屏远程发送确认、
+  核心控件无障碍标签。
+- 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
+  release AAB 和 artifact scan。
