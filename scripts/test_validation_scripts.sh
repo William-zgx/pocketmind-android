@@ -1113,7 +1113,25 @@ STORE_POLICY_MANIFEST="$TMP_DIR/AndroidManifest.xml"
 STORE_POLICY_PENDING="$TMP_DIR/store-policy-pending.json"
 STORE_POLICY_APPROVED="$TMP_DIR/store-policy-approved.json"
 STORE_POLICY_REVIEW_EVIDENCE="$TMP_DIR/store-policy-review.properties"
-printf 'PocketMind store privacy notice\n' > "$STORE_POLICY_NOTICE"
+cat > "$STORE_POLICY_NOTICE" <<'STORE_POLICY_NOTICE_MD'
+# PocketMind store privacy notice
+
+PocketMind stores chat sessions, user-entered chat text, model records, memory
+records, and audit metadata in local Android app storage. Users can delete chat
+sessions, use forgetting individual records, and use clearing explicit memory
+records.
+
+Remote model mode sends requests only to a user-configured OpenAI-compatible
+chat endpoint. Remote transport requires HTTPS. The configured endpoint may
+receive remote prompts and responses. Android external intents may share data
+with a destination app or Android system component after confirmation.
+
+The app does not contain a first-party analytics upload path. Model downloads
+contact model hosts; network operators and model hosts may receive normal
+download metadata. Android runtime permissions are disclosed for system speech
+recognition, contacts, calendar, media, Usage Access, Accessibility, and
+MediaProjection.
+STORE_POLICY_NOTICE_MD
 printf 'status=approved\nscope=store-policy\nreviewer=Store Reviewer\n' > "$STORE_POLICY_REVIEW_EVIDENCE"
 STORE_POLICY_NOTICE_SHA="$(shasum -a 256 "$STORE_POLICY_NOTICE" | awk '{print $1}')"
 STORE_POLICY_REVIEW_EVIDENCE_SHA="$(shasum -a 256 "$STORE_POLICY_REVIEW_EVIDENCE" | awk '{print $1}')"
@@ -1207,6 +1225,13 @@ expect_success \
   env PRIVACY_NOTICE_FILE="$STORE_POLICY_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
   scripts/verify_store_policy_record.sh --file "$STORE_POLICY_APPROVED" --report "$ARTIFACT_DIR/store-policy-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/store-policy-approved.properties" "status=passed"
+STORE_POLICY_INCOMPLETE_NOTICE="$TMP_DIR/store-policy-incomplete-notice.md"
+printf 'PocketMind stores user-entered chat text locally.\n' > "$STORE_POLICY_INCOMPLETE_NOTICE"
+expect_failure \
+  "store policy verifier rejects data safety privacy notice mismatch" \
+  env PRIVACY_NOTICE_FILE="$STORE_POLICY_INCOMPLETE_NOTICE" MANIFEST_FILE="$STORE_POLICY_MANIFEST" \
+  scripts/verify_store_policy_record.sh --file "$STORE_POLICY_APPROVED" --report "$ARTIFACT_DIR/store-policy-notice-mismatch.properties"
+assert_report_contains_text "$ARTIFACT_DIR/store-policy-notice-mismatch.properties" "privacy-notice-mismatch"
 STORE_POLICY_BAD_SHA="$TMP_DIR/store-policy-bad-sha.json"
 sed 's/"privacyNoticeSha256": "'"$STORE_POLICY_NOTICE_SHA"'"/"privacyNoticeSha256": "0000000000000000000000000000000000000000000000000000000000000000"/' "$STORE_POLICY_APPROVED" > "$STORE_POLICY_BAD_SHA"
 expect_failure \

@@ -23,6 +23,37 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Store data safety privacy notice consistency
+
+本轮覆盖项：
+
+- `verify_store_policy_record.sh` 将 Data Safety 布尔声明和外部接收方映射到
+  `docs/privacy_notice.md` 中的具体披露短语；隐私 notice 缺少对应披露时 gate 失败。
+- 隐私 notice 匹配改为归一化空白，避免 Markdown 换行拆分短语造成误判。
+- `docs/privacy_notice.md` 明确列出 Usage Access、Accessibility、MediaProjection
+  与运行时权限分开的特殊授权边界。
+- `docs/store_policy_record.json` 同步新的 privacy notice SHA；记录仍保持 pending，
+  不把人工 Store/Legal/Policy 审批伪装为已完成。
+
+验证命令：
+
+```bash
+scripts/verify_store_policy_record.sh --report build/verification/store-policy-current/store-policy.properties || true
+bash -n scripts/verify_store_policy_record.sh scripts/test_validation_scripts.sh
+scripts/test_validation_scripts.sh
+```
+
+结果：
+
+- 通过：validation script self-tests，覆盖 approved store policy 正例、privacy notice SHA
+  mismatch、review evidence SHA mismatch、manifest permission mismatch、placeholder contact/privacy URL，
+  以及 Data Safety 与 privacy notice mismatch 负例。
+- 当前仓库真实 `docs/store_policy_record.json` 仍按预期失败：
+  `build/verification/store-policy-current/store-policy.properties` 记录
+  `status=failed`，原因只剩 `status-not-approved`、占位联系邮箱/隐私政策 URL、
+  reviewer/date 缺失；不再包含 Data Safety/privacy notice mismatch。
+- 未执行模拟器：本轮只加固 Store/Data Safety 发布门禁和文档，不改变 APK runtime。
+
 ## 2026-06-07 Media/file permission UI anchors
 
 本轮覆盖项：

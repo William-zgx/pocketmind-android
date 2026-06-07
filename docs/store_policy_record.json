@@ -3,7 +3,7 @@
   "policy": "Public release builds require VERIFY_STORE_POLICY=1 and an approved store policy record.",
   "status": "pending_policy_review",
   "privacyNoticePath": "docs/privacy_notice.md",
-  "privacyNoticeSha256": "672d8aa10462659c079c3cb467bbe694b32938e562cc1f8a07f5899df0620430",
+  "privacyNoticeSha256": "6ca610e6697037ffa1922875938c008a066179aff42ded3beeb6457feab0fb79",
   "appListing": {
     "appName": "PocketMind",
     "shortDescription": "Local-first personal AI assistant.",

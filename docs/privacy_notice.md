@@ -100,6 +100,11 @@ structured tool failure rather than an automatic retry.
 On Android 13 and above, `query_recent_files` does not expose a direct
 `documents`, `downloads`, or `others` query path; non-media files must be
 provided through the system file picker or Android share input.
+Special-access flows are disclosed separately from runtime permissions:
+Usage Access is used only for confirmed foreground-app estimates,
+Accessibility is used only for confirmed current-screen text reads, and
+MediaProjection is used only for one-shot current-screen screenshot OCR after
+foreground consent.
 
 ## External Intents And Sharing
 

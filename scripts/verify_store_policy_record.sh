@@ -83,6 +83,9 @@ try:
 except Exception:
     print("json-parse-error")
     sys.exit(1)
+notice_text = notice_path.read_text()
+notice_text_lower = notice_text.lower()
+normalized_notice_text = re.sub(r"\s+", " ", notice_text_lower)
 
 failures = []
 if record.get("version") != 1:
@@ -168,6 +171,66 @@ for field in required_true_data_safety:
 recipients = data_safety.get("externalRecipients")
 if not isinstance(recipients, list) or len([item for item in recipients if isinstance(item, str) and item.strip()]) < 3:
     failures.append("external-recipients-incomplete")
+
+def notice_contains_all(required_phrases):
+    return all(phrase.lower() in normalized_notice_text for phrase in required_phrases)
+
+privacy_notice_requirements = {
+    "userDataCollected": (
+        "local android app storage",
+        "user-entered chat text",
+    ),
+    "userDataShared": (
+        "remote model mode sends requests",
+        "destination app or android system component",
+    ),
+    "encryptedInTransit": (
+        "remote transport requires https",
+    ),
+    "userDeletable": (
+        "delete chat sessions",
+        "forgetting individual records",
+        "clearing explicit memory records",
+    ),
+    "optionalRemoteModelEndpoints": (
+        "user-configured openai-compatible chat endpoint",
+    ),
+    "noFirstPartyAnalyticsUpload": (
+        "does not contain a first-party analytics upload path",
+    ),
+    "localStorageDisclosed": (
+        "local android app storage",
+    ),
+    "remoteModelCallsDisclosed": (
+        "remote model mode sends requests",
+    ),
+    "modelDownloadsDisclosed": (
+        "model downloads",
+        "network operators and model hosts",
+    ),
+    "androidPermissionsDisclosed": (
+        "android runtime permissions",
+        "system speech recognition",
+        "usage access",
+        "accessibility",
+        "mediaprojection",
+    ),
+}
+for field, required_phrases in privacy_notice_requirements.items():
+    if data_safety.get(field) is True and not notice_contains_all(required_phrases):
+        failures.append(f"{field}-privacy-notice-mismatch")
+
+recipient_notice_requirements = {
+    "User-configured remote model endpoints": ("configured endpoint",),
+    "Recommended and custom model download hosts": ("model hosts",),
+    "Android system or destination apps opened by confirmed external intents": (
+        "destination app or android system component",
+    ),
+}
+if isinstance(recipients, list):
+    for recipient, required_phrases in recipient_notice_requirements.items():
+        if recipient in recipients and not notice_contains_all(required_phrases):
+            failures.append(f"{recipient.lower().replace(' ', '-')}-privacy-notice-mismatch")
 
 model_downloads = record.get("modelDownloads")
 if not isinstance(model_downloads, dict):
