@@ -1,6 +1,7 @@
 package com.bytedance.zgx.pocketmind.docs
 
 import com.bytedance.zgx.pocketmind.capability.CapabilityMatrix
+import com.bytedance.zgx.pocketmind.tool.ConfirmationPolicy
 import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import java.io.File
 import org.json.JSONObject
@@ -57,6 +58,18 @@ class CapabilityMatrixDocumentationTest {
             ),
             documentedIds,
         )
+    }
+
+    @Test
+    fun remoteVisionImageInputRequiresRemoteSendConfirmation() {
+        val descriptor = CapabilityMatrix.productDescriptors.single {
+            it.capabilityId == "remote_vision_image_input"
+        }
+
+        assertEquals(ConfirmationPolicy.Required, descriptor.confirmationPolicy)
+        assertTrue(descriptor.failureBehavior.contains("远程发送预览确认"))
+        assertTrue(descriptor.failureBehavior.contains("不支持图片"))
+        assertTrue(descriptor.failureBehavior.contains("不强制 OCR"))
     }
 
     @Test

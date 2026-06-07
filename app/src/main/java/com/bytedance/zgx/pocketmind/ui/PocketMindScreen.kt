@@ -801,6 +801,7 @@ private fun ChatEmptyState(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                HomePositioningPanel()
                 if (state.isReady) {
                     StatusSummaryRow(state)
                     PromptSuggestionList(
@@ -838,6 +839,35 @@ private fun ChatEmptyState(
         }
     }
 }
+
+@Composable
+private fun HomePositioningPanel() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_positioning_panel"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SectionTitle(
+            text = "为什么装它",
+            subtitle = PRODUCT_POSITIONING_TEXT,
+        )
+        HOME_VALUE_PROPOSITIONS.forEach { proposition ->
+            TrustBoundaryRow(
+                icon = homeValueIcon(proposition.kind),
+                title = proposition.title,
+                body = proposition.body,
+            )
+        }
+    }
+}
+
+private fun homeValueIcon(kind: HomeValueKind): ImageVector =
+    when (kind) {
+        HomeValueKind.Local -> Icons.Filled.Storage
+        HomeValueKind.Remote -> Icons.Filled.Cloud
+        HomeValueKind.Action -> Icons.Filled.Settings
+    }
 
 @Composable
 private fun HomeCapabilityPills() {
@@ -3044,6 +3074,36 @@ internal const val PRODUCT_HOME_TITLE_TEXT =
 
 internal const val PRODUCT_HOME_DESCRIPTION_TEXT =
     "先输入问题、附加图片或准备设备动作；没有模型时只展示启动选项，不读取本地数据，也不会自动发送远程请求。"
+
+internal enum class HomeValueKind {
+    Local,
+    Remote,
+    Action,
+}
+
+internal data class HomeValueProposition(
+    val kind: HomeValueKind,
+    val title: String,
+    val body: String,
+)
+
+internal val HOME_VALUE_PROPOSITIONS = listOf(
+    HomeValueProposition(
+        kind = HomeValueKind.Local,
+        title = "本地可用",
+        body = "基础问答、会话和显式记忆优先留在本机；离线模型可稍后下载或导入。",
+    ),
+    HomeValueProposition(
+        kind = HomeValueKind.Remote,
+        title = "远程多模态可选",
+        body = "远程模型只在你配置并切换后使用；发送文字或图片前都会先确认。",
+    ),
+    HomeValueProposition(
+        kind = HomeValueKind.Action,
+        title = "动作确认执行",
+        body = "联系人、日历、分享、提醒和系统相关动作先说明权限与风险，再由你确认。",
+    ),
+)
 
 internal const val MODEL_STARTUP_BANNER_TITLE =
     "模型未就绪"

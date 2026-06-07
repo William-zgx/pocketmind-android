@@ -23,6 +23,50 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Product positioning and first-run model recovery
+
+本轮覆盖项：
+
+- 首屏空状态新增 `home_positioning_panel`，直接回答“为什么装它”：
+  隐私优先的随身 AI 助手，本地可用，远程多模态可选，设备动作必须确认执行。
+- `MainActivitySmokeTest` 锁住首屏定位、隐私入口定位、远程配置入口滚动路径；
+  `MainActivityFirstRunSetupUiTest` 锁住 first-run 页面也能看到同一产品定位。
+- `remote_vision_image_input` 能力矩阵改为 `confirmationPolicy=Required`，
+  明确图片只在远程发送预览确认后才会随请求发送；不支持视觉时仍直接提示，不强制 OCR。
+- `startSetupModelDownload()` 不再在目录/空间/下载启动失败前提前关闭 first-run；
+  只有下载任务真正入队后才标记 setup dismissed。
+- 下载失败分支清空 `downloadedBytes` 和 `totalBytes`，避免失败后继续显示旧进度块。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest \
+  --tests com.bytedance.zgx.pocketmind.docs.CapabilityMatrixDocumentationTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.startSetupModelDownloadKeepsFirstRunOpenWhenPreflightFails' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.monitorDownloadFailureClearsPendingDeletesTargetAndShowsReason' \
+  :app:compileDebugAndroidTestKotlin
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  ANDROID_SERIAL=emulator-5554 CLEAN_DEVICE=1 EMULATOR_SELECT_TIMEOUT_SECONDS=60 \
+  BOOT_TIMEOUT_SECONDS=180 \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest,com.bytedance.zgx.pocketmind.MainActivityFirstRunSetupUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=360 LOGCAT_TAIL_LINES=5000 \
+  ARTIFACT_DIR=build/verification/home-positioning-first-run-smoke-current \
+  scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM tests 和 AndroidTest Kotlin 编译。
+- 通过：API 36 arm64 `pocketmind_api36_arm64` clean-device emulator smoke，
+  `build/verification/home-positioning-first-run-smoke-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=7`、`clean_device=1`。
+- 通过：`build/verification/home-positioning-first-run-smoke-current/crash-anr-smoke.properties`
+  记录 `status=passed`、所有 crash/ANR/LiteRT counters 为 0，SHA-256 为
+  `cea6602ec98319785bebbd6e8dd94739d75a39526afd1d7a828c67dda8584b78`。
+- 未完成：本轮不改变“远程视觉默认可用”的产品决策；未知远程模型若实际不支持图片，
+  仍由远程错误处理给出“不支持图片”提示。
+
 ## 2026-06-07 Crash/ANR operations evidence binding
 
 本轮覆盖项：

@@ -293,10 +293,10 @@ class PocketMindViewModel(
 
     fun startSetupModelDownload() {
         if (_uiState.value.isBusy || _uiState.value.isDownloading) return
-        firstRunSetupRepository.markSetupDismissed()
         val selectedModels = _uiState.value.basicSetupModels
             .filter { it.id in _uiState.value.setupSelectedModelIds && !_uiState.value.isModelInstalled(it.id) }
         if (selectedModels.isEmpty()) {
+            firstRunSetupRepository.markSetupDismissed()
             _uiState.update {
                 it.copy(
                     showFirstRunSetup = false,
@@ -308,8 +308,10 @@ class PocketMindViewModel(
         setupDownloadQueue.clear()
         selectedModels.drop(1).forEach { setupDownloadQueue.add(ModelDownloadSource.recommended(it)) }
         setupDownloadInProgress = true
-        _uiState.update { it.copy(showFirstRunSetup = false) }
-        beginModelDownload(ModelDownloadSource.recommended(selectedModels.first()))
+        if (!beginModelDownload(ModelDownloadSource.recommended(selectedModels.first()))) {
+            setupDownloadQueue.clear()
+            setupDownloadInProgress = false
+        }
     }
 
     fun skipFirstRunSetup() {
@@ -3159,14 +3161,14 @@ class PocketMindViewModel(
         super.onCleared()
     }
 
-    private fun beginModelDownload(source: ModelDownloadSource) {
+    private fun beginModelDownload(source: ModelDownloadSource): Boolean {
         refreshDeviceStatus()
-        if (_uiState.value.isBusy || _uiState.value.isDownloading) return
+        if (_uiState.value.isBusy || _uiState.value.isDownloading) return false
         if (!isArm64Device()) {
             _uiState.update {
                 it.copy(statusText = "当前设备不是 64 位 ARM，无法运行此模型")
             }
-            return
+            return false
         }
 
         val target = modelRepository.downloadedModelFile(source.fileName)
@@ -3174,17 +3176,17 @@ class PocketMindViewModel(
             _uiState.update {
                 it.copy(statusText = "下载目录不可用，请导入已有模型")
             }
-            return
+            return false
         }
         if (source.expectedBytes != null && target.exists() && source.hasExpectedSize(target.length())) {
             verifyAndRegisterDownloadedModel(target, source)
-            return
+            return true
         }
         if (target.exists() && !target.delete()) {
             _uiState.update {
                 it.copy(statusText = "无法清理未完成的下载")
             }
-            return
+            return false
         }
 
         val modelParent = target.parentFile
@@ -3192,22 +3194,25 @@ class PocketMindViewModel(
             _uiState.update {
                 it.copy(statusText = "无法创建模型下载目录")
             }
-            return
+            return false
         }
         val requiredBytes = source.expectedBytes ?: DEFAULT_CHAT_MODEL_BYTES
         if (!ModelCatalog.hasEnoughSpace(modelParent.usableSpace, requiredBytes)) {
             _uiState.update {
                 it.copy(statusText = "存储空间不足，至少需要约 ${ModelCatalog.formatBytes(requiredBytes)}")
             }
-            return
+            return false
         }
 
-        val downloadId = downloadService.enqueue(source, target).getOrElse { throwable ->
+        val downloadResult = downloadService.enqueue(source, target)
+        if (downloadResult.isFailure) {
+            val throwable = downloadResult.exceptionOrNull()
             _uiState.update {
-                it.copy(statusText = "下载启动失败：${throwable.cleanMessage()}")
+                it.copy(statusText = "下载启动失败：${throwable?.cleanMessage() ?: "未知错误"}")
             }
-            return
+            return false
         }
+        val downloadId = downloadResult.getOrThrow()
 
         firstRunSetupRepository.markSetupDismissed()
         activeDownloadId = downloadId
@@ -3225,6 +3230,7 @@ class PocketMindViewModel(
             )
         }
         monitorDownload(downloadId, target, source)
+        return true
     }
 
     private fun monitorDownload(
@@ -3346,6 +3352,8 @@ class PocketMindViewModel(
                                 isBusy = false,
                                 isDownloading = false,
                                 downloadProgressPercent = null,
+                                downloadedBytes = 0L,
+                                totalBytes = 0L,
                                 statusText = "下载失败：${info.reasonText}",
                             )
                         }
@@ -3419,7 +3427,10 @@ class PocketMindViewModel(
     private fun continueSetupDownloadOrLoad(completedSource: ModelDownloadSource) {
         if (setupDownloadQueue.isNotEmpty()) {
             val nextSource = setupDownloadQueue.removeFirst()
-            beginModelDownload(nextSource)
+            if (!beginModelDownload(nextSource)) {
+                setupDownloadQueue.clear()
+                setupDownloadInProgress = false
+            }
             return
         }
 

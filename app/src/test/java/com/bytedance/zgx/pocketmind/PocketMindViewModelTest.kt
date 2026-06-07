@@ -464,6 +464,34 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun startSetupModelDownloadKeepsFirstRunOpenWhenPreflightFails() = runTest(dispatcher) {
+        val firstRunStore = FakeFirstRunSetupStore(setupDismissed = false)
+        val modelRepository = FakeModelRepository(
+            activeModelPath = null,
+            downloadedModelFileProvider = { null },
+        )
+        val downloadClient = FakeModelDownloadClient()
+        val viewModel = createViewModel(
+            modelRepository = modelRepository,
+            firstRunStore = firstRunStore,
+            downloadClient = downloadClient,
+        )
+
+        assertTrue(viewModel.uiState.value.showFirstRunSetup)
+
+        viewModel.startSetupModelDownload()
+        advanceUntilIdle()
+
+        assertEquals("下载目录不可用，请导入已有模型", viewModel.uiState.value.statusText)
+        assertTrue(viewModel.uiState.value.showFirstRunSetup)
+        assertFalse(firstRunStore.isSetupDismissed())
+        assertFalse(viewModel.uiState.value.isBusy)
+        assertFalse(viewModel.uiState.value.isDownloading)
+        assertTrue(downloadClient.enqueuedDownloads.isEmpty())
+        assertTrue(modelRepository.savedPendingDownloads.isEmpty())
+    }
+
+    @Test
     fun startCustomModelDownloadRejectsInvalidUrlWithoutEnqueueing() = runTest(dispatcher) {
         val modelRepository = FakeModelRepository(customDownloadSource = null)
         val downloadClient = FakeModelDownloadClient()
@@ -510,6 +538,8 @@ class PocketMindViewModelTest {
             assertEquals("下载失败：存储空间不足", viewModel.uiState.value.statusText)
             assertFalse(viewModel.uiState.value.isBusy)
             assertFalse(viewModel.uiState.value.isDownloading)
+            assertEquals(0L, viewModel.uiState.value.downloadedBytes)
+            assertEquals(0L, viewModel.uiState.value.totalBytes)
             assertFalse(target.exists())
             assertEquals(1, modelRepository.clearPendingDownloadCount)
             assertTrue(modelRepository.registeredModels.isEmpty())

@@ -30,6 +30,13 @@ class MainActivityFirstRunSetupUiTest {
             mainActivitySkipStartupIntent(targetContext),
         ).use {
             composeRule.waitForTag("app_title", timeoutMillis = 10_000)
+            composeRule.onNodeWithTag("home_positioning_panel")
+                .performScrollTo()
+                .assertIsDisplayed()
+            composeRule.waitForText("为什么装它", timeoutMillis = 10_000)
+            composeRule.waitForText("本地可用", timeoutMillis = 10_000)
+            composeRule.waitForText("远程多模态可选", timeoutMillis = 10_000)
+            composeRule.waitForText("动作确认执行", timeoutMillis = 10_000)
             composeRule.waitForText("离线基础问答可选下载", timeoutMillis = 10_000)
 
             composeRule.onNodeWithTag("first_run_model_chat-e2b")

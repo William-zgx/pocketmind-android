@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import org.junit.Rule
@@ -37,8 +38,13 @@ class MainActivitySmokeTest {
         composeRule.onNodeWithTag("app_title").assertIsDisplayed()
         composeRule.waitForText("开始和 PocketMind 对话")
         composeRule.waitForText("模型未就绪")
+        composeRule.onNodeWithTag("home_positioning_panel").performScrollTo().assertIsDisplayed()
+        composeRule.waitForText("为什么装它")
+        composeRule.waitForText("本地可用")
+        composeRule.waitForText("远程多模态可选")
+        composeRule.waitForText("动作确认执行")
         composeRule.onNodeWithTag("home_capability_pills").assertIsDisplayed()
-        composeRule.onNodeWithTag("model_startup_banner").assertIsDisplayed()
+        composeRule.onNodeWithTag("model_startup_banner").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("top_model_button").assertIsDisplayed()
         composeRule.onNodeWithTag("top_session_button").assertIsDisplayed()
         composeRule.onNodeWithTag("composer_attachment_button").assertIsDisplayed()
@@ -75,7 +81,7 @@ class MainActivitySmokeTest {
     fun quickRemoteConfigEntryOpensRemoteModelForm() {
         composeRule.waitForTag("app_title")
 
-        composeRule.onNodeWithTag("quick_remote_config_button").performClick()
+        composeRule.onNodeWithTag("quick_remote_config_button").performScrollTo().performClick()
         composeRule.waitForTag("model_manager_sheet")
 
         composeRule.onNodeWithText("远程模型").assertIsDisplayed()
@@ -90,6 +96,10 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("model_manager_sheet")
 
         composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
+        composeRule.waitForText("为什么装它")
+        composeRule.waitForText("本地可用")
+        composeRule.waitForText("远程多模态可选")
+        composeRule.waitForText("动作确认执行")
         composeRule.waitForText("用户控制")
         composeRule.waitForText("可清空长期记忆", substring = true)
         composeRule.waitForText("删除当前会话", substring = true)

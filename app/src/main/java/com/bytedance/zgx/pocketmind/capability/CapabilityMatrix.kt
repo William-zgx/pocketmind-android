@@ -109,8 +109,8 @@ object CapabilityMatrix {
                 privacyLevel = CapabilityPrivacyLevel.UserProvided,
                 requiresLocalModel = false,
                 remoteEligible = true,
-                confirmationPolicy = ConfirmationPolicy.NotRequired,
-                failureBehavior = "远程配置不支持图片输入时直接提示不支持，不强制 OCR；远程视觉 prompt 不包含附件文件名、MIME、大小或 OCR。",
+                confirmationPolicy = ConfirmationPolicy.Required,
+                failureBehavior = "图片只在远程发送预览确认后随请求发送；远程配置不支持图片输入时直接提示不支持，不强制 OCR；远程视觉 prompt 不包含附件文件名、MIME、大小或 OCR。",
                 requiredTests = listOf(
                     "RemoteChatRuntimeTest",
                     "PocketMindViewModelTest",
