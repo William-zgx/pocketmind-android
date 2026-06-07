@@ -150,7 +150,7 @@ FAKE_PACKAGE_DUMPSYS
       pm\ clear\ com.bytedance.zgx.pocketmind|pm\ clear\ com.bytedance.zgx.pocketmind.test)
         echo "Success"
         ;;
-      input\ tap*|input\ text*|input\ keyevent*)
+      input\ tap*|input\ text*|input\ keyevent*|input\ swipe*)
         echo "OK"
         ;;
       uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
@@ -303,8 +303,8 @@ FAKE_FRESH_START_UI
   <node text="输入问题" bounds="[120,2100][780,2220]" />
   <node content-desc="发送" bounds="[920,2100][1020,2220]" />
   <node content-desc="关闭模型管理" bounds="[920,120][1010,210]" />
-  <node text="读取剪贴板" bounds="[80,1180][900,1260]" />
-  <node text="确认执行" bounds="[80,1850][980,1970]" />
+  <node text="即将发送到远程模型" bounds="[80,1180][900,1260]" />
+  <node text="确认后才会把本次内容交给远程模型" bounds="[80,1850][980,1970]" />
   <node text="取消" bounds="[80,1990][980,2110]" />
   <node text="暂无运行中的后台任务" bounds="[80,720][980,800]" />
   <node text="最近审计日志" bounds="[80,1420][980,1500]" />
@@ -1707,7 +1707,7 @@ PY
         screenshot_required_text="模型管理|当前模型|本地可用|远程多模态可选"
         ;;
       confirmation-sheet)
-        screenshot_required_text="确认执行|读取剪贴板|取消"
+        screenshot_required_text="即将发送到远程模型|确认后才会|取消"
         ;;
       background-tasks-or-audit)
         screenshot_required_text="后台任务|最近审计日志|最近 Agent 轨迹|暂无运行中的后台任务"

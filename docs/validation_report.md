@@ -74,6 +74,50 @@ shasum -a 256 build/verification/emulator-api-matrix-readiness.properties
 - 下一步：补齐 API 28/32/33/34 的 `system-images;android-<api>;google_apis;arm64-v8a`
   和对应 AVD 后，才能运行完整 `scripts/regression_emulator_api_matrix.sh`。
 
+## 2026-06-07 Release screenshots current evidence refresh
+
+本轮覆盖项：
+
+- `MODEL_MANAGER_POSITIONING_TEXT` 改为包含精确发布合同短语“本地可用”，同时保留
+  “可离线使用”的产品含义。
+- `confirmation-sheet` release 截图合同从旧的剪贴板动作确认，调整为当前 clean
+  remote screenshot flow 的远程发送披露：`即将发送到远程模型`、`确认后才会`、`取消`。
+  设备动作确认仍由独立 instrumentation / JVM 合同覆盖。
+- `capture_release_screenshots.sh` 在后台任务页先等待顶部内容，再滚动到审计区，确保
+  `最近审计日志` 和 `最近 Agent 轨迹` 同屏进入截图 UI dump。
+- `docs/release_validation_record.json` 重新绑定四张 PNG 和
+  `release-screenshots.properties` 的 SHA-256。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest'
+bash -n scripts/capture_release_screenshots.sh scripts/verify_release_validation_record.sh scripts/test_validation_scripts.sh
+ANDROID_HOME="$HOME/Library/Android/sdk" ANDROID_SDK_ROOT="$HOME/Library/Android/sdk" \
+  AVD_NAME=pocketmind_api36_arm64 \
+  ARTIFACT_DIR=build/verification/release-screenshots-current \
+  REPORT_FILE=build/verification/release-screenshots-current/release-screenshots.properties \
+  EMULATOR_ARGS='-no-window -no-audio -no-boot-anim -no-snapshot-save' \
+  EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=360 \
+  scripts/capture_release_screenshots.sh
+scripts/verify_release_validation_record.sh \
+  --file docs/release_validation_record.json \
+  --report build/verification/release-validation-after-screenshots-current.properties
+```
+
+结果：
+
+- 通过：`build/verification/release-screenshots-current/release-screenshots.properties`
+  记录 `status=passed`、`target=release-screenshots`、`clean_device=1`、
+  `api_level=36`、`avd=pocketmind_api36_arm64`。
+- 通过：四张截图 `chat-home`、`model-manager`、`confirmation-sheet`、
+  `background-tasks-or-audit` 均记录 PNG SHA、UI dump、UI dump SHA、
+  `visualRegression=passed` 和 `requiredText`。
+- evidence SHA-256：`release-screenshots.properties` 为
+  `f274bc04f8c730cae2aba783a0e763ae213094d1d4747c800093f6f79fe94b27`。
+- 预期失败：release validation record 仍未 approved；剩余失败为真机、API 28/32/33/34、
+  manual acceptance、flow matrix、performance sanity、reviewer/date，截图相关失败已消失。
+
 ## 2026-06-07 Product positioning and first-run model recovery
 
 本轮覆盖项：
