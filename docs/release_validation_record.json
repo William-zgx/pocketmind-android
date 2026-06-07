@@ -81,6 +81,7 @@
     "encryptedApiKeyClear": "pending",
     "sessionPersistence": "pending",
     "memoryControls": "pending",
+    "privacyAndDataControls": "pending",
     "remindersAfterReboot": "pending",
     "shareAndPickerInput": "pending",
     "voiceInput": "pending",

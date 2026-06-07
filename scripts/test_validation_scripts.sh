@@ -475,6 +475,14 @@ write_model_release_flow_contract_fixture() {
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
       ;;
+    privacyAndDataControls)
+      printf 'privacyNoticeEntryVisible=true\n'
+      printf 'memoryClearControlCovered=true\n'
+      printf 'memoryForgetControlCovered=true\n'
+      printf 'sessionDeleteControlCovered=true\n'
+      printf 'remoteConfigClearCovered=true\n'
+      printf 'dataDeletionCopyCovered=true\n'
+      ;;
   esac
 }
 
@@ -1127,6 +1135,7 @@ printf 'status=passed\nsource=Android Vitals\nwatcher=Launch Watcher\n' > "$OPER
 cat > "$OPERATIONS_SMOKE_INSTRUMENTATION" <<'OPERATIONS_SMOKE_INSTRUMENTATION_TXT'
 INSTRUMENTATION_STATUS: numtests=3
 OK (3 tests)
+INSTRUMENTATION_CODE: -1
 OPERATIONS_SMOKE_INSTRUMENTATION_TXT
 cat > "$OPERATIONS_SMOKE_DEVICE_REPORT" <<OPERATIONS_SMOKE_DEVICE_REPORT_TXT
 status=passed
@@ -1154,6 +1163,7 @@ expect_success \
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "status=passed"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "operationsRecordField=crashAnrSmoke.evidence"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "logcatAnalyzed=true"
+assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "instrumentationFailureSignalCount=0"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noLaunchCrash=true"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noInstallCrash=true"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noCrashLoop=true"
@@ -1447,8 +1457,8 @@ done
 for flow_key in \
   firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
-  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
-  mediaProjectionCancellation; do
+  privacyAndDataControls remindersAfterReboot shareAndPickerInput voiceInput accessibilityText \
+  recentMediaOcr mediaProjectionCancellation; do
   cat > "$TMP_DIR/validation-flow-evidence/$flow_key.properties" <<VALIDATION_FLOW_EVIDENCE_PROPERTIES
 status=passed
 target=release-flow
@@ -1645,6 +1655,7 @@ cat > "$VALIDATION_APPROVED" <<VALIDATION_APPROVED_JSON
     "encryptedApiKeyClear": {"status": "passed", "evidence": "Encrypted API key clear flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/encryptedApiKeyClear.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
     "sessionPersistence": {"status": "passed", "evidence": "Session persistence flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/sessionPersistence.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
     "memoryControls": {"status": "passed", "evidence": "Memory controls flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/memoryControls.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
+    "privacyAndDataControls": {"status": "passed", "evidence": "Privacy and data controls flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/privacyAndDataControls.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
     "remindersAfterReboot": {"status": "passed", "evidence": "Reminders after reboot flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/remindersAfterReboot.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
     "shareAndPickerInput": {"status": "passed", "evidence": "Share and picker input flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/shareAndPickerInput.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
     "voiceInput": {"status": "passed", "evidence": "Voice input flow passed.", "evidencePath": "$TMP_DIR/validation-flow-evidence/voiceInput.properties", "owner": "QA", "date": "$VALIDATION_DATE"},
@@ -1842,6 +1853,35 @@ expect_failure \
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-text-share-protection-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-remote-vision-image-staging-missing"
 assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-share-flow.properties" "flow-shareAndPickerInput-no-implicit-image-ocr-missing"
+VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW="$TMP_DIR/release-validation-weak-privacy-controls-flow.json"
+VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE="$TMP_DIR/validation-flow-evidence/weak-privacy-controls.properties"
+cat > "$VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE" <<'VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE_PROPERTIES'
+status=passed
+target=release-flow
+flowKey=privacyAndDataControls
+releaseFlowPassed=true
+candidateOnly=false
+VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE_PROPERTIES
+python3 - "$VALIDATION_APPROVED" "$VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW" "$VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW_EVIDENCE" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+evidence = Path(sys.argv[3])
+record = json.loads(source.read_text())
+record["flowMatrix"]["privacyAndDataControls"]["evidencePath"] = str(evidence)
+record["flowMatrix"]["privacyAndDataControls"]["evidenceSha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+target.write_text(json.dumps(record, indent=2))
+PY
+expect_failure \
+  "release validation verifier rejects weak privacy and data controls evidence" \
+  scripts/verify_release_validation_record.sh --file "$VALIDATION_WEAK_PRIVACY_CONTROLS_FLOW" --report "$ARTIFACT_DIR/release-validation-weak-privacy-controls-flow.properties"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-privacy-controls-flow.properties" "flow-privacyAndDataControls-privacy-notice-entry-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-privacy-controls-flow.properties" "flow-privacyAndDataControls-memory-clear-control-missing"
+assert_report_contains_text "$ARTIFACT_DIR/release-validation-weak-privacy-controls-flow.properties" "flow-privacyAndDataControls-remote-config-clear-control-missing"
 VALIDATION_BARE_MANUAL="$TMP_DIR/release-validation-bare-manual.json"
 python3 - "$VALIDATION_APPROVED" "$VALIDATION_BARE_MANUAL" <<'PY'
 import json
@@ -2389,14 +2429,14 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "target=release-flow-matrix-candidate-evidence"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "failedTarget=flow-matrix"
 assert_report_contains_text "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "missing-approved-release-evidence"
-assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "generatedCandidateFlows=firstInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending.properties" "generatedCandidateFlows=firstInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,privacyAndDataControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "candidateOnly=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-firstInstall.properties" "releaseFlowPassed=false"
 for generated_flow_key in \
   firstInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
-  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
-  mediaProjectionCancellation; do
+  privacyAndDataControls remindersAfterReboot shareAndPickerInput voiceInput accessibilityText \
+  recentMediaOcr mediaProjectionCancellation; do
   assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "status=passed"
   assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "target=release-flow-matrix-candidate-evidence"
   assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-$generated_flow_key.properties" "flow=$generated_flow_key"
@@ -2415,6 +2455,10 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareA
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-shareAndPickerInput.properties" "noImplicitImageOcr=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "privacyNoticeEntryVisible=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "memoryClearControlCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "sessionDeleteControlCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-pending/flow-privacyAndDataControls.properties" "remoteConfigClearCovered=true"
 cat > "$FLOW_CANDIDATE_STALE_EMULATOR_REPORT" <<FLOW_CANDIDATE_STALE_EMULATOR_REPORT_PROPERTIES
 status=passed
 target=regression-emulator
@@ -2449,8 +2493,8 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-stale-report.proper
 for flow_key in \
   firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
-  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
-  mediaProjectionCancellation; do
+  privacyAndDataControls remindersAfterReboot shareAndPickerInput voiceInput accessibilityText \
+  recentMediaOcr mediaProjectionCancellation; do
   {
     printf 'status=passed\n'
     printf 'target=release-flow\n'
@@ -2482,6 +2526,7 @@ flows = [
     "encryptedApiKeyClear",
     "sessionPersistence",
     "memoryControls",
+    "privacyAndDataControls",
     "remindersAfterReboot",
     "shareAndPickerInput",
     "voiceInput",
@@ -2522,7 +2567,7 @@ expect_success \
     --artifact-dir "$ARTIFACT_DIR/release-flow-candidate-approved" \
     --report "$ARTIFACT_DIR/release-flow-candidate-approved.properties"
 assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "status=passed"
-assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "passedRecordFlows=firstInstall,upgradeInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
+assert_report_contains "$ARTIFACT_DIR/release-flow-candidate-approved.properties" "passedRecordFlows=firstInstall,upgradeInstall,localModelDownloadVerification,customModelImportOrUrlRejection,remoteHttpsConfiguration,encryptedApiKeyClear,sessionPersistence,memoryControls,privacyAndDataControls,remindersAfterReboot,shareAndPickerInput,voiceInput,accessibilityText,recentMediaOcr,mediaProjectionCancellation"
 FLOW_CANDIDATE_WEAK_EVIDENCE="$TMP_DIR/flow-candidate-weak-evidence.properties"
 FLOW_CANDIDATE_RECORD_WEAK_EVIDENCE="$TMP_DIR/flow-candidate-record-weak-evidence.json"
 printf 'status=passed\nflow=firstInstall\n' > "$FLOW_CANDIDATE_WEAK_EVIDENCE"
@@ -2637,8 +2682,8 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-full/release-flow-evidence.pr
 for flow_key in \
   firstInstall upgradeInstall localModelDownloadVerification customModelImportOrUrlRejection \
   remoteHttpsConfiguration encryptedApiKeyClear sessionPersistence memoryControls \
-  remindersAfterReboot shareAndPickerInput voiceInput accessibilityText recentMediaOcr \
-  mediaProjectionCancellation; do
+  privacyAndDataControls remindersAfterReboot shareAndPickerInput voiceInput accessibilityText \
+  recentMediaOcr mediaProjectionCancellation; do
   assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "status=passed"
   assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "target=release-flow"
   assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-$flow_key.properties" "flowKey=$flow_key"
@@ -2660,6 +2705,10 @@ assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionImageAttachmentStaged=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "remoteVisionUnsupportedProtected=true"
 assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-shareAndPickerInput.properties" "documentExcerptBounded=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "privacyNoticeEntryVisible=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "memoryForgetControlCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "sessionDeleteControlCovered=true"
+assert_report_contains "$ARTIFACT_DIR/release-flow-full/flow-privacyAndDataControls.properties" "dataDeletionCopyCovered=true"
 
 FAKE_SDKMANAGER="$TMP_DIR/fake-sdkmanager"
 FAKE_AVDMANAGER="$TMP_DIR/fake-avdmanager"

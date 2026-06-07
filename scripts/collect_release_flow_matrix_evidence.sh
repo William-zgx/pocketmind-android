@@ -20,6 +20,7 @@ REQUIRED_FLOWS=(
   encryptedApiKeyClear
   sessionPersistence
   memoryControls
+  privacyAndDataControls
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
@@ -36,6 +37,7 @@ GENERATED_FLOWS=(
   encryptedApiKeyClear
   sessionPersistence
   memoryControls
+  privacyAndDataControls
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
@@ -178,6 +180,9 @@ flow_summary() {
     memoryControls)
       printf 'API 36 emulator regression and memory panel UI tests cover explicit memory creation, forget, and clear controls.'
       ;;
+    privacyAndDataControls)
+      printf 'API 36 emulator smoke and UI tests cover the App privacy notice entry plus memory clear/forget, current-session deletion, remote configuration clear, and deletion/control copy.'
+      ;;
     remindersAfterReboot)
       printf 'Repository tests cover BOOT_COMPLETED and package-replaced reminder rescheduling, catch-up scheduling, stale-running recovery, and metadata-only reminder audit boundaries.'
       ;;
@@ -236,6 +241,13 @@ flow_source_files() {
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityComprehensiveTest.kt \
         app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityLongTermMemoryUiTest.kt \
         app/src/test/java/com/bytedance/zgx/pocketmind/memory/MemoryQualityContractTest.kt
+      ;;
+    privacyAndDataControls)
+      printf '%s\n' \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivitySmokeTest.kt \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityComprehensiveTest.kt \
+        app/src/androidTest/java/com/bytedance/zgx/pocketmind/MainActivityLongTermMemoryUiTest.kt \
+        app/src/test/java/com/bytedance/zgx/pocketmind/ui/PocketMindScreenDisplayTest.kt
       ;;
     remindersAfterReboot)
       printf '%s\n' \
@@ -300,6 +312,14 @@ write_flow_contract_fields() {
       printf 'noImplicitImageOcr=true\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
+      ;;
+    privacyAndDataControls)
+      printf 'privacyNoticeEntryVisible=true\n'
+      printf 'memoryClearControlCovered=true\n'
+      printf 'memoryForgetControlCovered=true\n'
+      printf 'sessionDeleteControlCovered=true\n'
+      printf 'remoteConfigClearCovered=true\n'
+      printf 'dataDeletionCopyCovered=true\n'
       ;;
   esac
 }
@@ -478,6 +498,14 @@ def is_valid_evidence(flow, value):
             "noImplicitImageOcr",
             "documentExcerptBounded",
             "pickerAttachmentPromptCovered",
+        ],
+        "privacyAndDataControls": [
+            "privacyNoticeEntryVisible",
+            "memoryClearControlCovered",
+            "memoryForgetControlCovered",
+            "sessionDeleteControlCovered",
+            "remoteConfigClearCovered",
+            "dataDeletionCopyCovered",
         ],
     }.get(flow, [])
     for field in required_true_fields:

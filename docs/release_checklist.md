@@ -298,6 +298,10 @@ release ticket or PR.
   ACTION_SEND text staging, remote-mode text-share protection, remote vision
   image attachment staging, unsupported-vision protection, no implicit image
   OCR, bounded document excerpts, and picker attachment prompting.
+- [ ] `privacyAndDataControls` release flow evidence must explicitly record
+  the App privacy notice entry, long-term memory clear and forget controls,
+  current-session deletion, remote configuration clearing, and deletion/control
+  copy visible to the user.
 - [ ] Release flow evidence is generated from explicit owner sign-off, for
   example `OWNER="<reviewer>" RELEASE_FLOW_ALL=1
   scripts/record_release_flow_evidence.sh`; partial runs must remain failed
@@ -321,8 +325,9 @@ release ticket or PR.
 - [ ] Matrix covers first install, upgrade install, local model download and
   verification, custom model import or custom URL rejection path, remote model
   HTTPS configuration, encrypted API key clear, session persistence, memory
-  controls, reminders after reboot, share/picker input, voice input,
-  Accessibility text, recent media OCR, and MediaProjection cancellation.
+  controls, privacy/data controls, reminders after reboot, share/picker input,
+  voice input, Accessibility text, recent media OCR, and MediaProjection
+  cancellation.
   Candidate evidence files marked `candidateOnly=true`,
   `releaseFlowPassed=false`, or `target=release-flow-matrix-candidate-evidence`
   are reviewer input only and must not be referenced as passed flow evidence in

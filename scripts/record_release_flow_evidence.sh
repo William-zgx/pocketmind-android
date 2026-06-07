@@ -22,6 +22,7 @@ REQUIRED_RELEASE_FLOWS=(
   encryptedApiKeyClear
   sessionPersistence
   memoryControls
+  privacyAndDataControls
   remindersAfterReboot
   shareAndPickerInput
   voiceInput
@@ -115,6 +116,14 @@ write_flow_contract_fields() {
       printf 'noImplicitImageOcr=true\n'
       printf 'documentExcerptBounded=true\n'
       printf 'pickerAttachmentPromptCovered=true\n'
+      ;;
+    privacyAndDataControls)
+      printf 'privacyNoticeEntryVisible=true\n'
+      printf 'memoryClearControlCovered=true\n'
+      printf 'memoryForgetControlCovered=true\n'
+      printf 'sessionDeleteControlCovered=true\n'
+      printf 'remoteConfigClearCovered=true\n'
+      printf 'dataDeletionCopyCovered=true\n'
       ;;
   esac
 }

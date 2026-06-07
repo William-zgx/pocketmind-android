@@ -91,6 +91,9 @@ class MainActivitySmokeTest {
 
         composeRule.onNodeWithText("隐私说明").assertIsDisplayed()
         composeRule.waitForText("用户控制")
+        composeRule.waitForText("可清空长期记忆", substring = true)
+        composeRule.waitForText("删除当前会话", substring = true)
+        composeRule.waitForText("清除远程服务地址", substring = true)
         composeRule.waitForText("敏感能力披露")
         composeRule.waitForText("设备动作和外部 App")
         composeRule.waitForText("Usage Stats 前台应用估计")
@@ -126,9 +129,12 @@ class MainActivitySmokeTest {
         }
     }
 
-    private fun AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>.waitForText(text: String) {
+    private fun AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>.waitForText(
+        text: String,
+        substring: Boolean = false,
+    ) {
         waitUntil(timeoutMillis = 5_000) {
-            onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+            onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
         }
     }
 }

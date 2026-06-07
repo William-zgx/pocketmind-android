@@ -2277,7 +2277,7 @@ private fun ProductReadinessBullet(text: String) {
     )
 }
 
-private fun trustDeletionBoundaryText(state: ChatUiState): String =
+internal fun trustDeletionBoundaryText(state: ChatUiState): String =
     "可清空长期记忆、删除当前会话、取消后台任务，并可一键清除远程服务地址、模型名和 API Key。当前已保存长期记忆 ${state.longTermMemories.size} 条。"
 
 internal data class SensitiveCapabilityDisclosureDisplayRow(

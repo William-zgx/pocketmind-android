@@ -112,7 +112,6 @@ count_instrumentation_failure_signals() {
     /FAILURES!!!/ { count += 1; next }
     /androidx[.]compose[.]ui[.]test[.]ComposeTimeoutException/ { count += 1; next }
     /java[.]lang[.]AssertionError/ { count += 1; next }
-    /INSTRUMENTATION_CODE: -?[1-9][0-9]*/ { count += 1; next }
     END { print count + 0 }
   ' "$file"
 }

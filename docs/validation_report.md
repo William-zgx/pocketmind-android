@@ -9912,3 +9912,37 @@ git diff --check
 - 通过：候选 release flow 和 formal release flow 均生成新的 share/picker 必填字段。
 - 通过：`verify_local` 全链路，包括脚本自测、unit test、lint、debug/release APK、
   release AAB 和 artifact scan。
+
+## 2026-06-07 Privacy and data controls release gate
+
+本轮覆盖项：
+
+- `docs/release_validation_record.json` 新增 `privacyAndDataControls` flow，
+  正式 release validation 必须单独证明 App 内隐私说明入口、长期记忆清空/遗忘、
+  当前会话删除、远程配置清除和用户可删除/清除文案。
+- `scripts/record_release_flow_evidence.sh`、
+  `scripts/collect_release_flow_matrix_evidence.sh` 和
+  `scripts/verify_release_validation_record.sh` 均新增上述机器可读字段；弱证据会被拒绝。
+- 隐私入口 smoke 测试现在覆盖“用户控制”里的长期记忆、当前会话和远程配置清除口径；
+  UI 文案合同也固定这些删除/清除控制。
+- 修复 `scripts/collect_crash_anr_smoke_evidence.sh`：Android instrumentation
+  成功输出里的最终 `INSTRUMENTATION_CODE: -1` 不再被误判为 failure signal。
+
+验证命令：
+
+```bash
+scripts/test_validation_scripts.sh
+./gradlew :app:testDebugUnitTest --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=120 BOOT_TIMEOUT_SECONDS=240 ARTIFACT_DIR=build/verification/privacy-data-controls-smoke-current3 INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivitySmokeTest#privacyButtonOpensAppPrivacyNotice' INSTRUMENTATION_TIMEOUT_SECONDS=180 scripts/verify_emulator.sh
+scripts/collect_crash_anr_smoke_evidence.sh --device-report build/verification/privacy-data-controls-smoke-current2/device-verification.properties --instrumentation-output build/verification/privacy-data-controls-smoke-current2/instrumentation.txt --logcat build/verification/privacy-data-controls-smoke-current2/logcat.txt --report build/verification/privacy-data-controls-smoke-current2/crash-anr-smoke-rerun.properties --window 'privacy data controls targeted emulator rerun' --track local-emulator
+```
+
+结果：
+
+- 通过：release validation verifier 会拒绝缺少隐私入口、记忆清除和远程配置清除字段的
+  `privacyAndDataControls` 弱证据。
+- 通过：API 36 arm64 targeted emulator smoke，
+  `build/verification/privacy-data-controls-smoke-current3/emulator-verification.properties`
+  记录 `status=passed`，instrumentation 输出 `OK (1 test)`，crash/ANR smoke 通过。
+- 通过：先前失败的 `privacy-data-controls-smoke-current2` 在修复后重跑 crash/ANR 收集器通过，
+  证明失败原因是 `INSTRUMENTATION_CODE: -1` 的 verifier 误判，不是 App 崩溃。

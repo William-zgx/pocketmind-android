@@ -544,6 +544,14 @@ def validate_flow_evidence(key, evidence_path):
             "documentExcerptBounded": "document-excerpt-boundary-missing",
             "pickerAttachmentPromptCovered": "picker-attachment-prompt-missing",
         },
+        "privacyAndDataControls": {
+            "privacyNoticeEntryVisible": "privacy-notice-entry-missing",
+            "memoryClearControlCovered": "memory-clear-control-missing",
+            "memoryForgetControlCovered": "memory-forget-control-missing",
+            "sessionDeleteControlCovered": "session-delete-control-missing",
+            "remoteConfigClearCovered": "remote-config-clear-control-missing",
+            "dataDeletionCopyCovered": "data-deletion-copy-missing",
+        },
     }.get(key, {})
     for field, reason in required_true_fields.items():
         if props.get(field, "").lower() not in {"true", "1", "yes"}:
@@ -809,6 +817,7 @@ required_flows = {
     "encryptedApiKeyClear",
     "sessionPersistence",
     "memoryControls",
+    "privacyAndDataControls",
     "remindersAfterReboot",
     "shareAndPickerInput",
     "voiceInput",
