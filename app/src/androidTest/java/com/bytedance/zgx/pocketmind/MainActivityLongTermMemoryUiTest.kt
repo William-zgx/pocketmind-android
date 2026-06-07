@@ -37,7 +37,7 @@ class MainActivityLongTermMemoryUiTest {
     @get:Rule
     val composeRule: AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity> =
         createAndroidComposeTestRule(
-            ActivityScenarioRule(mainActivitySkipStartupIntent(targetContext)),
+            ActivityScenarioRule(mainActivitySkipStartupIntent(targetContext, ReadyRemoteModelConfig)),
         ) { rule -> activityFromScenarioRule(rule) }
 
     @Test
@@ -50,6 +50,8 @@ class MainActivityLongTermMemoryUiTest {
         composeRule.sendPrompt("请记住：$firstPreference")
         composeRule.waitForText(firstPreference, substring = true)
         composeRule.waitForText("已记住这条本地偏好", substring = true)
+        composeRule.sendPrompt("请记住：$secondPreference")
+        composeRule.waitForText(secondPreference, substring = true)
 
         composeRule.openLongTermMemoryPanel()
         composeRule.onNodeWithTag("memory_switch").performScrollTo().assertIsOn()
@@ -57,19 +59,21 @@ class MainActivityLongTermMemoryUiTest {
             .performScrollTo()
             .assertIsDisplayed()
 
-        composeRule.onForgetLongTermMemoryButton()
+        composeRule.onNodeWithTag("memory_switch")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForText("已有记录仍可查看和清除", substring = true)
+        composeRule.onModelSheetText(firstPreference)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onModelSheetText(secondPreference)
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        composeRule.onForgetLongTermMemoryButton("用户偏好：$firstPreference")
             .performScrollTo()
             .performClick()
         composeRule.waitForModelSheetTextGone(firstPreference)
-        composeRule.waitForText("还没有已保存的长期记忆。")
-
-        composeRule.onNodeWithTag("model_manager_close_button").performClick()
-        composeRule.waitForTagGone("model_manager_sheet", timeoutMillis = 10_000)
-
-        composeRule.sendPrompt("请记住：$secondPreference")
-        composeRule.waitForText(secondPreference, substring = true)
-
-        composeRule.openLongTermMemoryPanel()
         composeRule.onModelSheetText(secondPreference)
             .performScrollTo()
             .assertIsDisplayed()
@@ -100,10 +104,10 @@ class MainActivityLongTermMemoryUiTest {
                 hasAnyAncestor(hasTestTag("model_manager_sheet")),
         )
 
-    private fun ComposeTestRule.onForgetLongTermMemoryButton() =
+    private fun ComposeTestRule.onForgetLongTermMemoryButton(memoryText: String) =
         onNode(
             hasClickAction() and
-                hasContentDescription("遗忘这条记忆") and
+                hasContentDescription("遗忘这条记忆：$memoryText") and
                 hasAnyAncestor(hasTestTag("model_manager_sheet")),
         )
 

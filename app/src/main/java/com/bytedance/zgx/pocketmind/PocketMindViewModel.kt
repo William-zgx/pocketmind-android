@@ -331,7 +331,7 @@ class PocketMindViewModel(
             it.copy(
                 memoryEnabled = enabled,
                 memoryHits = if (enabled) it.memoryHits else emptyList(),
-                longTermMemories = if (enabled) loadLongTermMemories(memoryEnabled = true) else emptyList(),
+                longTermMemories = loadLongTermMemories(),
                 statusText = if (enabled) "本地记忆已开启" else "本地记忆已关闭",
             )
         }
@@ -1205,6 +1205,7 @@ class PocketMindViewModel(
             _uiState.update {
                 it.copy(
                     pendingRemoteSendDisclosure = buildPendingRemoteSendDisclosure(
+                        kind = RemoteSendDisclosureKind.CurrentInput,
                         prompt = trimmed,
                         messagePrivacy = effectiveMessagePrivacy,
                         remoteConfig = remoteConfig,
@@ -2752,6 +2753,7 @@ class PocketMindViewModel(
             _uiState.update {
                 it.copy(
                     pendingRemoteSendDisclosure = buildPendingRemoteSendDisclosure(
+                        kind = RemoteSendDisclosureKind.ToolResultContinuation,
                         prompt = promptForModel,
                         messagePrivacy = responsePrivacy,
                         remoteConfig = remoteConfig,
@@ -3071,6 +3073,7 @@ class PocketMindViewModel(
             }
 
     private fun buildPendingRemoteSendDisclosure(
+        kind: RemoteSendDisclosureKind,
         prompt: String,
         messagePrivacy: MessagePrivacy,
         remoteConfig: RemoteModelConfig,
@@ -3079,6 +3082,7 @@ class PocketMindViewModel(
         stateBeforeSend: ChatUiState,
     ): PendingRemoteSendDisclosure =
         PendingRemoteSendDisclosure(
+            kind = kind,
             prompt = prompt,
             messagePrivacy = messagePrivacy,
             remoteHost = remoteConfig.destinationHostLabel(),
@@ -3566,7 +3570,7 @@ class PocketMindViewModel(
             memoryEnabled = memoryEnabled,
             semanticMemoryEnabled = currentSemanticMemoryEnabled(),
             semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
-            longTermMemories = loadLongTermMemories(memoryEnabled = memoryEnabled),
+            longTermMemories = loadLongTermMemories(),
             backgroundTasks = loadBackgroundTasks(),
             backgroundTaskHistory = loadBackgroundTaskHistory(),
             periodicCheckPolicy = loadPeriodicCheckPolicy(),
@@ -3737,20 +3741,16 @@ class PocketMindViewModel(
                 .mapTo(mutableSetOf()) { task -> taskStateMemoryRecordId(task.id) }
         }.getOrDefault(emptySet())
 
-    private fun loadLongTermMemories(memoryEnabled: Boolean = _uiState.value.memoryEnabled): List<LongTermMemorySummary> =
-        if (!memoryEnabled) {
-            emptyList()
-        } else {
-            runCatching {
-                longTermMemoryControls.savedRecords().map { record ->
-                    LongTermMemorySummary(
-                        id = record.id,
-                        type = record.type,
-                        text = record.text,
-                    )
-                }
-            }.getOrDefault(emptyList())
-        }
+    private fun loadLongTermMemories(): List<LongTermMemorySummary> =
+        runCatching {
+            longTermMemoryControls.savedRecords().map { record ->
+                LongTermMemorySummary(
+                    id = record.id,
+                    type = record.type,
+                    text = record.text,
+                )
+            }
+        }.getOrDefault(emptyList())
 
     private fun persistExplicitPreferenceMemory(message: ChatMessage): Boolean {
         if (message.role != MessageRole.User) return false

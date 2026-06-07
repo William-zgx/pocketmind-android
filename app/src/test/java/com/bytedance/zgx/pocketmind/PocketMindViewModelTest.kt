@@ -169,6 +169,7 @@ class PocketMindViewModelTest {
         advanceUntilIdle()
 
         val disclosure = requireNotNull(viewModel.uiState.value.pendingRemoteSendDisclosure)
+        assertEquals(RemoteSendDisclosureKind.CurrentInput, disclosure.kind)
         assertEquals("普通远程问题", disclosure.prompt)
         assertEquals(MessagePrivacy.RemoteEligible, disclosure.messagePrivacy)
         assertEquals("api.example.com", disclosure.remoteHost)
@@ -3572,6 +3573,10 @@ class PocketMindViewModelTest {
         advanceUntilIdle()
 
         assertEquals("远程续写待确认", viewModel.uiState.value.statusText)
+        assertEquals(
+            RemoteSendDisclosureKind.ToolResultContinuation,
+            requireNotNull(viewModel.uiState.value.pendingRemoteSendDisclosure).kind,
+        )
         assertEquals(1, remoteRuntime.calls.size)
         assertEquals("北京和上海今天温差多少？", remoteRuntime.calls.single().prompt)
         viewModel.confirmRemoteSendDisclosure()
@@ -5222,6 +5227,7 @@ class PocketMindViewModelTest {
         val memoryRepository = MemoryRepository(recordStore = store)
         val taskMemoryId = taskStateMemoryRecordId("task-1")
         memoryRepository.indexTaskState(taskMemoryId, "旧的后台任务状态")
+        memoryRepository.indexPreference("pref-1", "回答尽量简洁")
         val remoteRuntime = RecordingRemoteChatRuntime()
         val scheduler = FakeBackgroundTaskScheduler(
             scheduledTasks = listOf(
@@ -5249,7 +5255,7 @@ class PocketMindViewModelTest {
 
         assertFalse(viewModel.uiState.value.memoryEnabled)
         assertTrue(store.records().none { it.type == MemoryRecordType.TaskState })
-        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertEquals(listOf("pref-1"), viewModel.uiState.value.longTermMemories.map { it.id })
 
         viewModel.refreshBackgroundTasks()
         advanceUntilIdle()
@@ -5258,8 +5264,9 @@ class PocketMindViewModelTest {
 
         assertEquals("普通远程问题", remoteRuntime.calls.single().prompt)
         assertTrue(store.records().none { it.type == MemoryRecordType.TaskState })
-        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertEquals(listOf("pref-1"), viewModel.uiState.value.longTermMemories.map { it.id })
         assertTrue(memoryRepository.search("后台任务").isEmpty())
+        assertTrue(memoryRepository.search("简洁回答").isEmpty())
     }
 
     @Test
@@ -5374,6 +5381,7 @@ class PocketMindViewModelTest {
         val store = FakeMemoryRecordStore()
         val memoryRepository = MemoryRepository(recordStore = store)
         val taskMemoryId = taskStateMemoryRecordId("task-1")
+        memoryRepository.indexPreference("pref-1", "回答尽量简洁")
         val remoteRuntime = RecordingRemoteChatRuntime()
         val scheduler = FakeBackgroundTaskScheduler(
             scheduledTasks = listOf(
@@ -5403,7 +5411,7 @@ class PocketMindViewModelTest {
 
         assertFalse(viewModel.uiState.value.memoryEnabled)
         assertTrue(store.records().none { it.id == taskMemoryId && it.type == MemoryRecordType.TaskState })
-        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertEquals(listOf("pref-1"), viewModel.uiState.value.longTermMemories.map { it.id })
 
         viewModel.refreshBackgroundTasks()
         advanceUntilIdle()
@@ -5412,8 +5420,9 @@ class PocketMindViewModelTest {
 
         assertEquals("普通远程问题", remoteRuntime.calls.single().prompt)
         assertTrue(store.records().none { it.id == taskMemoryId && it.type == MemoryRecordType.TaskState })
-        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertEquals(listOf("pref-1"), viewModel.uiState.value.longTermMemories.map { it.id })
         assertTrue(memoryRepository.search("后台任务").isEmpty())
+        assertTrue(memoryRepository.search("简洁回答").isEmpty())
     }
 
     @Test
@@ -6067,6 +6076,40 @@ class PocketMindViewModelTest {
         assertEquals(listOf("task-1"), viewModel.uiState.value.longTermMemories.map { it.id })
         assertTrue(memoryRepository.search("简洁回答").isEmpty())
         assertEquals("已遗忘这条记忆", viewModel.uiState.value.statusText)
+    }
+
+    @Test
+    fun memoryDisabledKeepsSavedRecordsVisibleAndClearable() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        val memoryRepository = MemoryRepository(recordStore = store)
+        memoryRepository.indexPreference("pref-1", "回答尽量简洁")
+        memoryRepository.indexUserFact("fact-1", "我的项目是 PocketMind")
+        val viewModel = createViewModel(
+            firstRunStore = FakeFirstRunSetupStore(memoryEnabled = false),
+            memoryRepository = memoryRepository,
+        )
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.memoryEnabled)
+        assertEquals(
+            listOf("pref-1", "fact-1"),
+            viewModel.uiState.value.longTermMemories.map { it.id },
+        )
+        assertTrue(memoryRepository.search("PocketMind").isEmpty())
+
+        viewModel.forgetLongTermMemory("pref-1")
+        advanceUntilIdle()
+
+        assertEquals(listOf("fact-1"), viewModel.uiState.value.longTermMemories.map { it.id })
+        assertTrue(store.records().none { it.id == "pref-1" })
+
+        viewModel.clearLongTermMemory()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.longTermMemories.isEmpty())
+        assertTrue(store.records().isEmpty())
+        assertEquals("长期记忆已清空", viewModel.uiState.value.statusText)
     }
 
     @Test

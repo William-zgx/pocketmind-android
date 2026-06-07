@@ -10,6 +10,7 @@ import com.bytedance.zgx.pocketmind.ModelHealthState
 import com.bytedance.zgx.pocketmind.MessagePrivacy
 import com.bytedance.zgx.pocketmind.PendingRemoteSendDisclosure
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
+import com.bytedance.zgx.pocketmind.RemoteSendDisclosureKind
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import com.bytedance.zgx.pocketmind.action.MobileActionFunctions
 import com.bytedance.zgx.pocketmind.capability.CapabilityMatrix
@@ -296,8 +297,32 @@ class PocketMindScreenDisplayTest {
         assertTrue(text.contains("LocalOnly 历史 3 条"))
         assertTrue(text.contains("本地记忆"))
         assertTrue(text.contains("设备上下文"))
+        assertTrue(text.contains("记录或保留请求"))
+        assertTrue(text.contains("图片和响应"))
         assertTrue(text.contains("已配置 API Key"))
         assertTrue(!text.contains("不要展示密钥"))
+    }
+
+    @Test
+    fun remoteSendDisclosureRowsNameToolContinuationWithoutCurrentInput() {
+        val text = remoteSendDisclosureDisplayRows(
+            PendingRemoteSendDisclosure(
+                kind = RemoteSendDisclosureKind.ToolResultContinuation,
+                prompt = "工具执行后续写提示",
+                messagePrivacy = MessagePrivacy.RemoteEligible,
+                remoteHost = "api.example.com",
+                remoteModelName = "model-a",
+                remoteHistoryCount = 1,
+                localOnlyHistoryFilteredCount = 0,
+                imageAttachmentCount = 0,
+                protectedSourceCount = 0,
+                apiKeyConfigured = true,
+            ),
+        ).joinToString("\n")
+
+        assertTrue(text.contains("工具结果续写提示"))
+        assertTrue(!text.contains("当前输入"))
+        assertTrue(text.contains("记录或保留请求"))
     }
 
     @Test

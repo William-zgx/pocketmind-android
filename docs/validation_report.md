@@ -23,6 +23,43 @@
 `release-flow` 报告；performance sanity 必须链接通过的 `perf-baseline` verifier
 report；screenshots 必须链接通过的 `release-screenshots` report，并且每张截图文件必须是 PNG。
 
+## 2026-06-07 Memory-disabled controls and remote send disclosure
+
+本轮覆盖项：
+
+- 本地记忆关闭后，已保存的长期记忆仍在模型管理页可见且可删除；关闭状态只停止召回和自动携带，
+  不再把用户锁在无法清理旧记忆的状态。
+- 记忆关闭时，任务状态记忆仍会被移除并禁止重新索引；偏好/事实类长期记忆保留在 UI 控制面板中。
+- 长期记忆删除按钮的无障碍名称包含目标记忆内容，避免多条记录时测试和用户都无法区分删除目标。
+- 远程发送确认区分当前输入和工具结果续写，并提示远程服务方可能按其政策记录或保留请求、图片和响应。
+
+验证命令：
+
+```bash
+./gradlew :app:testDebugUnitTest \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.memoryDisabledDoesNotIndexScheduledTaskStateOnStartupRefreshOrSend' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.updateMemoryDisabledRemovesActiveTaskStateMemoryAndPreventsResync' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.memoryDisabledKeepsSavedRecordsVisibleAndClearable' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteSendDisclosureBlocksRuntimeUntilConfirmed' \
+  --tests 'com.bytedance.zgx.pocketmind.PocketMindViewModelTest.remoteModelToolBatchExecutionRequiresConfirmationAndObservationBeforeCompletion' \
+  --tests com.bytedance.zgx.pocketmind.ui.PocketMindScreenDisplayTest \
+  :app:compileDebugAndroidTestKotlin
+AVD_NAME=pocketmind_api36_arm64 EMULATOR_SELECT_TIMEOUT_SECONDS=180 BOOT_TIMEOUT_SECONDS=600 \
+  ARTIFACT_DIR=build/verification/memory-disabled-clear-current \
+  INSTRUMENTATION_CLASS='com.bytedance.zgx.pocketmind.MainActivityLongTermMemoryUiTest' \
+  INSTRUMENTATION_TIMEOUT_SECONDS=240 scripts/verify_emulator.sh
+```
+
+结果：
+
+- 通过：targeted JVM tests 和 `PocketMindScreenDisplayTest`，覆盖记忆关闭后的可见/可删控制、
+  远程发送保留提示、工具结果续写披露类型。
+- 通过：AndroidTest Kotlin 编译。
+- 通过：API 36 arm64 `MainActivityLongTermMemoryUiTest`，
+  `build/verification/memory-disabled-clear-current/device-verification.properties`
+  记录 `status=passed`、`instrumentation_test_count=1`。
+- 说明：本轮早期模拟器尝试暴露了测试选择器问题；最终改为按具体记忆内容定位删除按钮后通过。
+
 ## 2026-06-07 Release fail-closed and deletion control gate
 
 本轮覆盖项：

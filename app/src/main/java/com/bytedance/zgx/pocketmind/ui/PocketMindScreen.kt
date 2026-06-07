@@ -130,6 +130,7 @@ import com.bytedance.zgx.pocketmind.PendingExternalOutcomeConfirmation
 import com.bytedance.zgx.pocketmind.PendingRemoteSendDisclosure
 import com.bytedance.zgx.pocketmind.RecommendedModel
 import com.bytedance.zgx.pocketmind.RemoteModelConfig
+import com.bytedance.zgx.pocketmind.RemoteSendDisclosureKind
 import com.bytedance.zgx.pocketmind.RunDataReceiptUiSummary
 import com.bytedance.zgx.pocketmind.SetupTier
 import com.bytedance.zgx.pocketmind.SpecialAccessRequirement
@@ -1112,7 +1113,7 @@ private fun RemoteSendDisclosureSheet(
     ) {
         SectionTitle(
             text = "即将发送到远程模型",
-            subtitle = "确认后才会把本次输入交给远程模型；API Key 只作为请求凭据使用，不在界面显示。",
+            subtitle = "确认后才会把本次内容交给远程模型；API Key 只作为请求凭据使用，不在界面显示。",
         )
         RemoteSendDisclosureRows(disclosure)
         Button(
@@ -1169,8 +1170,15 @@ internal fun remoteSendDisclosureDisplayRows(disclosure: PendingRemoteSendDisclo
     listOf(
         "远程地址：${disclosure.remoteHost}",
         "模型：${disclosure.remoteModelName}",
-        "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址",
+        when (disclosure.kind) {
+            RemoteSendDisclosureKind.CurrentInput ->
+                "本次会发送：当前输入、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址"
+
+            RemoteSendDisclosureKind.ToolResultContinuation ->
+                "本次会发送：工具结果续写提示、可远程发送历史 ${disclosure.remoteHistoryCount} 条、图片 ${disclosure.imageAttachmentCount} 张；图片字节会发往该远程地址"
+        },
         "不会发送：LocalOnly 历史 ${disclosure.localOnlyHistoryFilteredCount} 条、本地记忆、设备上下文、非图片附件",
+        "远程服务方可能按其政策记录或保留请求、图片和响应；请只发送你愿意交给该服务处理的内容。",
         "凭据状态：${if (disclosure.apiKeyConfigured) "已配置 API Key" else "未配置 API Key"}",
     )
 
@@ -2324,6 +2332,9 @@ private fun MemoryTogglePanel(
                     )
                     Text(
                         text = when {
+                            !state.memoryEnabled ->
+                                "本地记忆已关闭；已有记录仍可查看和清除，不会参与召回，也不会自动发送到远程模型。"
+
                             state.semanticMemoryRuntimeStatus == SemanticMemoryRuntimeStatus.Active ->
                                 "语义记忆运行时已启用；记忆仍只在本机检索，不会自动发送到远程模型。"
 
@@ -2463,7 +2474,7 @@ private fun LongTermMemoryRow(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Delete,
-                    contentDescription = "遗忘这条记忆",
+                    contentDescription = "遗忘这条记忆：${memory.text}",
                 )
             }
         }

@@ -178,7 +178,13 @@ data class PendingAgentConfirmation(
     val fallbackReason: String?,
 )
 
+enum class RemoteSendDisclosureKind {
+    CurrentInput,
+    ToolResultContinuation,
+}
+
 data class PendingRemoteSendDisclosure(
+    val kind: RemoteSendDisclosureKind = RemoteSendDisclosureKind.CurrentInput,
     val prompt: String,
     val messagePrivacy: MessagePrivacy,
     val remoteHost: String,
