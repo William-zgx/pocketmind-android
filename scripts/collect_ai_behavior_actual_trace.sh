@@ -14,6 +14,19 @@ PUBLIC_RELEASE_CONTEXT="${PUBLIC_RELEASE_CONTEXT:-${PUBLIC_RELEASE:-0}}"
 REJECT_ALLOWED_FAILURES="${AI_BEHAVIOR_REJECT_ALLOWED_FAILURES:-$PUBLIC_RELEASE_CONTEXT}"
 ORIGINAL_ARGS=("$@")
 
+command_line() {
+  local quoted=()
+  local arg
+  quoted+=("$(printf '%q' "$0")")
+  if [[ "${#ORIGINAL_ARGS[@]}" -gt 0 ]]; then
+    for arg in "${ORIGINAL_ARGS[@]}"; do
+      quoted+=("$(printf '%q' "$arg")")
+    done
+  fi
+  local IFS=' '
+  printf '%s' "${quoted[*]}"
+}
+
 mkdir -p "$ARTIFACT_DIR" "$(dirname "$ACTUAL_TRACE_FILE")" "$(dirname "$TRACE_DIFF_FILE")" "$(dirname "$EVAL_REPORT_FILE")"
 
 sha256_or_empty() {
@@ -41,7 +54,7 @@ write_report() {
     printf 'artifactSchema=AgentBehaviorActualTraceCollection/v1\n'
     printf 'owner=agent-behavior\n'
     printf 'recordedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'command=%s\n' "scripts/collect_ai_behavior_actual_trace.sh ${ORIGINAL_ARGS[*]}"
+    printf 'command=%s\n' "$(command_line)"
     printf 'reproduciblePath=%s\n' "$REPORT_FILE"
     printf 'artifactDir=%s\n' "$ARTIFACT_DIR"
     printf 'actualTraceFile=%s\n' "$ACTUAL_TRACE_FILE"

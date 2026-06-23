@@ -789,7 +789,8 @@ assert_release_gate_report_schema() {
   assert_release_verifier_report_schema "$file" "ReleaseGateVerification/v1"
   grep -Eq '^headCommitSha=[0-9a-f]{40}$' "$file" ||
     fail "Expected release gate report to include current git head SHA"
-  assert_report_contains "$file" "releaseRecordFile="
+  grep -Eq '^releaseRecordFile=' "$file" ||
+    fail "Expected release gate report to include releaseRecordFile"
   grep -Eq '^releaseArtifactSha256=' "$file" ||
     fail "Expected release gate report to include releaseArtifactSha256"
 }
@@ -801,8 +802,10 @@ assert_release_gate_child_report_schema() {
   assert_release_verifier_report_schema "$file" "ReleaseGateChildReport/v1"
   assert_report_contains "$file" "status=$expected_status"
   assert_report_contains "$file" "target=$expected_target"
-  assert_report_contains "$file" "releaseGateReport="
-  assert_report_contains "$file" "releaseRecordFile="
+  grep -Eq '^releaseGateReport=' "$file" ||
+    fail "Expected release gate child report to include releaseGateReport"
+  grep -Eq '^releaseRecordFile=' "$file" ||
+    fail "Expected release gate child report to include releaseRecordFile"
   grep -Eq '^releaseArtifactSha256=' "$file" ||
     fail "Expected release gate child report to include releaseArtifactSha256"
 }
@@ -8587,7 +8590,8 @@ expect_failure \
   RELEASE_APK="$SAFE_APK" \
   RELEASE_AAB="$TMP_DIR/missing.aab" \
   VERIFY_CONTRACT_TESTS=0 \
-  AI_BEHAVIOR_ACTUAL_TRACE_FILE="$AI_ACTUAL_TRACE" \
+  AI_BEHAVIOR_FIXTURE_DIR="$AI_BEHAVIOR_ALLOWED_FAILURE_TOOL_DIR" \
+  AI_BEHAVIOR_ACTUAL_TRACE_FILE="$AI_ALLOWED_FAILURE_TOOL_TRACE" \
   REQUIRE_AI_BEHAVIOR_ACTUAL_TRACE=1 \
   REQUIRE_AI_BEHAVIOR_RUNTIME_TRACE_SOURCE=1 \
   REQUIRE_AI_BEHAVIOR_NO_ALLOWED_FAILURES=1 \
@@ -8595,6 +8599,7 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/ai-behavior-eval.properties" "status=failed"
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/ai-behavior-eval.properties" "reason=trace-diff-allowed-failure"
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/ai-behavior-eval.properties" "rejectAllowedFailures=1"
+assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/release-gate.properties" "aiBehaviorFixtureDir=$AI_BEHAVIOR_ALLOWED_FAILURE_TOOL_DIR"
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/release-gate.properties" "failedTarget=ai-behavior-eval"
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/release-gate.properties" "failedReason=trace-diff-allowed-failure"
 assert_report_contains "$ARTIFACT_DIR/release-ai-behavior-allowed-failure-strict/release-gate.properties" "requireAiBehaviorNoAllowedFailures=1"
@@ -9207,8 +9212,10 @@ assert_report_contains "$REAL_APP_EVIDENCE_REPORT" "targetResolutionEvidenceCoun
 assert_report_contains "$REAL_APP_EVIDENCE_REPORT" "diagnosticsArtifactCount=5"
 assert_report_contains "$REAL_APP_EVIDENCE_REPORT" "failureKindBreakdown=search_entry_not_found:1"
 
-sed -i 's/^ranked_candidates_sha256=.*/ranked_candidates_sha256=0000000000000000000000000000000000000000000000000000000000000000/' \
-  "$REAL_APP_CASE_REPORT"
+REAL_APP_CASE_REPORT_TAMPERED="$(mktemp)"
+sed 's/^ranked_candidates_sha256=.*/ranked_candidates_sha256=0000000000000000000000000000000000000000000000000000000000000000/' \
+  "$REAL_APP_CASE_REPORT" > "$REAL_APP_CASE_REPORT_TAMPERED"
+mv "$REAL_APP_CASE_REPORT_TAMPERED" "$REAL_APP_CASE_REPORT"
 expect_failure \
   "real app search evidence verifier rejects tampered ranked candidates" \
   scripts/verify_real_app_search_report.sh \

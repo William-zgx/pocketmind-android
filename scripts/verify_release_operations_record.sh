@@ -26,9 +26,11 @@ shell_command() {
   local quoted=()
   local arg
   quoted+=("$(printf '%q' "scripts/verify_release_operations_record.sh")")
-  for arg in "${ORIGINAL_ARGS[@]}"; do
-    quoted+=("$(printf '%q' "$arg")")
-  done
+  if [[ "${#ORIGINAL_ARGS[@]}" -gt 0 ]]; then
+    for arg in "${ORIGINAL_ARGS[@]}"; do
+      quoted+=("$(printf '%q' "$arg")")
+    done
+  fi
   local IFS=' '
   printf '%s' "${quoted[*]}"
 }

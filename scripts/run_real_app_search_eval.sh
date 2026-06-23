@@ -560,11 +560,13 @@ write_case_result() {
     echo "ranked_candidates_sha256=$ranked_candidates_sha"
     echo "step_evidence_count=${#step_result_specs[@]}"
     local spec step_name step_result_file
-    for spec in "${step_result_specs[@]}"; do
-      step_name="${spec%%=*}"
-      step_result_file="${spec#*=}"
-      write_step_target_resolution_fields "$case_name" "$step_name" "$step_result_file"
-    done
+    if [[ "${#step_result_specs[@]}" -gt 0 ]]; then
+      for spec in "${step_result_specs[@]}"; do
+        step_name="${spec%%=*}"
+        step_result_file="${spec#*=}"
+        write_step_target_resolution_fields "$case_name" "$step_name" "$step_result_file"
+      done
+    fi
     echo "diagnostics_dir=$LAST_DIAGNOSTICS_DIR"
     if [[ -n "$LAST_DIAGNOSTICS_DIR" && -f "${LAST_DIAGNOSTICS_DIR}/diagnostics.properties" ]]; then
       copy_result_property "${LAST_DIAGNOSTICS_DIR}/diagnostics.properties" "screenshot_file" "screenshot_file"

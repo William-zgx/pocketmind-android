@@ -182,6 +182,7 @@ class PocketMindViewModel(
     private val remoteSendAuditSink: RemoteSendAuditSink = remoteSendAuditStore,
     private val remoteSendAuditLog: RemoteSendAuditLog = remoteSendAuditStore,
     private val remoteSendPendingStore: RemoteSendPendingStore = NoOpRemoteSendPendingStore,
+    private val skipStartupModelRuntimeWork: Boolean = false,
 ) : ViewModel() {
     private val runtimeLock = Mutex()
     private var generationJob: Job? = null
@@ -4941,6 +4942,10 @@ class PocketMindViewModel(
 
     private fun syncSemanticMemoryRuntime() {
         val controller = semanticMemoryRuntimeController ?: return
+        if (skipStartupModelRuntimeWork) {
+            controller.useMemoryModel(null)
+            return
+        }
         controller.useMemoryModel(modelRepository.verifiedMemoryEmbeddingModelPath())
     }
 

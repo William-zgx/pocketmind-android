@@ -169,7 +169,7 @@ class PocketMindAppContainer(context: Context) {
         )
     }
 
-    val viewModelFactory: ViewModelProvider.Factory =
+    fun viewModelFactory(skipStartupModelRuntimeWork: Boolean = false): ViewModelProvider.Factory =
         PocketMindViewModelFactory(
             modelRepository = modelRepository,
             sessionRepository = sessionRepository,
@@ -191,6 +191,7 @@ class PocketMindAppContainer(context: Context) {
             isArm64DeviceProvider = {
                 Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" }
             },
+            skipStartupModelRuntimeWork = skipStartupModelRuntimeWork,
         )
 
     val backgroundTaskScheduler: AndroidBackgroundTaskScheduler
@@ -219,6 +220,7 @@ private class PocketMindViewModelFactory(
     private val actionExecutor: ToolExecutor,
     private val assistantOrchestrator: AssistantOrchestrator,
     private val isArm64DeviceProvider: () -> Boolean,
+    private val skipStartupModelRuntimeWork: Boolean,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -245,6 +247,7 @@ private class PocketMindViewModelFactory(
             actionExecutor = actionExecutor,
             assistantOrchestrator = assistantOrchestrator,
             isArm64DeviceProvider = isArm64DeviceProvider,
+            skipStartupModelRuntimeWork = skipStartupModelRuntimeWork,
         ) as T
     }
 }

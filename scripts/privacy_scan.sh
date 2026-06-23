@@ -17,9 +17,11 @@ shell_command() {
   local quoted=()
   local arg
   quoted+=("$(printf '%q' "scripts/privacy_scan.sh")")
-  for arg in "${ORIGINAL_ARGS[@]}"; do
-    quoted+=("$(printf '%q' "$arg")")
-  done
+  if [[ "${#ORIGINAL_ARGS[@]}" -gt 0 ]]; then
+    for arg in "${ORIGINAL_ARGS[@]}"; do
+      quoted+=("$(printf '%q' "$arg")")
+    done
+  fi
   local IFS=' '
   printf '%s' "${quoted[*]}"
 }
@@ -58,11 +60,13 @@ write_report() {
       printf 'findingCount=%s\n' "$finding_count"
       local index=0
       local target
-      for target in "${SCAN_TARGETS[@]}"; do
-        index=$((index + 1))
-        printf 'scanTarget%sPath=%s\n' "$index" "$target"
-        printf 'scanTarget%sSha256=%s\n' "$index" "$(sha256_or_empty "$target")"
-      done
+      if [[ "${#SCAN_TARGETS[@]}" -gt 0 ]]; then
+        for target in "${SCAN_TARGETS[@]}"; do
+          index=$((index + 1))
+          printf 'scanTarget%sPath=%s\n' "$index" "$target"
+          printf 'scanTarget%sSha256=%s\n' "$index" "$(sha256_or_empty "$target")"
+        done
+      fi
     } > "$REPORT_FILE"
   fi
 }

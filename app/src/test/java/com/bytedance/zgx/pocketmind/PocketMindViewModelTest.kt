@@ -6765,6 +6765,36 @@ class PocketMindViewModelTest {
     }
 
     @Test
+    fun startupRuntimeWorkSuppressionKeepsSemanticMemoryRuntimeUnloaded() = runTest(dispatcher) {
+        val store = FakeMemoryRecordStore()
+        var semanticRuntimeFactoryCalls = 0
+        val memoryRepository = MemoryRepository(
+            recordStore = store,
+            semanticRuntimeFactory = {
+                semanticRuntimeFactoryCalls += 1
+                error("Semantic runtime must stay unloaded while startup runtime work is suppressed.")
+            },
+        )
+        memoryRepository.indexPreference("pref-1", "I prefer concise answers")
+        val viewModel = createViewModel(
+            memoryRepository = memoryRepository,
+            modelRepository = FakeModelRepository(memoryEmbeddingModelPath = "/verified/memory.litertlm"),
+            skipStartupModelRuntimeWork = true,
+        )
+
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        assertEquals(0, semanticRuntimeFactoryCalls)
+        assertFalse(viewModel.uiState.value.semanticMemoryEnabled)
+        assertEquals(SemanticMemoryRuntimeStatus.NoVerifiedModel, viewModel.uiState.value.semanticMemoryRuntimeStatus)
+        assertEquals(null, memoryRepository.activeMemoryModelPath)
+        val lexicalHits = memoryRepository.search("concise answers")
+        assertEquals(listOf("pref-1"), lexicalHits.map { it.id })
+        assertEquals(MemoryRecallMode.Lexical, lexicalHits.single().recallMode)
+    }
+
+    @Test
     fun restoreStartupStateReportsUnavailableSemanticRuntimeWhenFactoryIsMissing() = runTest(dispatcher) {
         val store = FakeMemoryRecordStore()
         val memoryRepository = MemoryRepository(recordStore = store)
@@ -8350,6 +8380,7 @@ class PocketMindViewModelTest {
         remoteConnectivityProbe: RemoteModelConnectivityProbe = FakeRemoteModelConnectivityProbe(),
         huggingFaceAuthStore: HuggingFaceAuthStore = FakeHuggingFaceAuthStore(),
         remoteSendPendingStore: RemoteSendPendingStore = FakeRemoteSendPendingStore(),
+        skipStartupModelRuntimeWork: Boolean = false,
         actionExecutor: ToolExecutor = object : ToolExecutor {
             override fun execute(request: ToolRequest): ToolResult =
                 ToolResult(
@@ -8380,6 +8411,7 @@ class PocketMindViewModelTest {
             requireRemoteSendDisclosure = requireRemoteSendDisclosure,
             remoteConnectivityProbe = remoteConnectivityProbe,
             remoteSendPendingStore = remoteSendPendingStore,
+            skipStartupModelRuntimeWork = skipStartupModelRuntimeWork,
         )
 
     private fun installedModelSummary(

@@ -19,6 +19,19 @@ REJECT_ALLOWED_FAILURES=0
 ACTUAL_TRACE_MAX_AGE_DAYS="${AI_BEHAVIOR_ACTUAL_TRACE_MAX_AGE_DAYS:-30}"
 ORIGINAL_ARGS=("$@")
 
+command_line() {
+  local quoted=()
+  local arg
+  quoted+=("$(printf '%q' "$0")")
+  if [[ "${#ORIGINAL_ARGS[@]}" -gt 0 ]]; then
+    for arg in "${ORIGINAL_ARGS[@]}"; do
+      quoted+=("$(printf '%q' "$arg")")
+    done
+  fi
+  local IFS=' '
+  printf '%s' "${quoted[*]}"
+}
+
 sha256_or_empty() {
   local path="$1"
   if [[ -n "$path" && -f "$path" ]]; then
@@ -163,7 +176,7 @@ write_report() {
       printf 'artifactSchema=AgentBehaviorEvalVerification/v1\n'
       printf 'owner=agent-behavior\n'
       printf 'recordedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      printf 'command=%s\n' "scripts/verify_ai_behavior_eval.sh ${ORIGINAL_ARGS[*]}"
+      printf 'command=%s\n' "$(command_line)"
       printf 'reproduciblePath=%s\n' "$REPORT_FILE"
       printf 'actualTraceFile=%s\n' "$ACTUAL_TRACE_FILE"
       printf 'actualTraceSha256=%s\n' "$(sha256_or_empty "$ACTUAL_TRACE_FILE")"

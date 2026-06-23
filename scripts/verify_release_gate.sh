@@ -39,6 +39,7 @@ RELEASE_MAPPING_FILE="${RELEASE_MAPPING_FILE:-app/build/outputs/mapping/release/
 VERIFY_CONTRACT_TESTS="${VERIFY_CONTRACT_TESTS:-1}"
 VERIFY_AI_BEHAVIOR_EVAL="${VERIFY_AI_BEHAVIOR_EVAL:-1}"
 VERIFY_PERF_BASELINE="${VERIFY_PERF_BASELINE:-1}"
+AI_BEHAVIOR_FIXTURE_DIR="${AI_BEHAVIOR_FIXTURE_DIR:-app/src/test/resources/ai_behavior_eval}"
 AI_BEHAVIOR_ACTUAL_TRACE_FILE="${AI_BEHAVIOR_ACTUAL_TRACE_FILE:-}"
 REQUIRE_AI_BEHAVIOR_ACTUAL_TRACE="${REQUIRE_AI_BEHAVIOR_ACTUAL_TRACE:-0}"
 REQUIRE_AI_BEHAVIOR_RUNTIME_TRACE_SOURCE="${REQUIRE_AI_BEHAVIOR_RUNTIME_TRACE_SOURCE:-0}"
@@ -52,10 +53,12 @@ GRADLE_FILE="${GRADLE_FILE:-app/build.gradle.kts}"
 mkdir -p "$ARTIFACT_DIR"
 RELEASE_GATE_REPORT="$ARTIFACT_DIR/release-gate.properties"
 printf -v release_gate_command '%q' "scripts/verify_release_gate.sh"
-for release_gate_arg in "${ORIGINAL_ARGS[@]}"; do
-  printf -v quoted_release_gate_arg '%q' "$release_gate_arg"
-  release_gate_command+=" $quoted_release_gate_arg"
-done
+if [[ "${#ORIGINAL_ARGS[@]}" -gt 0 ]]; then
+  for release_gate_arg in "${ORIGINAL_ARGS[@]}"; do
+    printf -v quoted_release_gate_arg '%q' "$release_gate_arg"
+    release_gate_command+=" $quoted_release_gate_arg"
+  done
+fi
 head_commit_sha="$(git rev-parse HEAD 2>/dev/null || true)"
 release_artifact_path=""
 release_artifact_type=""
@@ -199,6 +202,7 @@ write_gate_report() {
     printf 'verifyContractTests=%s\n' "$VERIFY_CONTRACT_TESTS"
     printf 'verifyAiBehaviorEval=%s\n' "$VERIFY_AI_BEHAVIOR_EVAL"
     printf 'verifyPerfBaseline=%s\n' "$VERIFY_PERF_BASELINE"
+    printf 'aiBehaviorFixtureDir=%s\n' "$AI_BEHAVIOR_FIXTURE_DIR"
     printf 'aiBehaviorActualTraceFile=%s\n' "$AI_BEHAVIOR_ACTUAL_TRACE_FILE"
     printf 'requireAiBehaviorActualTrace=%s\n' "$REQUIRE_AI_BEHAVIOR_ACTUAL_TRACE"
     printf 'requireAiBehaviorRuntimeTraceSource=%s\n' "$REQUIRE_AI_BEHAVIOR_RUNTIME_TRACE_SOURCE"
@@ -290,6 +294,7 @@ fi
 
 if [[ "$VERIFY_AI_BEHAVIOR_EVAL" == "1" ]]; then
   ai_behavior_args=(
+    --dir "$AI_BEHAVIOR_FIXTURE_DIR"
     --require-boundary-map
     --trace-diff "$ARTIFACT_DIR/ai-behavior-planning-trace-diff.jsonl"
     --report "$ARTIFACT_DIR/ai-behavior-eval.properties"
