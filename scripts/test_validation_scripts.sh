@@ -107,6 +107,12 @@ case "${1:-}" in
       "getprop ro.product.cpu.abilist64")
         echo "${FAKE_ABI_LIST:-arm64-v8a,armeabi-v7a}"
         ;;
+      "getprop ro.product.cpu.abi")
+        echo "${FAKE_PRODUCT_ABI:-arm64-v8a}"
+        ;;
+      "getprop ro.product.model")
+        echo "${FAKE_DEVICE_MODEL:-Pixel Test}"
+        ;;
       "getprop ro.build.version.sdk")
         echo "36"
         ;;
@@ -133,6 +139,15 @@ case "${1:-}" in
         ;;
       am\ start\ -W\ -n*)
         echo "Status: ok"
+        if [[ -n "${FAKE_RC_PERF_TOTAL_TIME_MS:-}" ]]; then
+          echo "TotalTime: ${FAKE_RC_PERF_TOTAL_TIME_MS}"
+        fi
+        if [[ -n "${FAKE_RC_PERF_WAIT_TIME_MS:-}" ]]; then
+          echo "WaitTime: ${FAKE_RC_PERF_WAIT_TIME_MS}"
+        fi
+        ;;
+      am\ start-foreground-service\ -a\ com.bytedance.zgx.pocketmind.rcperf.RUN\ -n\ com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService*)
+        echo "Starting service: Intent { act=com.bytedance.zgx.pocketmind.rcperf.RUN cmp=com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService }"
         ;;
       am\ broadcast\ -a\ com.bytedance.zgx.pocketmind.debug.DEVICE_CONTROL_EVAL*)
         echo "Broadcast completed: result=-1"
@@ -155,6 +170,12 @@ case "${1:-}" in
         else
           exit 1
         fi
+        ;;
+      dumpsys\ meminfo\ com.bytedance.zgx.pocketmind)
+        printf '** MEMINFO in pid 12345 [com.bytedance.zgx.pocketmind] **\n'
+        printf '                   Pss  Private  Private\n'
+        printf '                 Total    Dirty    Clean\n'
+        printf '   TOTAL %s   400000        0\n' "${FAKE_RC_PERF_MEMINFO_KB:-524288}"
         ;;
       dumpsys\ accessibility)
         cat <<'FAKE_ACCESSIBILITY_DUMPSYS'
@@ -398,6 +419,31 @@ FAKE_PACKAGE_DUMPSYS
 </hierarchy>
 FAKE_REAL_APP_UI
         ;;
+      cat\ /sdcard/Android/data/com.bytedance.zgx.pocketmind/files/rc_perf_result_*.properties)
+        # The in-app RC perf harness only writes its result once it has finished a real local
+        # model run. Until FAKE_RC_PERF_RESULT_READY is set we report nothing so the collector
+        # exercises its polling loop and timeout path.
+        if [[ -z "${FAKE_RC_PERF_RESULT_READY:-}" ]]; then
+          exit 1
+        fi
+        echo "rcPerfSchema=RcPerfResult/v1"
+        if [[ "${FAKE_RC_PERF_RESULT_TYPE:-success}" != "success" ]]; then
+          echo "resultType=${FAKE_RC_PERF_RESULT_TYPE:-failed}"
+          echo "reason=${FAKE_RC_PERF_REASON:-benchmark-unavailable}"
+        else
+          echo "resultType=success"
+          echo "modelId=${FAKE_RC_PERF_MODEL_ID:-chat-e2b}"
+          echo "backend=${FAKE_RC_PERF_BACKEND:-GPU}"
+          echo "modelLoadMs=${FAKE_RC_PERF_MODEL_LOAD_MS:-3500}"
+          echo "firstTokenMs=${FAKE_RC_PERF_FIRST_TOKEN_MS:-900}"
+          echo "tokenCount=${FAKE_RC_PERF_TOKEN_COUNT:-128}"
+          echo "tokensPerSecond=${FAKE_RC_PERF_TOKENS_PER_SECOND:-12.5}"
+          echo "stopGenerationRecoveryMs=${FAKE_RC_PERF_STOP_RECOVERY_MS:-200}"
+          echo "gpuFallbackStatus=${FAKE_RC_PERF_GPU_FALLBACK_STATUS:-not-needed}"
+          echo "visionInputMs=${FAKE_RC_PERF_VISION_INPUT_MS:-500}"
+          echo "memorySearch5kMs=${FAKE_RC_PERF_MEMORY_SEARCH_5K_MS:-25}"
+        fi
+        ;;
       *)
         echo "unexpected exec-out command: $*" >&2
         exit 2
@@ -515,6 +561,18 @@ FAKE_RELEASE_SCREENSHOT_UI
     echo "1 file pulled"
     ;;
   logcat)
+    shift
+    if [[ "${1:-}" == "-c" ]]; then
+      exit 0
+    fi
+    if [[ "${1:-}" == "-d" ]]; then
+      if [[ -n "${FAKE_RC_PERF_LOGCAT_OOM_ANR:-}" ]]; then
+        printf '%s\n' "$FAKE_RC_PERF_LOGCAT_OOM_ANR"
+      else
+        echo "fake live remote logcat"
+      fi
+      exit 0
+    fi
     echo "fake live remote logcat"
     ;;
   *)
@@ -2648,10 +2706,33 @@ grep -q 'scripts/verify_release_gate.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include verify_release_gate.sh in shell syntax checks"
 grep -q 'scripts/collect_perf_baseline.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_perf_baseline.sh in shell syntax checks"
+grep -q 'scripts/collect_rc_perf_from_device.sh' scripts/verify_local.sh ||
+  fail "verify_local.sh must include collect_rc_perf_from_device.sh in shell syntax checks"
 grep -q 'scripts/collect_model_license_metadata.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include collect_model_license_metadata.sh in shell syntax checks"
 grep -q 'scripts/sign_release_artifacts.sh' scripts/verify_local.sh ||
   fail "verify_local.sh must include sign_release_artifacts.sh in shell syntax checks"
+
+grep -q 'android:name=".rcperf.RcPerfHarnessService"' app/src/rcPerfRelease/AndroidManifest.xml ||
+  fail "rcPerfRelease must declare the rc perf harness service"
+grep -q 'android:permission="android.permission.DUMP"' app/src/rcPerfRelease/AndroidManifest.xml ||
+  fail "rcPerfRelease service must require a shell-held signature permission"
+grep -q 'android:foregroundServiceType="specialUse"' app/src/rcPerfRelease/AndroidManifest.xml ||
+  fail "rcPerfRelease service must run as a foreground special-use service"
+grep -q 'com.bytedance.zgx.pocketmind.rcperf.RUN' app/src/rcPerfRelease/AndroidManifest.xml ||
+  fail "rcPerfRelease service must expose only the app-specific rc perf action"
+grep -q 'RC_PERF_ACTION="${PACKAGE_NAME}.rcperf.RUN"' scripts/collect_rc_perf_from_device.sh ||
+  fail "rc perf collector must use the app-specific rc perf action"
+grep -q 'am start-foreground-service -a "$RC_PERF_ACTION"' scripts/collect_rc_perf_from_device.sh ||
+  fail "rc perf collector must run the long harness through a foreground service"
+if grep -q 'android.intent.action.RUN' app/src/rcPerfRelease/AndroidManifest.xml scripts/collect_rc_perf_from_device.sh; then
+  fail "rc perf collector/manifest must not use android.intent.action.RUN"
+fi
+for forbidden_rc_perf_secret in deepseekApiKey deepseekBaseUrl DEEPSEEK_API_KEY DEEPSEEK_BASE_URL; do
+  if grep -q "$forbidden_rc_perf_secret" scripts/collect_rc_perf_from_device.sh; then
+    fail "rc perf collector must not pass unused remote secret extras: $forbidden_rc_perf_secret"
+  fi
+done
 
 for RELEASE_PREFLIGHT_VERIFIER in \
   scripts/verify_release_record.sh \
@@ -9053,6 +9134,210 @@ assert_report_contains "$COLLECTED_PERF" "releaseArtifact=$SAFE_APK"
 assert_report_contains "$COLLECTED_PERF.verification.properties" "artifactSchema=PerfBaselineVerification/v1"
 assert_report_contains "$COLLECTED_PERF.verification.properties" "expectedAppVersion=1.0"
 assert_report_contains "$COLLECTED_PERF.verification.properties" "baselineSha256=$(shasum -a 256 "$COLLECTED_PERF" | awk '{print $1}')"
+
+# --- RC perf device collector (scripts/collect_rc_perf_from_device.sh) -----------------------
+# The RC perf collector drives the in-app rcPerfRelease harness on a physical device and feeds the
+# measured metrics into collect_perf_baseline.sh. It must never clear app data or delete models.
+reset_logs
+
+RC_COLLECT_MISSING_ARTIFACT_REPORT="$ARTIFACT_DIR/rc-collect-missing-artifact.properties"
+expect_failure \
+  "rc perf collector requires the release artifact env" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  APP_VERSION=1.0 \
+  REPORT_FILE="$RC_COLLECT_MISSING_ARTIFACT_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-missing-artifact-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "artifactSchema=RcPerfCollection/v1"
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "target=rc-perf-collector"
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "failedTarget=environment"
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "reason=missing-release-artifact"
+assert_report_contains "$RC_COLLECT_MISSING_ARTIFACT_REPORT" "preserves_model_data=true"
+
+reset_logs
+RC_COLLECT_EMULATOR_REPORT="$ARTIFACT_DIR/rc-collect-emulator.properties"
+expect_failure \
+  "rc perf collector rejects emulator devices" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'emulator-5554\tdevice' ANDROID_SERIAL="emulator-5554" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  REPORT_FILE="$RC_COLLECT_EMULATOR_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-emulator-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_EMULATOR_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_EMULATOR_REPORT" "failedTarget=device-selection"
+assert_report_contains "$RC_COLLECT_EMULATOR_REPORT" "reason=emulator-not-allowed"
+assert_report_contains "$RC_COLLECT_EMULATOR_REPORT" "serial=emulator-5554"
+
+reset_logs
+RC_COLLECT_NO_APK_REPORT="$ARTIFACT_DIR/rc-collect-no-apk.properties"
+expect_failure \
+  "rc perf collector reports a missing rcPerfRelease apk" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$TMP_DIR/missing-rc-perf.apk" \
+  REPORT_FILE="$RC_COLLECT_NO_APK_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-no-apk-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_NO_APK_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_NO_APK_REPORT" "failedTarget=rc-perf-apk"
+assert_report_contains "$RC_COLLECT_NO_APK_REPORT" "reason=rc-perf-apk-missing"
+
+reset_logs
+RC_COLLECT_NO_LAUNCH_REPORT="$ARTIFACT_DIR/rc-collect-no-launch.properties"
+expect_failure \
+  "rc perf collector requires a first-launch time" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  REPORT_FILE="$RC_COLLECT_NO_LAUNCH_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-no-launch-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_NO_LAUNCH_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_NO_LAUNCH_REPORT" "failedTarget=first-launch"
+assert_report_contains "$RC_COLLECT_NO_LAUNCH_REPORT" "reason=first-launch-time-missing"
+
+reset_logs
+RC_COLLECT_TIMEOUT_REPORT="$ARTIFACT_DIR/rc-collect-timeout.properties"
+expect_failure \
+  "rc perf collector force-stops the app when the harness never writes a result" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  HARNESS_TIMEOUT_SECONDS=1 \
+  FAKE_RC_PERF_TOTAL_TIME_MS=1200 \
+  FAKE_RC_PERF_MEMINFO_KB=524288 \
+  REPORT_FILE="$RC_COLLECT_TIMEOUT_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-timeout-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "failedTarget=harness"
+assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "reason=harness-timeout"
+force_stop_count="$(grep -c -- "-s device-a shell am force-stop com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" || true)"
+[[ "$force_stop_count" -ge 2 ]] ||
+  fail "rc perf collector must force-stop the app after a harness timeout while preserving data"
+
+reset_logs
+RC_COLLECT_BENCHMARK_REPORT="$ARTIFACT_DIR/rc-collect-benchmark.properties"
+expect_failure \
+  "rc perf collector surfaces a harness benchmark-unavailable failure without estimating" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  HARNESS_TIMEOUT_SECONDS=30 \
+  FAKE_RC_PERF_TOTAL_TIME_MS=1200 \
+  FAKE_RC_PERF_MEMINFO_KB=524288 \
+  FAKE_RC_PERF_RESULT_READY=1 \
+  FAKE_RC_PERF_RESULT_TYPE=failed \
+  FAKE_RC_PERF_REASON=benchmark-unavailable \
+  REPORT_FILE="$RC_COLLECT_BENCHMARK_REPORT" \
+  OUT_FILE="$ARTIFACT_DIR/rc-collect-benchmark-baseline.properties" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_BENCHMARK_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_BENCHMARK_REPORT" "failedTarget=harness"
+assert_report_contains "$RC_COLLECT_BENCHMARK_REPORT" "reason=harness-failed"
+grep -q 'benchmark-unavailable' <<<"$LAST_OUTPUT" ||
+  fail "rc perf collector must report the harness benchmark-unavailable reason"
+
+reset_logs
+RC_COLLECT_OOM_REPORT="$ARTIFACT_DIR/rc-collect-oom.properties"
+RC_COLLECT_OOM_BASELINE="$ARTIFACT_DIR/rc-collect-oom-baseline.properties"
+expect_failure \
+  "rc perf collector flags OOM/ANR observed during the run" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  HARNESS_TIMEOUT_SECONDS=30 \
+  FAKE_RC_PERF_TOTAL_TIME_MS=1200 \
+  FAKE_RC_PERF_MEMINFO_KB=524288 \
+  FAKE_RC_PERF_RESULT_READY=1 \
+  FAKE_RC_PERF_LOGCAT_OOM_ANR="E AndroidRuntime: java.lang.OutOfMemoryError in com.bytedance.zgx.pocketmind" \
+  REPORT_FILE="$RC_COLLECT_OOM_REPORT" \
+  OUT_FILE="$RC_COLLECT_OOM_BASELINE" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_OOM_REPORT" "status=failed"
+assert_report_contains "$RC_COLLECT_OOM_REPORT" "oomOrAnrObserved=true"
+assert_report_contains "$RC_COLLECT_OOM_BASELINE" "reason=oom-or-anr-observed"
+
+reset_logs
+RC_COLLECT_REPORT="$ARTIFACT_DIR/rc-collect.properties"
+RC_COLLECT_BASELINE="$ARTIFACT_DIR/rc-collect-baseline.properties"
+expect_success \
+  "rc perf collector records a verifiable baseline from a real harness run" \
+  env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
+  ADB="$FAKE_SDK/platform-tools/adb" \
+  FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" \
+  RELEASE_ARTIFACT="$SAFE_APK" APP_VERSION=1.0 \
+  SKIP_BUILD=1 SKIP_INSTALL=1 \
+  RC_PERF_APK="$SAFE_APK" \
+  HARNESS_TIMEOUT_SECONDS=30 \
+  FAKE_RC_PERF_TOTAL_TIME_MS=1200 \
+  FAKE_RC_PERF_MEMINFO_KB=524288 \
+  FAKE_RC_PERF_RESULT_READY=1 \
+  FAKE_RC_PERF_MODEL_ID=chat-e2b \
+  FAKE_RC_PERF_BACKEND=GPU \
+  FAKE_RC_PERF_TOKENS_PER_SECOND=12.5 \
+  REPORT_FILE="$RC_COLLECT_REPORT" \
+  OUT_FILE="$RC_COLLECT_BASELINE" \
+  GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
+assert_no_gradle_call
+assert_report_contains "$RC_COLLECT_REPORT" "artifactSchema=RcPerfCollection/v1"
+assert_report_contains "$RC_COLLECT_REPORT" "status=passed"
+assert_report_contains "$RC_COLLECT_REPORT" "target=rc-perf-collector"
+assert_report_contains "$RC_COLLECT_REPORT" "serial=device-a"
+assert_report_contains "$RC_COLLECT_REPORT" "memoryPeakMb=512"
+assert_report_contains "$RC_COLLECT_REPORT" "oomOrAnrObserved=false"
+assert_report_contains "$RC_COLLECT_REPORT" "runner=rc_perf_release_broadcast"
+assert_report_contains "$RC_COLLECT_REPORT" "preserves_model_data=true"
+assert_report_contains "$RC_COLLECT_BASELINE" "artifactSchema=PerfBaseline/v1"
+assert_report_contains "$RC_COLLECT_BASELINE" "target=perf-baseline-record"
+assert_report_contains "$RC_COLLECT_BASELINE" "status=passed"
+assert_report_contains "$RC_COLLECT_BASELINE" "tokensPerSecond=12.5"
+assert_report_contains "$RC_COLLECT_BASELINE" "backend=GPU"
+assert_report_contains "$RC_COLLECT_BASELINE" "modelId=chat-e2b"
+assert_report_contains "$RC_COLLECT_BASELINE.verification.properties" "artifactSchema=PerfBaselineVerification/v1"
+assert_report_contains "$RC_COLLECT_BASELINE.verification.properties" "status=passed"
+grep -q -- "-s device-a shell am start-foreground-service -a com.bytedance.zgx.pocketmind.rcperf.RUN -n com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService --es requestId" "$FAKE_ADB_LOG" ||
+  fail "rc perf collector must trigger the harness service with the app-specific action"
+if grep -q -- "android.intent.action.RUN" "$FAKE_ADB_LOG"; then
+  fail "rc perf collector must not send the generic RUN broadcast action"
+fi
+if grep -Eq -- "deepseekApiKey|deepseekBaseUrl" "$FAKE_ADB_LOG"; then
+  fail "rc perf collector must not pass unused remote secret extras"
+fi
+if grep -q -- "pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+  fail "rc perf collector must not clear app data"
+fi
+if grep -Eq -- "(rm|unlink|delete).*(model|litertlm)" "$FAKE_ADB_LOG"; then
+  fail "rc perf collector must not delete model files"
+fi
 
 expect_success \
   "doctor local without adb" \
