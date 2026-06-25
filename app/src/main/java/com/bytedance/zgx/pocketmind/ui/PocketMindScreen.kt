@@ -116,9 +116,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import com.bytedance.zgx.pocketmind.BackendChoice
 import com.bytedance.zgx.pocketmind.AuditEventSummary
 import com.bytedance.zgx.pocketmind.BackgroundTaskSummary
@@ -165,14 +162,12 @@ import com.bytedance.zgx.pocketmind.memory.MemoryRecordType
 import com.bytedance.zgx.pocketmind.orchestration.AgentExternalOutcome
 import com.bytedance.zgx.pocketmind.orchestration.AgentRecoveryAction
 import com.bytedance.zgx.pocketmind.orchestration.AgentRunState
-import com.bytedance.zgx.pocketmind.resource.SYSTEM_RESOURCE_SAMPLE_INTERVAL_MS
 import com.bytedance.zgx.pocketmind.resource.SystemResourceSnapshot
 import com.bytedance.zgx.pocketmind.ui.theme.LocalPocketMindColors
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.delay
 
 private const val MODEL_MANAGER_CURRENT_TAB_INDEX = 0
 private const val MODEL_MANAGER_REMOTE_TAB_INDEX = 2
@@ -250,8 +245,6 @@ fun PocketMindScreen(
     var showBackgroundTasks by rememberSaveable { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val lastMessageId = state.messages.lastOrNull()?.id
-    var resourceSnapshot by remember { mutableStateOf<SystemResourceSnapshot?>(null) }
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(state.activeSessionId, lastMessageId) {
         if (state.messages.isNotEmpty()) {
@@ -262,19 +255,6 @@ fun PocketMindScreen(
         val draft = state.voiceInputDraft ?: return@LaunchedEffect
         input = appendComposerInput(input, draft.text)
         onVoiceInputConsumed(draft.id)
-    }
-    LaunchedEffect(resourceSampler, lifecycleOwner) {
-        val sampler = resourceSampler
-        if (sampler == null) {
-            resourceSnapshot = null
-            return@LaunchedEffect
-        }
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                runCatching { sampler() }.getOrNull()?.let { resourceSnapshot = it }
-                delay(SYSTEM_RESOURCE_SAMPLE_INTERVAL_MS)
-            }
-        }
     }
 
     Surface(
@@ -408,15 +388,13 @@ fun PocketMindScreen(
                 )
             }
 
-            resourceSnapshot?.let { snapshot ->
-                ResourcePressureBadge(
-                    snapshot = snapshot,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(top = 8.dp, end = 12.dp),
-                )
-            }
+            ResourcePressureOverlay(
+                resourceSampler = resourceSampler,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp, end = 12.dp),
+            )
 
             if (showModelManager) {
                 ModalBottomSheet(
