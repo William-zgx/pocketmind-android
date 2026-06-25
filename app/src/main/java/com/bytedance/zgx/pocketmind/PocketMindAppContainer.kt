@@ -17,6 +17,8 @@ import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.GenerationParametersRepository
 import com.bytedance.zgx.pocketmind.data.HuggingFaceAuthRepository
 import com.bytedance.zgx.pocketmind.data.LegacyPrefsMigrator
+import com.bytedance.zgx.pocketmind.data.LocalStorageMigrationStateDao
+import com.bytedance.zgx.pocketmind.data.LocalStorageMigrationStateEntity
 import com.bytedance.zgx.pocketmind.data.ModelRepository
 import com.bytedance.zgx.pocketmind.data.PocketMindDatabase
 import com.bytedance.zgx.pocketmind.data.PreferenceSettingsStore
@@ -34,10 +36,15 @@ import com.bytedance.zgx.pocketmind.device.AndroidRecentImageTextProvider
 import com.bytedance.zgx.pocketmind.device.AndroidRecentFileProvider
 import com.bytedance.zgx.pocketmind.download.ModelDownloadService
 import com.bytedance.zgx.pocketmind.memory.LongTermMemoryControls
+import com.bytedance.zgx.pocketmind.memory.MemoryDeletionEventStore
+import com.bytedance.zgx.pocketmind.memory.MemoryEmbeddingStore
+import com.bytedance.zgx.pocketmind.memory.MemoryRecordStore
 import com.bytedance.zgx.pocketmind.memory.MemoryRepository
 import com.bytedance.zgx.pocketmind.memory.RoomMemoryDeletionEventStore
 import com.bytedance.zgx.pocketmind.memory.RoomMemoryEmbeddingStore
 import com.bytedance.zgx.pocketmind.memory.RoomMemoryRecordStore
+import com.bytedance.zgx.pocketmind.memory.ZvecMemoryEmbeddingStore
+import com.bytedance.zgx.pocketmind.memory.ZvecMemoryRecordStore
 import com.bytedance.zgx.pocketmind.multimodal.AndroidCurrentScreenshotOcrProvider
 import com.bytedance.zgx.pocketmind.multimodal.CurrentScreenshotOcrProvider
 import com.bytedance.zgx.pocketmind.orchestration.AssistantOrchestrator
@@ -48,11 +55,14 @@ import com.bytedance.zgx.pocketmind.orchestration.SequentialActionObservationRep
 import com.bytedance.zgx.pocketmind.runtime.OkHttpRemoteChatRuntime
 import com.bytedance.zgx.pocketmind.runtime.RealLiteRtRuntime
 import com.bytedance.zgx.pocketmind.runtime.TfliteTextEmbeddingRuntimeFactory
+import com.bytedance.zgx.pocketmind.storage.SharedPreferencesLocalDocumentStore
+import com.bytedance.zgx.pocketmind.storage.ZvecNativeLocalVectorIndex
 import com.bytedance.zgx.pocketmind.tool.ValidatingToolExecutor
 import com.bytedance.zgx.pocketmind.tool.RoutingToolExecutor
 import com.bytedance.zgx.pocketmind.tool.ToolRegistry
 import com.bytedance.zgx.pocketmind.tool.ToolExecutor
 import com.bytedance.zgx.pocketmind.tool.OkHttpWebSearchProvider
+import org.json.JSONObject
 
 class PocketMindAppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -101,16 +111,16 @@ class PocketMindAppContainer(context: Context) {
         RealLiteRtRuntime.configureNativeLogging()
         localRuntime = RealLiteRtRuntime(appContext.cacheDir)
         remoteRuntime = OkHttpRemoteChatRuntime()
+        val roomMemoryRecordStore = RoomMemoryRecordStore(database.memoryRecordDao())
+        val roomMemoryEmbeddingStore = RoomMemoryEmbeddingStore(database.memoryEmbeddingDao())
+        val memoryStores = createMemoryStores(roomMemoryRecordStore, roomMemoryEmbeddingStore)
         memoryRepository = MemoryRepository(
             semanticRuntimeFactory = { modelPath ->
                 TfliteTextEmbeddingRuntimeFactory.create(appContext, modelPath)
             },
-            recordStore = RoomMemoryRecordStore(database.memoryRecordDao()),
-            embeddingStore = RoomMemoryEmbeddingStore(database.memoryEmbeddingDao()),
-            deletionEventStore = RoomMemoryDeletionEventStore(
-                dao = database.memoryDeletionEventDao(),
-                transactionDao = database.memoryDeletionTransactionDao(),
-            ),
+            recordStore = memoryStores.recordStore,
+            embeddingStore = memoryStores.embeddingStore,
+            deletionEventStore = memoryStores.deletionEventStore,
         )
         toolAuditRepository = ToolAuditRepository(database.toolAuditDao())
         remoteSendAuditRepository = RemoteSendAuditRepository(database.remoteSendAuditDao())
@@ -199,7 +209,140 @@ class PocketMindAppContainer(context: Context) {
 
     val currentScreenshotOcrProvider: CurrentScreenshotOcrProvider
         get() = currentScreenshotOcrProviderInternal
+
+    private fun createMemoryStores(
+        roomMemoryRecordStore: RoomMemoryRecordStore,
+        roomMemoryEmbeddingStore: RoomMemoryEmbeddingStore,
+    ): MemoryStores {
+        val migrationDao = database.localStorageMigrationStateDao()
+        return runCatching {
+            val documents = SharedPreferencesLocalDocumentStore(appContext)
+            val recordStore = ZvecMemoryRecordStore(
+                documents = documents,
+                mirrorStore = roomMemoryRecordStore,
+            )
+            val vectors = ZvecNativeLocalVectorIndex(
+                rootDir = appContext.noBackupFilesDir
+                    .resolve("pocketmind-zvec")
+                    .resolve("v1")
+                    .resolve("pm_vectors_v1"),
+            )
+            backfillRoomMemoryRecords(
+                source = roomMemoryRecordStore,
+                target = recordStore,
+                migrationDao = migrationDao,
+            )
+            MemoryStores(
+                recordStore = recordStore,
+                embeddingStore = ZvecMemoryEmbeddingStore(
+                    documents = documents,
+                    vectors = vectors,
+                    mirrorStore = roomMemoryEmbeddingStore,
+                ),
+                deletionEventStore = RoomMemoryDeletionEventStore(
+                    dao = database.memoryDeletionEventDao(),
+                ),
+            )
+        }.getOrElse { error ->
+            recordMemoryMigrationFailure(migrationDao, error)
+            MemoryStores(
+                recordStore = roomMemoryRecordStore,
+                embeddingStore = roomMemoryEmbeddingStore,
+                deletionEventStore = RoomMemoryDeletionEventStore(
+                    dao = database.memoryDeletionEventDao(),
+                    transactionDao = database.memoryDeletionTransactionDao(),
+                ),
+            )
+        }
+    }
+
+    private fun backfillRoomMemoryRecords(
+        source: RoomMemoryRecordStore,
+        target: ZvecMemoryRecordStore,
+        migrationDao: LocalStorageMigrationStateDao,
+    ) {
+        val stateId = "room-memory-to-zvec"
+        val existing = migrationDao.state(stateId)
+        val sourceRecords = source.records().sortedBy { record -> record.id }
+        if (existing?.phase == "Completed" && (sourceRecords.isEmpty() || target.records().isNotEmpty())) {
+            return
+        }
+
+        val startedAtMillis = existing?.startedAtMillis ?: System.currentTimeMillis()
+        val checkpointId = existing?.lastId?.takeIf { existing.phase == "Running" }
+        migrationDao.upsert(
+            LocalStorageMigrationStateEntity(
+                id = stateId,
+                phase = "Running",
+                lastDomain = existing?.lastDomain,
+                lastId = checkpointId,
+                startedAtMillis = startedAtMillis,
+                completedAtMillis = null,
+                errorJson = null,
+                schemaVersion = 1,
+            ),
+        )
+
+        var lastId = checkpointId
+        sourceRecords
+            .filter { record -> checkpointId == null || record.id > checkpointId }
+            .forEach { record ->
+                target.upsert(record)
+                lastId = record.id
+                migrationDao.upsert(
+                    LocalStorageMigrationStateEntity(
+                        id = stateId,
+                        phase = "Running",
+                        lastDomain = "memory",
+                        lastId = record.id,
+                        startedAtMillis = startedAtMillis,
+                        completedAtMillis = null,
+                        errorJson = null,
+                        schemaVersion = 1,
+                    ),
+                )
+            }
+
+        migrationDao.upsert(
+            LocalStorageMigrationStateEntity(
+                id = stateId,
+                phase = "Completed",
+                lastDomain = "memory",
+                lastId = lastId,
+                startedAtMillis = startedAtMillis,
+                completedAtMillis = System.currentTimeMillis(),
+                errorJson = null,
+                schemaVersion = 1,
+            ),
+        )
+    }
+
+    private fun recordMemoryMigrationFailure(
+        migrationDao: LocalStorageMigrationStateDao,
+        error: Throwable,
+    ) {
+        migrationDao.upsert(
+            LocalStorageMigrationStateEntity(
+                id = "room-memory-to-zvec",
+                phase = "Failed",
+                lastDomain = null,
+                lastId = null,
+                startedAtMillis = System.currentTimeMillis(),
+                completedAtMillis = System.currentTimeMillis(),
+                errorJson = JSONObject()
+                    .put("message", error.message ?: error::class.java.name)
+                    .toString(),
+                schemaVersion = 1,
+            ),
+        )
+    }
 }
+
+private data class MemoryStores(
+    val recordStore: MemoryRecordStore,
+    val embeddingStore: MemoryEmbeddingStore,
+    val deletionEventStore: MemoryDeletionEventStore,
+)
 
 private class PocketMindViewModelFactory(
     private val modelRepository: ModelRepository,
