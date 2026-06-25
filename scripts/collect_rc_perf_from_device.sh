@@ -318,6 +318,7 @@ STOP_GENERATION_RECOVERY_MS="$(harness_value stopGenerationRecoveryMs)"
 GPU_FALLBACK_STATUS="$(harness_value gpuFallbackStatus)"
 VISION_INPUT_MS="$(harness_value visionInputMs)"
 MEMORY_SEARCH_5K_MS="$(harness_value memorySearch5kMs)"
+MEMORY_SEARCH_50K_MS="$(harness_value memorySearch50kMs)"
 
 sample_memory_peak_mb
 if [[ -z "$MEMORY_PEAK_MB" ]]; then
@@ -352,6 +353,7 @@ STOP_GENERATION_RECOVERY_MS="$STOP_GENERATION_RECOVERY_MS" \
 GPU_FALLBACK_STATUS="$GPU_FALLBACK_STATUS" \
 VISION_INPUT_MS="$VISION_INPUT_MS" \
 MEMORY_SEARCH_5K_MS="$MEMORY_SEARCH_5K_MS" \
+MEMORY_SEARCH_50K_MS="$MEMORY_SEARCH_50K_MS" \
 MEMORY_PEAK_MB="$MEMORY_PEAK_MB" \
 OOM_OR_ANR_OBSERVED="$OOM_OR_ANR_OBSERVED" \
   scripts/collect_perf_baseline.sh

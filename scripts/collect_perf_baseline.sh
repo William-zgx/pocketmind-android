@@ -102,7 +102,7 @@ Usage:
   PERFORMANCE_KEY=firstLaunch \
   FIRST_LAUNCH_INTERACTIVE_MS=... MODEL_LOAD_MS=... FIRST_TOKEN_MS=... \
   TOKENS_PER_SECOND=... STOP_GENERATION_RECOVERY_MS=... GPU_FALLBACK_STATUS=... \
-  VISION_INPUT_MS=... MEMORY_SEARCH_5K_MS=... MEMORY_PEAK_MB=... \
+  VISION_INPUT_MS=... MEMORY_SEARCH_5K_MS=... MEMORY_SEARCH_50K_MS=... MEMORY_PEAK_MB=... \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh
 
@@ -135,6 +135,7 @@ require_env STOP_GENERATION_RECOVERY_MS
 require_env GPU_FALLBACK_STATUS
 require_env VISION_INPUT_MS
 require_env MEMORY_SEARCH_5K_MS
+require_env MEMORY_SEARCH_50K_MS
 require_env MEMORY_PEAK_MB
 require_env OOM_OR_ANR_OBSERVED
 
@@ -196,6 +197,7 @@ mkdir -p "$(dirname "$OUT_FILE")"
   printf 'gpuFallbackStatus=%s\n' "$GPU_FALLBACK_STATUS"
   printf 'visionInputMs=%s\n' "$VISION_INPUT_MS"
   printf 'memorySearch5kMs=%s\n' "$MEMORY_SEARCH_5K_MS"
+  printf 'memorySearch50kMs=%s\n' "$MEMORY_SEARCH_50K_MS"
   printf 'memoryPeakMb=%s\n' "$MEMORY_PEAK_MB"
   printf 'oomOrAnrObserved=%s\n' "$OOM_OR_ANR_OBSERVED"
   printf 'recordedAt=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"

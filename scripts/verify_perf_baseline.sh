@@ -179,6 +179,7 @@ required_fields=(
   gpuFallbackStatus
   visionInputMs
   memorySearch5kMs
+  memorySearch50kMs
   memoryPeakMb
   oomOrAnrObserved
   recordedAt
@@ -307,6 +308,7 @@ numeric_fields=(
   stopGenerationRecoveryMs
   visionInputMs
   memorySearch5kMs
+  memorySearch50kMs
   memoryPeakMb
 )
 

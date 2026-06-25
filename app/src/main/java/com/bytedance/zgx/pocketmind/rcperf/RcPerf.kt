@@ -5,6 +5,14 @@ import com.bytedance.zgx.pocketmind.memory.MemoryIndex
 import com.bytedance.zgx.pocketmind.memory.MemoryRepository
 import com.bytedance.zgx.pocketmind.runtime.LocalChatRuntime
 import com.bytedance.zgx.pocketmind.runtime.RuntimeBenchmarkResult
+import com.bytedance.zgx.pocketmind.storage.LocalStorageCollections
+import com.bytedance.zgx.pocketmind.storage.LocalVectorIndex
+import com.bytedance.zgx.pocketmind.storage.LocalVectorQuery
+import com.bytedance.zgx.pocketmind.storage.LocalVectorRecord
+import com.bytedance.zgx.pocketmind.storage.ZvecNativeStore
+import com.bytedance.zgx.pocketmind.storage.ZvecNativeVectorIndex
+import java.io.Closeable
+import java.io.File
 
 /**
  * Pure, JVM-testable RC perf logic shared by the harness. None of this code reads, deletes, or
@@ -79,6 +87,7 @@ data class RcPerfMetrics(
     val gpuFallbackStatus: GpuFallbackStatus,
     val visionInputMs: Long,
     val memorySearch5kMs: Long,
+    val memorySearch50kMs: Long,
 ) {
     init {
         require(modelId.isNotBlank()) { "modelId must not be blank" }
@@ -91,6 +100,7 @@ data class RcPerfMetrics(
         require(stopGenerationRecoveryMs > 0) { "stopGenerationRecoveryMs must be positive" }
         require(visionInputMs > 0) { "visionInputMs must be positive" }
         require(memorySearch5kMs > 0) { "memorySearch5kMs must be positive" }
+        require(memorySearch50kMs > 0) { "memorySearch50kMs must be positive" }
     }
 }
 
@@ -113,6 +123,7 @@ fun buildRcPerfResult(
     stopGenerationRecoveryMs: Long,
     visionInputMs: Long,
     memorySearch5kMs: Long,
+    memorySearch50kMs: Long,
 ): RcPerfResult {
     val benchmark = when (val result = timing.benchmark) {
         is RuntimeBenchmarkResult.Available -> result
@@ -135,6 +146,7 @@ fun buildRcPerfResult(
             gpuFallbackStatus = resolveGpuFallbackStatus(requestedBackend, loadedBackend),
             visionInputMs = visionInputMs,
             memorySearch5kMs = memorySearch5kMs,
+            memorySearch50kMs = memorySearch50kMs,
         )
     }.fold(
         onSuccess = { RcPerfResult.Success(it) },
@@ -164,6 +176,7 @@ object RcPerfResultFormatter {
     const val KEY_GPU_FALLBACK_STATUS = "gpuFallbackStatus"
     const val KEY_VISION_INPUT_MS = "visionInputMs"
     const val KEY_MEMORY_SEARCH_5K_MS = "memorySearch5kMs"
+    const val KEY_MEMORY_SEARCH_50K_MS = "memorySearch50kMs"
 
     const val RESULT_SUCCESS = "success"
     const val RESULT_FAILED = "failed"
@@ -194,6 +207,7 @@ object RcPerfResultFormatter {
             line(KEY_GPU_FALLBACK_STATUS, metrics.gpuFallbackStatus.wireValue),
             line(KEY_VISION_INPUT_MS, metrics.visionInputMs.toString()),
             line(KEY_MEMORY_SEARCH_5K_MS, metrics.memorySearch5kMs.toString()),
+            line(KEY_MEMORY_SEARCH_50K_MS, metrics.memorySearch50kMs.toString()),
         )
         return lines.joinToString(separator = "\n", postfix = "\n")
     }
@@ -241,6 +255,7 @@ object RcPerfResultFormatter {
                     ?: error("unknown gpuFallbackStatus"),
                 visionInputMs = fields.getValue(KEY_VISION_INPUT_MS).toLong(),
                 memorySearch5kMs = fields.getValue(KEY_MEMORY_SEARCH_5K_MS).toLong(),
+                memorySearch50kMs = fields.getValue(KEY_MEMORY_SEARCH_50K_MS).toLong(),
             )
         }.fold(
             onSuccess = { RcPerfResult.Success(it) },
@@ -285,4 +300,80 @@ object RcPerfSyntheticMemory {
         val elapsedMs = ((nanoClock() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
         return Measurement(elapsedMs = elapsedMs, recordCount = recordCount, hitCount = hits.size)
     }
+}
+
+/**
+ * Builds and times an isolated 50k vector search through the real zvec JNI/NDK bridge. The harness
+ * passes an app-cache directory that is created only for this synthetic run, so this never touches
+ * user memories or the Room-backed memory stores.
+ */
+object RcPerfSyntheticZvecMemory {
+    const val DEFAULT_RECORD_COUNT = 50_000
+    private const val DOMAIN = "rc_perf_zvec_memory"
+    private const val MODEL_ID = "rc-perf-zvec-embedding"
+    private const val TYPE = "RcPerfSyntheticEmbedding"
+
+    data class Measurement(val elapsedMs: Long, val recordCount: Int, val hitCount: Int)
+
+    fun measure(
+        rootDir: File,
+        recordCount: Int = DEFAULT_RECORD_COUNT,
+        nanoClock: () -> Long = System::nanoTime,
+        indexFactory: (File) -> LocalVectorIndex = { root ->
+            ZvecNativeStore.openVectorIndex(root, flushOnMutation = false).getOrThrow()
+        },
+    ): Measurement {
+        require(recordCount > 0) { "synthetic zvec record count must be positive" }
+        val index = indexFactory(rootDir)
+        try {
+            for (recordIndex in 0 until recordCount) {
+                index.upsert(syntheticRecord(recordIndex))
+            }
+            (index as? ZvecNativeVectorIndex)?.flush()
+
+            val queryEmbedding = syntheticVector(recordCount / 2)
+            val startedAtNanos = nanoClock()
+            val hits = index.query(
+                LocalVectorQuery(
+                    domain = DOMAIN,
+                    modelId = MODEL_ID,
+                    type = TYPE,
+                    embedding = queryEmbedding,
+                    topK = 10,
+                ),
+            )
+            val elapsedMs = ((nanoClock() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L)
+            return Measurement(
+                elapsedMs = elapsedMs,
+                recordCount = recordCount,
+                hitCount = hits.size,
+            )
+        } finally {
+            (index as? Closeable)?.close()
+        }
+    }
+
+    private fun syntheticRecord(index: Int): LocalVectorRecord =
+        LocalVectorRecord(
+            domain = DOMAIN,
+            id = "rc-perf-zvec-$index",
+            modelId = MODEL_ID,
+            sourceHash = "synthetic-zvec-$index",
+            dimension = LocalStorageCollections.EMBEDDING_DIMENSION,
+            privacy = "LocalOnly",
+            type = TYPE,
+            updatedAtMillis = index.toLong(),
+            embedding = syntheticVector(index),
+        )
+
+    private fun syntheticVector(seed: Int): FloatArray =
+        FloatArray(LocalStorageCollections.EMBEDDING_DIMENSION).also { vector ->
+            val size = vector.size
+            vector[seed.floorMod(size)] = 1.0f
+            vector[(seed * 31 + 17).floorMod(size)] += 0.25f
+            vector[(seed * 17 + 13).floorMod(size)] += 0.125f
+        }
+
+    private fun Int.floorMod(modulus: Int): Int =
+        ((this % modulus) + modulus) % modulus
 }

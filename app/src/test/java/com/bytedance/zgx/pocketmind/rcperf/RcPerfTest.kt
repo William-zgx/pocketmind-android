@@ -2,6 +2,8 @@ package com.bytedance.zgx.pocketmind.rcperf
 
 import com.bytedance.zgx.pocketmind.BackendChoice
 import com.bytedance.zgx.pocketmind.runtime.RuntimeBenchmarkResult
+import com.bytedance.zgx.pocketmind.storage.InMemoryLocalVectorIndex
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,6 +39,7 @@ class RcPerfTest {
             stopGenerationRecoveryMs = 80L,
             visionInputMs = 410L,
             memorySearch5kMs = 12L,
+            memorySearch50kMs = 42L,
         )
 
         val success = result as RcPerfResult.Success
@@ -59,6 +62,7 @@ class RcPerfTest {
             stopGenerationRecoveryMs = 80L,
             visionInputMs = 410L,
             memorySearch5kMs = 12L,
+            memorySearch50kMs = 42L,
         )
 
         val failure = result as RcPerfResult.Failure
@@ -80,6 +84,7 @@ class RcPerfTest {
             stopGenerationRecoveryMs = 80L,
             visionInputMs = 410L,
             memorySearch5kMs = 12L,
+            memorySearch50kMs = 42L,
         )
         assertTrue((missingLoad as RcPerfResult.Failure).reason.contains("modelLoadMs unavailable"))
 
@@ -95,6 +100,7 @@ class RcPerfTest {
             stopGenerationRecoveryMs = 80L,
             visionInputMs = 410L,
             memorySearch5kMs = 12L,
+            memorySearch50kMs = 42L,
         )
         assertTrue((missingFirstToken as RcPerfResult.Failure).reason.contains("firstTokenMs unavailable"))
     }
@@ -113,6 +119,7 @@ class RcPerfTest {
                 gpuFallbackStatus = GpuFallbackStatus.CpuFallbackPassed,
                 visionInputMs = 510L,
                 memorySearch5kMs = 18L,
+                memorySearch50kMs = 64L,
             ),
         )
 
@@ -145,6 +152,7 @@ class RcPerfTest {
                     gpuFallbackStatus = GpuFallbackStatus.CpuFallbackPassed,
                     visionInputMs = 1L,
                     memorySearch5kMs = 1L,
+                    memorySearch50kMs = 1L,
                 ),
             ),
         )
@@ -166,6 +174,7 @@ class RcPerfTest {
             gpuFallbackStatus = GpuFallbackStatus.NotNeeded,
             visionInputMs = 1L,
             memorySearch5kMs = 1L,
+            memorySearch50kMs = 1L,
         )
     }
 
@@ -183,6 +192,26 @@ class RcPerfTest {
 
         assertEquals(RcPerfSyntheticMemory.DEFAULT_RECORD_COUNT, measurement.recordCount)
         assertEquals(7L, measurement.elapsedMs)
+        assertTrue(measurement.hitCount > 0)
+    }
+
+    @Test
+    fun syntheticZvecMemoryMeasuresInjectedVectorIndex() {
+        var nanos = 0L
+        val measurement = RcPerfSyntheticZvecMemory.measure(
+            rootDir = File("build/tmp/rcperf-zvec-unit"),
+            recordCount = 50,
+            nanoClock = {
+                val current = nanos
+                nanos += 9_000_000L
+                current
+            },
+            indexFactory = { InMemoryLocalVectorIndex() },
+        )
+
+        assertEquals(50_000, RcPerfSyntheticZvecMemory.DEFAULT_RECORD_COUNT)
+        assertEquals(50, measurement.recordCount)
+        assertEquals(9L, measurement.elapsedMs)
         assertTrue(measurement.hitCount > 0)
     }
 }

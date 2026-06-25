@@ -442,6 +442,7 @@ FAKE_REAL_APP_UI
           echo "gpuFallbackStatus=${FAKE_RC_PERF_GPU_FALLBACK_STATUS:-not-needed}"
           echo "visionInputMs=${FAKE_RC_PERF_VISION_INPUT_MS:-500}"
           echo "memorySearch5kMs=${FAKE_RC_PERF_MEMORY_SEARCH_5K_MS:-25}"
+          echo "memorySearch50kMs=${FAKE_RC_PERF_MEMORY_SEARCH_50K_MS:-120}"
         fi
         ;;
       *)
@@ -3090,6 +3091,7 @@ stopGenerationRecoveryMs=200
 gpuFallbackStatus=not-needed
 visionInputMs=500
 memorySearch5kMs=25
+memorySearch50kMs=120
 memoryPeakMb=512
 oomOrAnrObserved=false
 recordedAt=$PERF_RECORDED_AT
@@ -5276,6 +5278,7 @@ stopGenerationRecoveryMs=200
 gpuFallbackStatus=not-needed
 visionInputMs=500
 memorySearch5kMs=25
+memorySearch50kMs=120
 memoryPeakMb=512
 oomOrAnrObserved=false
 recordedAt=$PERF_RECORDED_AT
@@ -8480,6 +8483,7 @@ stopGenerationRecoveryMs=200
 gpuFallbackStatus=not-needed
 visionInputMs=500
 memorySearch5kMs=25
+memorySearch50kMs=120
 memoryPeakMb=512
 oomOrAnrObserved=false
 recordedAt=$PERF_RECORDED_AT
@@ -9028,6 +9032,7 @@ expect_failure \
   GPU_FALLBACK_STATUS=not-needed \
   VISION_INPUT_MS=500 \
   MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_SEARCH_50K_MS=120 \
   MEMORY_PEAK_MB=512 \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh
@@ -9062,6 +9067,7 @@ expect_failure \
   GPU_FALLBACK_STATUS=not-needed \
   VISION_INPUT_MS=500 \
   MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_SEARCH_50K_MS=120 \
   MEMORY_PEAK_MB=512 \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh
@@ -9090,6 +9096,7 @@ expect_failure \
   GPU_FALLBACK_STATUS=not-needed \
   VISION_INPUT_MS=500 \
   MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_SEARCH_50K_MS=120 \
   MEMORY_PEAK_MB=512 \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh
@@ -9120,6 +9127,7 @@ expect_success \
   GPU_FALLBACK_STATUS=not-needed \
   VISION_INPUT_MS=500 \
   MEMORY_SEARCH_5K_MS=25 \
+  MEMORY_SEARCH_50K_MS=120 \
   MEMORY_PEAK_MB=512 \
   OOM_OR_ANR_OBSERVED=false \
   scripts/collect_perf_baseline.sh

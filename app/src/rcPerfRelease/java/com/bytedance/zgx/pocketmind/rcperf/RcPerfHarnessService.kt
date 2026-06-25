@@ -221,6 +221,18 @@ class RcPerfHarnessService : Service() {
             logProgress(requestId, "memory-start")
             val memorySearch5kMs = RcPerfSyntheticMemory.measure().elapsedMs.coerceAtLeast(1L)
             logProgress(requestId, "memory-done")
+
+            // 5) Synthetic 50k vector search through the real zvec JNI/NDK bridge.
+            logProgress(requestId, "zvec-50k-start")
+            val zvecRoot = File(appContext.cacheDir, "rc_perf_zvec_${cleanRequestToken(requestId)}")
+            zvecRoot.deleteRecursively()
+            val memorySearch50kMs = try {
+                RcPerfSyntheticZvecMemory.measure(rootDir = zvecRoot).elapsedMs.coerceAtLeast(1L)
+            } finally {
+                zvecRoot.deleteRecursively()
+            }
+            logProgress(requestId, "zvec-50k-done")
+
             val benchmarkResult = resolveDecodeBenchmark(
                 conversationBenchmark = textTiming.benchmark,
                 modelPath = modelPath,
@@ -238,6 +250,7 @@ class RcPerfHarnessService : Service() {
                 stopGenerationRecoveryMs = stopRecoveryMs.coerceAtLeast(1L),
                 visionInputMs = visionInputMs.coerceAtLeast(1L),
                 memorySearch5kMs = memorySearch5kMs,
+                memorySearch50kMs = memorySearch50kMs,
             )
         } catch (throwable: Throwable) {
             RcPerfResult.Failure(failureReason(throwable))
