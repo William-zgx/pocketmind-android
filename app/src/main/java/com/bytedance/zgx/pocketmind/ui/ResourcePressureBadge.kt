@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,23 +44,23 @@ fun ResourcePressureBadge(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val accent = pressureColor(snapshot.pressure)
-    Column(
+    Box(
         modifier = modifier,
-        horizontalAlignment = Alignment.End,
+        contentAlignment = Alignment.Center,
     ) {
         Surface(
             modifier = Modifier
-                .size(44.dp)
+                .size(28.dp)
                 .testTag("resource_pressure_badge")
                 .semantics {
                     role = Role.Button
-                    contentDescription = "资源状态：${snapshot.pressure.label}"
+                    contentDescription = "设备资源压力：${snapshot.pressurePercent}%，${snapshot.pressure.label}"
                 }
                 .clickable { expanded = !expanded },
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            border = BorderStroke(3.dp, accent),
-            shadowElevation = 4.dp,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.65f)),
+            shadowElevation = 1.dp,
         ) {
             Box(
                 modifier = Modifier.background(accent.copy(alpha = 0.10f)),
@@ -69,19 +70,21 @@ fun ResourcePressureBadge(
                     text = "${snapshot.pressurePercent}%",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    lineHeight = 12.sp,
+                    fontSize = 8.sp,
+                    lineHeight = 9.sp,
                     textAlign = TextAlign.Center,
                     color = accent,
                 )
             }
         }
 
-        if (expanded) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
             ResourcePressurePanel(
                 snapshot = snapshot,
                 modifier = Modifier
-                    .padding(top = 8.dp)
                     .widthIn(min = 196.dp, max = 244.dp)
                     .testTag("resource_pressure_panel"),
             )

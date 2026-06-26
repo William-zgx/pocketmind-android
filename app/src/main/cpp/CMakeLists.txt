@@ -4,7 +4,7 @@ project(pocketmind_zvec_bridge LANGUAGES CXX)
 
 set(ZVEC_PREBUILT_DIR "" CACHE PATH "Directory containing zvec Android prebuilt libraries")
 set(ZVEC_INCLUDE_DIR "" CACHE PATH "Directory containing zvec C API headers")
-set(ZVEC_PREBUILT_LIBRARY "${ZVEC_PREBUILT_DIR}/${ANDROID_ABI}/libzvec.so")
+set(ZVEC_PREBUILT_LIBRARY "${ZVEC_PREBUILT_DIR}/${ANDROID_ABI}/libzvec_c_api.so")
 
 if(NOT EXISTS "${ZVEC_PREBUILT_LIBRARY}")
     message(FATAL_ERROR "Missing zvec prebuilt library: ${ZVEC_PREBUILT_LIBRARY}")

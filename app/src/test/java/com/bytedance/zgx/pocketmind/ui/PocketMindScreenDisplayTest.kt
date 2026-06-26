@@ -34,8 +34,8 @@ class PocketMindScreenDisplayTest {
     @Test
     fun trustBoundaryCopyNamesLocalRemotePermissionAndDeletionControls() {
         assertTrue(PRODUCT_POSITIONING_TEXT.contains("隐私优先"))
-        assertTrue(PRODUCT_POSITIONING_TEXT.contains("本地对话"))
-        assertTrue(PRODUCT_POSITIONING_TEXT.contains("本地视觉"))
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("本地模型"))
+        assertTrue(PRODUCT_POSITIONING_TEXT.contains("下载或导入"))
         assertTrue(PRODUCT_POSITIONING_TEXT.contains("远程多模态可选"))
         assertTrue(PRODUCT_POSITIONING_TEXT.contains("必须确认执行"))
         assertTrue(PRODUCT_POSITIONING_TEXT.contains("能力与信任中心"))
@@ -43,8 +43,8 @@ class PocketMindScreenDisplayTest {
         assertTrue(PRODUCT_POSITIONING_SHORT_TEXT.contains("随身 AI 助手"))
         assertTrue(PRODUCT_HOME_TITLE_TEXT.contains("隐私优先"))
         assertTrue(PRODUCT_HOME_TITLE_TEXT.contains("随身 AI 助手"))
-        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("本地对话"))
-        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("本地视觉"))
+        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("本地模型"))
+        assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("下载或导入"))
         assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("远程多模态可选"))
         assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("必须确认执行"))
         assertTrue(PRODUCT_HOME_DESCRIPTION_TEXT.contains("不读取本地数据"))
@@ -69,15 +69,14 @@ class PocketMindScreenDisplayTest {
         assertTrue(LOCAL_SETUP_PANEL_TITLE.contains("离线基础问答"))
         assertTrue(LOCAL_SETUP_PANEL_DESCRIPTION.contains("留在本机"))
         assertTrue(LOCAL_SETUP_PANEL_DESCRIPTION.contains("配置远程模型"))
-        assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("本地对话"))
-        assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("本地视觉"))
+        assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("下载或导入本地模型"))
         assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("离线使用"))
         assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("远程多模态可选"))
         assertTrue(MODEL_MANAGER_POSITIONING_TEXT.contains("切换远程会提醒"))
         assertTrue(PRODUCT_PROMPT_SUGGESTIONS.any { it.contains("留在本机") })
         assertTrue(PRODUCT_PROMPT_SUGGESTIONS.any { it.contains("切换远程模型") })
         assertTrue(PRODUCT_LOCAL_VALUE_TEXT.contains("基础问答"))
-        assertTrue(PRODUCT_LOCAL_VALUE_TEXT.contains("图片输入"))
+        assertTrue(PRODUCT_LOCAL_VALUE_TEXT.contains("主动选择的图片"))
         assertTrue(PRODUCT_REMOTE_VALUE_TEXT.contains("图片"))
         assertTrue(PRODUCT_ACTION_VALUE_TEXT.contains("确认或取消"))
         assertTrue(PRIVACY_POLICY_ENTRY_TEXT.contains("留在本机"))
@@ -98,7 +97,7 @@ class PocketMindScreenDisplayTest {
         assertTrue(VOICE_INPUT_PERMISSION_DISCLOSURE_BODY.contains("不保存音频文件"))
         assertTrue(VOICE_INPUT_PERMISSION_DISCLOSURE_BODY.contains("确认后才会请求麦克风权限"))
         assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("留在本机"))
-        assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("LocalOnly"))
+        assertTrue(TRUST_LOCAL_BOUNDARY_TEXT.contains("仅本机"))
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("对话上下文"))
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("逐次确认后随请求发送"))
         assertTrue(TRUST_REMOTE_BOUNDARY_TEXT.contains("OCR 摘录"))
@@ -134,19 +133,27 @@ class PocketMindScreenDisplayTest {
             assertTrue("missing trust center row: $expectedTitle", rows.any { it.title == expectedTitle })
         }
         listOf(
-            "LocalEvidence",
-            "BackgroundTask",
-            "PublicEvidence",
-            "确认：Required",
+            "聊天输入、记住/忘记指令",
+            "剪贴板或当前屏幕总结分享",
+            "App 搜索技能与无障碍控制",
+            "提醒创建与后台任务",
+            "远程公开搜索工具",
+            "模型管理的隐私页",
+            "仅本机数据",
+            "本地后台任务",
+            "公开信息",
+            "确认：必须确认",
             "远程：可用",
             "远程：不可自动发送",
-            "fail-closed",
+            "停止执行并提示",
             "整批拒绝",
         ).forEach { requiredCopy ->
             assertTrue("missing trust center copy: $requiredCopy", allText.contains(requiredCopy))
         }
         assertTrue(!allText.contains("sk-"))
         assertTrue(!allText.contains("Bearer "))
+        assertTrue(!allText.contains("chat_input_and_remember_forget_commands"))
+        assertTrue(!allText.contains("model_manager_privacy_tab"))
     }
 
     @Test
@@ -182,7 +189,7 @@ class PocketMindScreenDisplayTest {
             "不读取屏幕内容",
             "不是截图、像素读取或视觉理解",
             "MediaProjection",
-            "LocalOnly",
+            "仅本机",
             "审计仅保留脱敏摘要",
         ).forEach { requiredCopy ->
             assertTrue("missing disclosure copy: $requiredCopy", allText.contains(requiredCopy))
@@ -245,7 +252,7 @@ class PocketMindScreenDisplayTest {
 
         val localRows = actionDataBoundaryDisplayRows(MobileActionFunctions.READ_CLIPBOARD)
         assertTrue(localRows.joinToString().contains("本机内容"))
-        assertTrue(localRows.joinToString().contains("LocalOnly"))
+        assertTrue(localRows.joinToString().contains("仅留在本机"))
         assertTrue(localRows.joinToString().contains("不会自动发送给远程模型"))
 
         val reminderRows = actionDataBoundaryDisplayRows(MobileActionFunctions.SCHEDULE_REMINDER)
@@ -326,8 +333,9 @@ class PocketMindScreenDisplayTest {
 
         assertTrue(text.contains("去向：远端"))
         assertTrue(text.contains("远端历史：3"))
-        assertTrue(text.contains("过滤 LocalOnly：2"))
-        assertTrue(text.contains("保护：本地记忆、设备上下文、LocalOnly 历史"))
+        assertTrue(text.contains("隐私：可远程发送"))
+        assertTrue(text.contains("过滤仅本机历史：2"))
+        assertTrue(text.contains("保护：本地记忆、设备上下文、仅本机历史"))
         assertTrue(text.contains("可删除：对话消息、Agent 轨迹、显式记忆"))
         assertTrue(text.contains("原文持久化：否"))
     }
@@ -347,11 +355,11 @@ class PocketMindScreenDisplayTest {
 
         assertTrue(text.contains("api.example.com"))
         assertTrue(text.contains("model-a"))
-        assertTrue(text.contains("RemoteEligible 对话上下文"))
+        assertTrue(text.contains("可远程发送的对话上下文"))
         assertTrue(text.contains("当前输入"))
         assertTrue(text.contains("主动选择的图片"))
         assertTrue(text.contains("预览确认"))
-        assertTrue(text.contains("LocalOnly 历史"))
+        assertTrue(text.contains("仅本机历史"))
         assertTrue(text.contains("本地记忆"))
         assertTrue(text.contains("设备上下文"))
         assertTrue(text.contains("非图片附件正文或 OCR 摘录"))
@@ -381,7 +389,7 @@ class PocketMindScreenDisplayTest {
         assertTrue(text.contains("可远程发送历史 2 条"))
         assertTrue(text.contains("图片 1 张"))
         assertTrue(text.contains("图片字节会发往该远程地址"))
-        assertTrue(text.contains("LocalOnly 历史 3 条"))
+        assertTrue(text.contains("仅本机历史 3 条"))
         assertTrue(text.contains("本地记忆"))
         assertTrue(text.contains("设备上下文"))
         assertTrue(text.contains("记录或保留请求"))

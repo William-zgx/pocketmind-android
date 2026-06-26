@@ -53,7 +53,7 @@ data class SensitiveCapabilityDisclosure(
 
 object CapabilityMatrix {
     const val productPositioning: String =
-        "隐私优先的随身 AI 助手：本地对话和本地视觉可用，远程多模态可选，手机操作默认保守确认，低风险步骤可按设置连续执行。"
+        "隐私优先的随身 AI 助手：本地模型可下载或导入，远程多模态可选，手机操作默认保守确认，低风险步骤可按设置连续执行。"
     const val targetUserJob: String =
         "在手机上处理私人日常问答、记忆、图片/文件输入、App 打开和低风险搜索交互，同时默认把本地上下文留在本机。"
 

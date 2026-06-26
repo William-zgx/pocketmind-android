@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,7 +42,7 @@ class MainActivitySmokeTest {
         composeRule.onNodeWithTag("app_title").assertIsDisplayed()
         composeRule.onNodeWithTag("app_positioning_subtitle").assertIsDisplayed()
         composeRule.waitForText("隐私优先的随身 AI 助手")
-        composeRule.waitForText("本地对话和本地视觉可用，远程多模态可选，设备动作必须确认执行", substring = true)
+        composeRule.waitForText("先配置远程模型或下载本地模型", substring = true)
         composeRule.waitForText("模型未就绪")
         composeRule.onNodeWithTag("home_positioning_panel").performScrollTo().assertIsDisplayed()
         composeRule.waitForText("为什么装它")
@@ -63,7 +64,7 @@ class MainActivitySmokeTest {
         composeRule.waitForTag("model_manager_sheet")
 
         composeRule.onNodeWithText("模型管理").assertIsDisplayed()
-        composeRule.waitForText("本地对话和本地视觉可用，可离线使用；远程多模态可选。切换远程会提醒，设备动作仍会先确认。")
+        composeRule.waitForText("可下载或导入本地模型离线使用；远程多模态可选。切换远程会提醒，设备动作仍会先确认。")
         composeRule.waitForText("当前模型")
         composeRule.onNodeWithTag("model_tab_current").assertIsDisplayed()
         composeRule.onNodeWithTag("model_tab_remote").assertIsDisplayed()
@@ -106,7 +107,7 @@ class MainActivitySmokeTest {
         composeRule.openTopMenuItem("top_privacy_button")
         composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.scrollToModelManagerText("隐私说明").assertIsDisplayed()
+        composeRule.onAllNodesWithText("隐私说明").onFirst().assertIsDisplayed()
         composeRule.waitForText("为什么装它")
         composeRule.waitForText("本地可用")
         composeRule.waitForText("远程多模态可选")
@@ -134,7 +135,7 @@ class MainActivitySmokeTest {
         composeRule.onNodeWithTag("home_privacy_notice_button").performScrollTo().performClick()
         composeRule.waitForTag("model_manager_sheet")
 
-        composeRule.scrollToModelManagerText("隐私说明").assertIsDisplayed()
+        composeRule.onAllNodesWithText("隐私说明").onFirst().assertIsDisplayed()
         composeRule.waitForText("能力与信任中心")
         composeRule.waitForText("远程公开证据查询")
         composeRule.waitForText("敏感能力披露")

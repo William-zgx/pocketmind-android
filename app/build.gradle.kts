@@ -12,7 +12,10 @@ val huggingFaceOAuthClientId: String = providers
 val zvecVersion = "0.5.1"
 val zvecGeneratedRoot = layout.buildDirectory.dir("generated/zvec").get().asFile
 val zvecJniLibsRoot = zvecGeneratedRoot.resolve("jniLibs")
-val zvecArm64Lib = zvecJniLibsRoot.resolve("arm64-v8a/libzvec.so")
+val zvecArchiveLibName = "libzvec.so"
+val zvecRuntimeLibName = "libzvec_c_api.so"
+val zvecArm64Lib = zvecJniLibsRoot.resolve("arm64-v8a/$zvecRuntimeLibName")
+val zvecArm64ArchiveLib = zvecJniLibsRoot.resolve("arm64-v8a/$zvecArchiveLibName")
 val zvecIncludeRoot = zvecGeneratedRoot.resolve("include")
 val zvecCApiHeader = zvecIncludeRoot.resolve("zvec/c_api.h")
 val zvecNativeBaseUrl = "https://github.com/zvec-ai/zvec-dart/releases/download/v$zvecVersion"
@@ -194,22 +197,28 @@ val downloadZvecNativeLibs by tasks.registering {
             val libDir = zvecArm64Lib.parentFile
             val zipFile = temporaryDir.resolve("libzvec-android-arm64-v8a.zip")
             libDir.mkdirs()
-            val seedZip = zvecAndroidArm64ZipSeed?.let(::file)?.takeIf { it.isFile }
-            if (seedZip == null) {
-                downloadToFile("$zvecNativeBaseUrl/libzvec-android-arm64-v8a.zip", zipFile)
+            if (zvecArm64ArchiveLib.isFile) {
+                zvecArm64ArchiveLib.copyTo(zvecArm64Lib, overwrite = true)
             } else {
-                seedZip.copyTo(zipFile, overwrite = true)
-            }
-            copy {
-                from(zipTree(zipFile))
-                into(libDir)
-                include("*.so")
+                val seedZip = zvecAndroidArm64ZipSeed?.let(::file)?.takeIf { it.isFile }
+                if (seedZip == null) {
+                    downloadToFile("$zvecNativeBaseUrl/libzvec-android-arm64-v8a.zip", zipFile)
+                } else {
+                    seedZip.copyTo(zipFile, overwrite = true)
+                }
+                copy {
+                    from(zipTree(zipFile))
+                    into(libDir)
+                    include(zvecArchiveLibName)
+                    rename { zvecRuntimeLibName }
+                }
             }
             check(zvecArm64Lib.isFile) {
-                "Downloaded zvec archive did not contain libzvec.so"
+                "Downloaded zvec archive did not contain $zvecArchiveLibName"
             }
         }
         verifySha256(zvecArm64Lib, zvecArm64LibSha256)
+        zvecArm64ArchiveLib.delete()
 
         if (!zvecCApiHeader.isFile) {
             zvecCApiHeader.parentFile.mkdirs()
