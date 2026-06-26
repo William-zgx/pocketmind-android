@@ -595,17 +595,64 @@ them into the app's model download directory on first launch. It keeps the
 production application id and release runtime shape, but remains a separate
 artifact from the ordinary `release` gate.
 
+Bundling E2B, E4B, memory embedding/tokenizer, and the mobile action model is
+larger than a single Android APK can safely carry: the APK ZIP32/packaging
+toolchain hits the 4 GB payload-offset ceiling. The installable quick-experience
+package is therefore a same-signature split set: one base APK plus four
+install-time model-pack APKs.
+
 ```bash
 export POCKETMIND_BUNDLED_MODELS_DIR=/path/to/verified/model/files
-./gradlew :app:assembleBundledModels
+./gradlew \
+  :app:assembleBundledModels \
+  :modelpackE2b:assembleBundledModels \
+  :modelpackE2bExtra:assembleBundledModels \
+  :modelpackE4b:assembleBundledModels \
+  :modelpackE4bExtra:assembleBundledModels
+```
+
+The raw APK outputs are:
+
+- `app/build/outputs/apk/bundledModels/app-bundledModels-unsigned.apk`
+- `modelpackE2b/build/outputs/apk/bundledModels/modelpackE2b-bundledModels.apk`
+- `modelpackE2bExtra/build/outputs/apk/bundledModels/modelpackE2bExtra-bundledModels.apk`
+- `modelpackE4b/build/outputs/apk/bundledModels/modelpackE4b-bundledModels.apk`
+- `modelpackE4bExtra/build/outputs/apk/bundledModels/modelpackE4bExtra-bundledModels.apk`
+
+Sign every APK in the set with the same key before sharing or installing it.
+For local lab checks only, the Android debug key is acceptable; production or
+team distribution must use the approved release/upload signing path.
+
+```bash
+SIGNED_DIR=app/build/outputs/apk/bundledModels/signed-splits
+mkdir -p "$SIGNED_DIR"
+for apk in \
+  app/build/outputs/apk/bundledModels/app-bundledModels-unsigned.apk \
+  modelpackE2b/build/outputs/apk/bundledModels/modelpackE2b-bundledModels.apk \
+  modelpackE2bExtra/build/outputs/apk/bundledModels/modelpackE2bExtra-bundledModels.apk \
+  modelpackE4b/build/outputs/apk/bundledModels/modelpackE4b-bundledModels.apk \
+  modelpackE4bExtra/build/outputs/apk/bundledModels/modelpackE4bExtra-bundledModels.apk
+do
+  out="$SIGNED_DIR/$(basename "$apk" .apk)-signed.apk"
+  cp "$apk" "$out"
+  apksigner sign --ks "$RELEASE_KEYSTORE" --ks-key-alias "$RELEASE_KEY_ALIAS" "$out"
+done
+
+adb install-multiple -r "$SIGNED_DIR"/*.apk
 ```
 
 If the verified local directory is absent, the task downloads the pinned model
 files at build time. Set `POCKETMIND_HF_TOKEN` only for that build invocation
 when gated Hugging Face assets must be fetched; do not put the token in
 `gradle.properties`, source files, or release notes. The bundled assets include
-E2B, E4B, memory embedding plus tokenizer, and mobile action models, so expect a
-multi-GB artifact and verify installer/device limits before sharing it.
+E2B, E4B, memory embedding plus tokenizer, and mobile action models, so expect
+roughly 5.4 GB of signed split APKs plus device-side copy space for first-launch
+import.
+
+`./gradlew :app:bundleBundledModels` also builds
+`app/build/outputs/bundle/bundledModels/app-bundledModels.aab` for environments
+that consume Android App Bundles. Direct lab installs should use the split APK
+set above.
 
 Recommended downloads are pinned to immutable Hugging Face revisions and include
 expected byte size plus SHA-256 metadata. See `docs/model_manifest.md`.

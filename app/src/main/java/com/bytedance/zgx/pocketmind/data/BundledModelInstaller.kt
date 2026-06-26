@@ -67,6 +67,7 @@ class AssetBundledModelInstaller(
             runCatching {
                 copiedFiles += copyAssetIfNeeded(
                     assetFileName = primaryEntry.fileName,
+                    chunkFileNames = primaryEntry.chunkFileNames,
                     target = primaryTarget,
                     expectedBytes = model.byteSize,
                     expectedSha256 = model.sha256Hex,
@@ -76,6 +77,7 @@ class AssetBundledModelInstaller(
                         ?: error("Missing bundled companion asset: ${companion.fileName}")
                     copiedFiles += copyAssetIfNeeded(
                         assetFileName = companionEntry.fileName,
+                        chunkFileNames = companionEntry.chunkFileNames,
                         target = ModelCatalog.recommendedModelCompanionFile(primaryTarget, companion),
                         expectedBytes = companion.byteSize,
                         expectedSha256 = companion.sha256Hex,
@@ -122,6 +124,7 @@ class AssetBundledModelInstaller(
 
     private fun copyAssetIfNeeded(
         assetFileName: String,
+        chunkFileNames: List<String>,
         target: File,
         expectedBytes: Long,
         expectedSha256: String,
@@ -138,9 +141,12 @@ class AssetBundledModelInstaller(
         }
         val temp = File(parent, "${target.name}.bundled.tmp")
         temp.delete()
-        appContext.assets.open("$ASSET_ROOT/$assetFileName").use { input ->
-            temp.outputStream().use { output ->
-                input.copyTo(output)
+        temp.outputStream().use { output ->
+            val assetPaths = chunkFileNames.ifEmpty { listOf(assetFileName) }
+            assetPaths.forEach { assetPath ->
+                appContext.assets.open("$ASSET_ROOT/$assetPath").use { input ->
+                    input.copyTo(output)
+                }
             }
         }
         check(temp.length() == expectedBytes) {
@@ -171,6 +177,9 @@ class AssetBundledModelInstaller(
                         modelId = item.getString("modelId"),
                         fileName = item.getString("fileName"),
                         primary = item.optBoolean("primary", true),
+                        chunkFileNames = item.optJSONArray("chunks")?.let { chunks ->
+                            List(chunks.length()) { chunkIndex -> chunks.getString(chunkIndex) }
+                        }.orEmpty(),
                     )
                 }
             }
@@ -184,6 +193,7 @@ class AssetBundledModelInstaller(
         val modelId: String,
         val fileName: String,
         val primary: Boolean,
+        val chunkFileNames: List<String>,
     )
 
     private companion object {
