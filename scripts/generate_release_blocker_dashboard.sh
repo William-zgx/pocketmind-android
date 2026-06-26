@@ -5,8 +5,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROADMAP_FILE="$ROOT_DIR/docs/roadmap_gap_matrix.json"
 READINESS_FILE="$ROOT_DIR/docs/release_readiness.md"
 # Sources: docs/roadmap_gap_matrix.json and docs/release_readiness.md.
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  if [[ -x /usr/bin/python3 ]]; then
+    PYTHON_BIN="/usr/bin/python3"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
 
-python3 - "$ROADMAP_FILE" "$READINESS_FILE" <<'PY'
+"$PYTHON_BIN" - "$ROADMAP_FILE" "$READINESS_FILE" <<'PY'
 import json
 import re
 import sys

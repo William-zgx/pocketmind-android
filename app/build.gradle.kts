@@ -273,6 +273,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.litertlm.android)
     implementation(libs.localagents.rag)
+    implementation(libs.protobuf.javalite)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.okhttp)

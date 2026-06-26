@@ -1181,7 +1181,7 @@ Tests:
 - `PocketMindViewModelTest.remoteModeProtectsCurrentScreenTextBeforeRemoteContinuation`
 - `SystemResourceMonitorTest`
 - `PocketMindResourceIndicatorUiTest`
-- `MainActivityAdaptiveUiTest.compactTopBarExposesDeviceResourcesInsideMoreMenu`
+- `MainActivityAdaptiveUiTest.compactTopBarShowsDeviceResourceBadgeBeforeModelStatus`
 - `MainActivityRuntimePermissionUiTest.contactLookupConfirmationShowsRuntimePermissionRequirementWithoutSpecialAccess`
 - `MainActivitySpecialAccessUiTest.currentScreenTextConfirmationShowsSpecialAccessRequirementWithoutRuntimePermission`
 
