@@ -22,21 +22,23 @@ import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
 import com.bytedance.zgx.pocketmind.background.ScheduledTask
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskStatus
 import com.bytedance.zgx.pocketmind.background.isActivePeriodicCheck
+import com.bytedance.zgx.pocketmind.data.BundledModelInstaller
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupStore
-import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
 import com.bytedance.zgx.pocketmind.data.GenerationParametersStore
 import com.bytedance.zgx.pocketmind.data.HuggingFaceAuthStore
-import com.bytedance.zgx.pocketmind.data.ModelRepositoryFacade
+import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
 import com.bytedance.zgx.pocketmind.data.ModelRepository
+import com.bytedance.zgx.pocketmind.data.ModelRepositoryFacade
 import com.bytedance.zgx.pocketmind.data.ModelSelectionState
 import com.bytedance.zgx.pocketmind.data.ModelVerificationStatus
+import com.bytedance.zgx.pocketmind.data.NoOpBundledModelInstaller
+import com.bytedance.zgx.pocketmind.data.NoOpHuggingFaceAuthStore
 import com.bytedance.zgx.pocketmind.data.NoOpRemoteSendPendingStore
-import com.bytedance.zgx.pocketmind.data.RemoteModelStore
 import com.bytedance.zgx.pocketmind.data.RemoteModelRepository
+import com.bytedance.zgx.pocketmind.data.RemoteModelStore
 import com.bytedance.zgx.pocketmind.data.RemoteSendPendingStore
 import com.bytedance.zgx.pocketmind.data.SessionStore
-import com.bytedance.zgx.pocketmind.data.NoOpHuggingFaceAuthStore
 import com.bytedance.zgx.pocketmind.device.DeviceContextAuthorizationSnapshot
 import com.bytedance.zgx.pocketmind.device.DeviceContextSnapshot
 import com.bytedance.zgx.pocketmind.device.DeviceContextToolReadiness
@@ -184,10 +186,12 @@ class PocketMindViewModel(
     private val remoteSendAuditSink: RemoteSendAuditSink = remoteSendAuditStore,
     private val remoteSendAuditLog: RemoteSendAuditLog = remoteSendAuditStore,
     private val remoteSendPendingStore: RemoteSendPendingStore = NoOpRemoteSendPendingStore,
+    private val bundledModelInstaller: BundledModelInstaller = NoOpBundledModelInstaller,
     private val skipStartupModelRuntimeWork: Boolean = false,
 ) : ViewModel() {
     private val runtimeLock = Mutex()
     private var generationJob: Job? = null
+    private var bundledModelInstallJob: Job? = null
     private var sessionRestoreJob: Job? = null
     private var sessionRestoreGeneration: Long = 0L
     private var activeGenerationRunId: String? = null
@@ -233,6 +237,11 @@ class PocketMindViewModel(
         _uiState.update { it.copy(longTermMemories = loadLongTermMemories()) }
         verifyLegacyModelsOnStartup(skipModelRuntimeWork)
         failStaleAgentRunsOnStartup()
+        if (startBundledModelInstallOnStartup(skipModelRuntimeWork)) {
+            restorePendingAgentConfirmationIfAny()
+            restorePendingExternalOutcomeIfAny()
+            return
+        }
 
         if (skipModelRuntimeWork) {
             if (_uiState.value.inferenceMode == InferenceMode.Remote) {
@@ -280,6 +289,62 @@ class PocketMindViewModel(
         }
         restorePendingAgentConfirmationIfAny()
         restorePendingExternalOutcomeIfAny()
+    }
+
+    private fun startBundledModelInstallOnStartup(skipModelRuntimeWork: Boolean): Boolean {
+        if (skipModelRuntimeWork || !bundledModelInstaller.isEnabled || bundledModelInstallJob != null) {
+            return false
+        }
+        bundledModelInstallJob = viewModelScope.launch(ioDispatcher) {
+            _uiState.update {
+                it.copy(
+                    showFirstRunSetup = false,
+                    statusText = "正在准备内置模型",
+                )
+            }
+            val result = runCatching { bundledModelInstaller.install() }
+                .getOrElse { error ->
+                    _uiState.update {
+                        it.copy(statusText = "内置模型准备失败：${error.cleanMessage()}")
+                    }
+                    return@launch
+                }
+            if (!result.available) {
+                return@launch
+            }
+
+            if (result.installedModelCount > 0 || modelRepository.currentState().activeModelPath != null) {
+                firstRunSetupRepository.markSetupDismissed()
+            }
+            val modelState = modelRepository.currentState()
+            updateModelState(modelState)
+            syncSemanticMemoryRuntime()
+            _uiState.update {
+                it.copy(
+                    showFirstRunSetup = false,
+                    semanticMemoryEnabled = currentSemanticMemoryEnabled(),
+                    semanticMemoryRuntimeStatus = currentSemanticMemoryRuntimeStatus(),
+                    semanticMemoryIndexedRecordCount = currentSemanticMemoryIndexedRecordCount(),
+                    semanticMemoryLastRebuiltAtMillis = currentSemanticMemoryLastRebuiltAtMillis(),
+                    statusText = when {
+                        result.hasFailures ->
+                            "内置模型部分准备失败：${result.failedModelIds.joinToString()}"
+                        modelState.activeModelPath != null ->
+                            "内置模型已准备好，正在加载"
+                        else ->
+                            "内置模型已准备好"
+                    },
+                )
+            }
+            if (
+                _uiState.value.inferenceMode == InferenceMode.Local &&
+                modelState.activeModelPath != null &&
+                !skipStartupModelRuntimeWork
+            ) {
+                loadModel()
+            }
+        }
+        return true
     }
 
     fun configureDebugRemoteModelForScreenshotEvidence(

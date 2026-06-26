@@ -12,6 +12,8 @@ import com.bytedance.zgx.pocketmind.audit.ToolAuditRepository
 import com.bytedance.zgx.pocketmind.background.AndroidBackgroundTaskScheduler
 import com.bytedance.zgx.pocketmind.background.ReminderNotificationHelper
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskRepository
+import com.bytedance.zgx.pocketmind.data.AssetBundledModelInstaller
+import com.bytedance.zgx.pocketmind.data.BundledModelInstaller
 import com.bytedance.zgx.pocketmind.data.EncryptedSecretStore
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.GenerationParametersRepository
@@ -29,11 +31,11 @@ import com.bytedance.zgx.pocketmind.device.AndroidCalendarAvailabilityProvider
 import com.bytedance.zgx.pocketmind.device.AndroidContactSummaryProvider
 import com.bytedance.zgx.pocketmind.device.AndroidCurrentScreenControlProvider
 import com.bytedance.zgx.pocketmind.device.AndroidCurrentScreenTextProvider
-import com.bytedance.zgx.pocketmind.device.DeviceControlSessionService
 import com.bytedance.zgx.pocketmind.device.AndroidForegroundAppProvider
 import com.bytedance.zgx.pocketmind.device.AndroidNotificationSummaryProvider
-import com.bytedance.zgx.pocketmind.device.AndroidRecentImageTextProvider
 import com.bytedance.zgx.pocketmind.device.AndroidRecentFileProvider
+import com.bytedance.zgx.pocketmind.device.AndroidRecentImageTextProvider
+import com.bytedance.zgx.pocketmind.device.DeviceControlSessionService
 import com.bytedance.zgx.pocketmind.download.ModelDownloadService
 import com.bytedance.zgx.pocketmind.memory.LongTermMemoryControls
 import com.bytedance.zgx.pocketmind.memory.MemoryDeletionEventStore
@@ -71,6 +73,7 @@ class PocketMindAppContainer(context: Context) {
     private val secretStore = EncryptedSecretStore(appContext)
 
     private val modelRepository: ModelRepository
+    private val bundledModelInstaller: BundledModelInstaller
     private val sessionRepository: SessionRepository
     private val generationParametersRepository: GenerationParametersRepository
     private val remoteModelRepository: RemoteModelRepository
@@ -99,6 +102,7 @@ class PocketMindAppContainer(context: Context) {
             downloadRecordDao = database.downloadRecordDao(),
             settingsStore = settingsStore,
         )
+        bundledModelInstaller = AssetBundledModelInstaller(appContext, modelRepository)
         sessionRepository = SessionRepository(database.sessionDao(), settingsStore)
         generationParametersRepository = GenerationParametersRepository(settingsStore)
         remoteModelRepository = RemoteModelRepository(settingsStore, secretStore, appContext)
@@ -182,6 +186,7 @@ class PocketMindAppContainer(context: Context) {
     fun viewModelFactory(skipStartupModelRuntimeWork: Boolean = false): ViewModelProvider.Factory =
         PocketMindViewModelFactory(
             modelRepository = modelRepository,
+            bundledModelInstaller = bundledModelInstaller,
             sessionRepository = sessionRepository,
             generationParametersRepository = generationParametersRepository,
             remoteModelRepository = remoteModelRepository,
@@ -346,6 +351,7 @@ private data class MemoryStores(
 
 private class PocketMindViewModelFactory(
     private val modelRepository: ModelRepository,
+    private val bundledModelInstaller: BundledModelInstaller,
     private val sessionRepository: SessionRepository,
     private val generationParametersRepository: GenerationParametersRepository,
     private val remoteModelRepository: RemoteModelRepository,
@@ -372,6 +378,7 @@ private class PocketMindViewModelFactory(
         }
         return PocketMindViewModel(
             modelRepository = modelRepository,
+            bundledModelInstaller = bundledModelInstaller,
             sessionRepository = sessionRepository,
             generationParametersRepository = generationParametersRepository,
             remoteModelRepository = remoteModelRepository,

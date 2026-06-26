@@ -1,5 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.OutputDirectory
 import java.net.URI
 import java.security.MessageDigest
 
@@ -29,12 +32,79 @@ val zvecCApiHeaderSeed = providers
     .gradleProperty("pocketmind.zvecCApiHeader")
     .orElse(providers.environmentVariable("POCKETMIND_ZVEC_C_API_HEADER"))
     .orNull
+val bundledModelsSourceDir = providers
+    .gradleProperty("pocketmind.bundledModelsDir")
+    .orElse(providers.environmentVariable("POCKETMIND_BUNDLED_MODELS_DIR"))
+val bundledModelsHuggingFaceToken = providers
+    .gradleProperty("pocketmind.huggingFaceToken")
+    .orElse(providers.environmentVariable("POCKETMIND_HF_TOKEN"))
+val bundledModelsAssetRoot = layout.buildDirectory.dir("generated/bundledModels/assets")
+val bundledModelsCacheRoot = layout.buildDirectory.dir("bundled-model-cache")
 
-fun downloadToFile(url: String, outputFile: File) {
+data class BundledModelAssetSpec(
+    val modelId: String,
+    val fileName: String,
+    val byteSize: Long,
+    val sha256Hex: String,
+    val downloadUrl: String,
+    val primary: Boolean = true,
+    val requiresHuggingFaceAuthorization: Boolean = false,
+)
+
+abstract class PrepareBundledModelAssetsTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+}
+
+val bundledModelAssetSpecs = listOf(
+    BundledModelAssetSpec(
+        modelId = "chat-e2b",
+        fileName = "gemma-4-E2B-it.litertlm",
+        byteSize = 2_588_147_712L,
+        sha256Hex = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+        downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/a4a831c060880f3733135ad22f10e0e9f758f45d/gemma-4-E2B-it.litertlm?download=true",
+    ),
+    BundledModelAssetSpec(
+        modelId = "memory-embedding-gemma-300m",
+        fileName = "embeddinggemma-300M_seq256_mixed-precision.tflite",
+        byteSize = 179_131_736L,
+        sha256Hex = "37115ef7bff76cd37dd86abe503ff511b1032bf85fc624a85c49c84899e92bc5",
+        downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/870cbe05ef460385363c6b574c851ae5d8989ce3/embeddinggemma-300M_seq256_mixed-precision.tflite?download=true",
+        requiresHuggingFaceAuthorization = true,
+    ),
+    BundledModelAssetSpec(
+        modelId = "memory-embedding-gemma-300m",
+        fileName = "sentencepiece.model",
+        byteSize = 4_683_319L,
+        sha256Hex = "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+        downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/870cbe05ef460385363c6b574c851ae5d8989ce3/sentencepiece.model?download=true",
+        primary = false,
+        requiresHuggingFaceAuthorization = true,
+    ),
+    BundledModelAssetSpec(
+        modelId = "mobile-action-270m",
+        fileName = "mobile-actions_q8_ekv1024.litertlm",
+        byteSize = 284_426_240L,
+        sha256Hex = "92109695f911d1872fa8ae07c1e3ff0ed70f2c3d1690d410ec6db8587c2ab409",
+        downloadUrl = "https://huggingface.co/litert-community/functiongemma-mobile-actions_q8_ekv1024.litertlm/resolve/82d0f654a6270c518d16c600edce3136221b3347/mobile-actions_q8_ekv1024.litertlm?download=true",
+    ),
+    BundledModelAssetSpec(
+        modelId = "chat-e4b",
+        fileName = "gemma-4-E4B-it.litertlm",
+        byteSize = 3_659_530_240L,
+        sha256Hex = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+        downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/65ce5ba80d8790d66ef11d82d7d079a06f3fef97/gemma-4-E4B-it.litertlm?download=true",
+    ),
+)
+
+fun downloadToFile(url: String, outputFile: File, authorizationHeader: String? = null) {
     var lastFailure: Exception? = null
     repeat(3) { attempt ->
         try {
             val connection = URI(url).toURL().openConnection()
+            if (!authorizationHeader.isNullOrBlank()) {
+                connection.setRequestProperty("Authorization", authorizationHeader)
+            }
             connection.connectTimeout = 30_000
             connection.readTimeout = 180_000
             connection.getInputStream().use { input ->
@@ -73,6 +143,16 @@ fun verifySha256(file: File, expected: String) {
     }
 }
 
+fun isExpectedBundledModelFile(file: File, spec: BundledModelAssetSpec): Boolean =
+    file.isFile &&
+        file.length() == spec.byteSize &&
+        sha256(file).equals(spec.sha256Hex, ignoreCase = true)
+
+fun jsonEscape(value: String): String =
+    value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -92,6 +172,7 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "HUGGING_FACE_OAUTH_CLIENT_ID", "\"$huggingFaceOAuthClientId\"")
+        buildConfigField("Boolean", "BUNDLED_MODELS_ENABLED", "false")
         // RC perf collection entry points are gated off by default. Only the dedicated
         // rcPerfRelease variant flips this to true, so the production release never exposes the
         // harness receiver/activity/service.
@@ -137,6 +218,14 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             buildConfigField("Boolean", "RC_PERF_ENABLED", "true")
         }
+        // Release-like offline experience package. It keeps the production applicationId and
+        // release runtime shape, but packages recommended model assets so first launch can import
+        // them without a Hugging Face download flow.
+        create("bundledModels") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            buildConfigField("Boolean", "BUNDLED_MODELS_ENABLED", "true")
+        }
     }
 
     compileOptions {
@@ -153,9 +242,13 @@ android {
         }
     }
 
+    androidResources {
+        noCompress += listOf("litertlm", "tflite", "model")
+    }
+
     sourceSets {
         getByName("main") {
-            jniLibs.srcDir(zvecJniLibsRoot)
+            jniLibs.directories.add(zvecJniLibsRoot.absolutePath)
         }
     }
 
@@ -236,6 +329,111 @@ val downloadZvecNativeLibs by tasks.registering {
             }
         }
         verifySha256(zvecCApiHeader, zvecCApiHeaderSha256)
+    }
+}
+
+val prepareBundledModelsAssets by tasks.registering(PrepareBundledModelAssetsTask::class) {
+    description = "Prepare bundled model assets for the bundledModels variant."
+    outputDir.set(bundledModelsAssetRoot)
+    inputs.property(
+        "bundledModelSpecs",
+        bundledModelAssetSpecs.joinToString("|") { spec ->
+            "${spec.modelId}:${spec.fileName}:${spec.byteSize}:${spec.sha256Hex}:${spec.primary}"
+        },
+    )
+    inputs.property("bundledModelsSourceDir", bundledModelsSourceDir.orNull ?: "")
+
+    doLast {
+        val assetDir = outputDir.get().asFile.resolve("pocketmind-bundled-models")
+        val cacheDir = bundledModelsCacheRoot.get().asFile
+        val sourceDir = bundledModelsSourceDir.orNull
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::file)
+        val huggingFaceAuthorizationHeader = bundledModelsHuggingFaceToken.orNull
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { token -> "Bearer $token" }
+
+        assetDir.mkdirs()
+        cacheDir.mkdirs()
+
+        bundledModelAssetSpecs.forEach { spec ->
+            val target = assetDir.resolve(spec.fileName)
+            if (isExpectedBundledModelFile(target, spec)) {
+                println("Bundled model asset ready: ${spec.fileName}")
+                return@forEach
+            }
+
+            val sourceCandidate = sourceDir
+                ?.resolve(spec.fileName)
+                ?.takeIf { candidate -> isExpectedBundledModelFile(candidate, spec) }
+            val cacheFile = cacheDir.resolve(spec.fileName)
+            val sourceFile = when {
+                sourceCandidate != null -> sourceCandidate
+                isExpectedBundledModelFile(cacheFile, spec) -> cacheFile
+                else -> {
+                    if (spec.requiresHuggingFaceAuthorization && huggingFaceAuthorizationHeader == null) {
+                        error(
+                            "Bundled model ${spec.fileName} requires Hugging Face authorization. " +
+                                "Set POCKETMIND_HF_TOKEN or -Ppocketmind.huggingFaceToken.",
+                        )
+                    }
+                    val tempDownload = cacheDir.resolve("${spec.fileName}.download")
+                    tempDownload.delete()
+                    println("Downloading bundled model asset: ${spec.fileName}")
+                    downloadToFile(spec.downloadUrl, tempDownload, huggingFaceAuthorizationHeader)
+                    check(tempDownload.length() == spec.byteSize) {
+                        "Unexpected byte size for ${spec.fileName}: ${tempDownload.length()} (expected ${spec.byteSize})"
+                    }
+                    verifySha256(tempDownload, spec.sha256Hex)
+                    tempDownload.copyTo(cacheFile, overwrite = true)
+                    tempDownload.delete()
+                    cacheFile
+                }
+            }
+
+            check(isExpectedBundledModelFile(sourceFile, spec)) {
+                "Bundled model source failed verification: ${spec.fileName}"
+            }
+            val tempTarget = assetDir.resolve("${spec.fileName}.tmp")
+            tempTarget.delete()
+            sourceFile.copyTo(tempTarget, overwrite = true)
+            check(isExpectedBundledModelFile(tempTarget, spec)) {
+                "Bundled model asset failed verification after copy: ${spec.fileName}"
+            }
+            target.delete()
+            check(tempTarget.renameTo(target)) {
+                "Unable to publish bundled model asset: ${spec.fileName}"
+            }
+            println("Bundled model asset ready: ${spec.fileName}")
+        }
+
+        val manifest = buildString {
+            append("{\n")
+            append("  \"schemaVersion\": 1,\n")
+            append("  \"models\": [\n")
+            bundledModelAssetSpecs.forEachIndexed { index, spec ->
+                append("    {")
+                append("\"modelId\": \"${jsonEscape(spec.modelId)}\", ")
+                append("\"fileName\": \"${jsonEscape(spec.fileName)}\", ")
+                append("\"primary\": ${spec.primary}")
+                append("}")
+                if (index != bundledModelAssetSpecs.lastIndex) append(",")
+                append("\n")
+            }
+            append("  ]\n")
+            append("}\n")
+        }
+        assetDir.resolve("manifest.json").writeText(manifest)
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("bundledModels")) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            prepareBundledModelsAssets,
+            PrepareBundledModelAssetsTask::outputDir,
+        )
     }
 }
 

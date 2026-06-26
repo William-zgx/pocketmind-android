@@ -117,6 +117,11 @@ with each RC before treating this checklist as complete.
 - [ ] APK/AAB inspection confirms no `.litertlm` model binaries, API keys,
   bearer tokens, private hostnames, or release keystore files are bundled, and
   the artifact is a readable APK/AAB with the expected manifest structure.
+- [ ] Internal `bundledModels` quick-experience artifacts are recorded
+  separately from Play/public release candidates. They may contain the pinned
+  recommended model assets, but must still contain no API keys, bearer tokens,
+  private hostnames, or release keystore files, and must attach model byte-size,
+  SHA-256, license, attribution, and redistribution approval evidence.
 - [ ] `scripts/scan_android_artifacts.sh` is run against the final APK/AAB and
   `android-artifact-scan.properties` is attached to the release record.
 - [ ] `android-artifact-scan.properties` records a machine-readable `reason`

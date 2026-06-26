@@ -586,8 +586,26 @@ verified, and the runtime probe succeeds.
 Deleting the memory model removes the model files and semantic vector cache but
 does not delete long-term memory text.
 Use Wi-Fi and keep enough free device storage for the model and runtime cache.
-Model files are intentionally not committed to this repository and should not
-be bundled into the APK.
+Model files are intentionally not committed to this repository. The ordinary
+Play/public release path does not bundle model files into the APK.
+
+For internal quick-experience validation, the release-like `bundledModels`
+variant intentionally packages the pinned recommended model assets and imports
+them into the app's model download directory on first launch. It keeps the
+production application id and release runtime shape, but remains a separate
+artifact from the ordinary `release` gate.
+
+```bash
+export POCKETMIND_BUNDLED_MODELS_DIR=/path/to/verified/model/files
+./gradlew :app:assembleBundledModels
+```
+
+If the verified local directory is absent, the task downloads the pinned model
+files at build time. Set `POCKETMIND_HF_TOKEN` only for that build invocation
+when gated Hugging Face assets must be fetched; do not put the token in
+`gradle.properties`, source files, or release notes. The bundled assets include
+E2B, E4B, memory embedding plus tokenizer, and mobile action models, so expect a
+multi-GB artifact and verify installer/device limits before sharing it.
 
 Recommended downloads are pinned to immutable Hugging Face revisions and include
 expected byte size plus SHA-256 metadata. See `docs/model_manifest.md`.
