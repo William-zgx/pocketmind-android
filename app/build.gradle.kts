@@ -1,11 +1,77 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.tasks.testing.Test
+import java.net.URI
+import java.security.MessageDigest
 
 val huggingFaceOAuthClientId: String = providers
     .gradleProperty("pocketmind.huggingFaceOAuthClientId")
     .orElse(providers.environmentVariable("POCKETMIND_HF_OAUTH_CLIENT_ID"))
     .orElse("")
     .get()
+
+val zvecVersion = "0.5.1"
+val zvecGeneratedRoot = layout.buildDirectory.dir("generated/zvec").get().asFile
+val zvecJniLibsRoot = zvecGeneratedRoot.resolve("jniLibs")
+val zvecArchiveLibName = "libzvec.so"
+val zvecRuntimeLibName = "libzvec_c_api.so"
+val zvecArm64Lib = zvecJniLibsRoot.resolve("arm64-v8a/$zvecRuntimeLibName")
+val zvecArm64ArchiveLib = zvecJniLibsRoot.resolve("arm64-v8a/$zvecArchiveLibName")
+val zvecIncludeRoot = zvecGeneratedRoot.resolve("include")
+val zvecCApiHeader = zvecIncludeRoot.resolve("zvec/c_api.h")
+val zvecNativeBaseUrl = "https://github.com/zvec-ai/zvec-dart/releases/download/v$zvecVersion"
+val zvecArm64LibSha256 = "708a58bf32a232890fd3e761bf662c05357aca9e0a4ba2783e4a9f86b78bbe3f"
+val zvecCApiHeaderSha256 = "ea6b3f3373f29799a885442bf51ec1604426055e5b7b56ea2e12d8ccd70b2af0"
+val zvecAndroidArm64ZipSeed = providers
+    .gradleProperty("pocketmind.zvecAndroidArm64Zip")
+    .orElse(providers.environmentVariable("POCKETMIND_ZVEC_ANDROID_ARM64_ZIP"))
+    .orNull
+val zvecCApiHeaderSeed = providers
+    .gradleProperty("pocketmind.zvecCApiHeader")
+    .orElse(providers.environmentVariable("POCKETMIND_ZVEC_C_API_HEADER"))
+    .orNull
+
+fun downloadToFile(url: String, outputFile: File) {
+    var lastFailure: Exception? = null
+    repeat(3) { attempt ->
+        try {
+            val connection = URI(url).toURL().openConnection()
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 180_000
+            connection.getInputStream().use { input ->
+                outputFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            return
+        } catch (error: Exception) {
+            lastFailure = error
+            if (attempt < 2) {
+                Thread.sleep(2_000L * (attempt + 1))
+            }
+        }
+    }
+    throw GradleException("Failed to download $url", lastFailure)
+}
+
+fun sha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { byte ->
+        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+}
+
+fun verifySha256(file: File, expected: String) {
+    val actual = sha256(file)
+    check(actual == expected) {
+        "Unexpected SHA-256 for ${file.name}: $actual (expected $expected)"
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -16,6 +82,7 @@ plugins {
 android {
     namespace = "com.bytedance.zgx.pocketmind"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.bytedance.zgx.pocketmind"
@@ -32,6 +99,15 @@ android {
 
         ndk {
             abiFilters += "arm64-v8a"
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DZVEC_PREBUILT_DIR=${zvecJniLibsRoot.absolutePath}",
+                    "-DZVEC_INCLUDE_DIR=${zvecIncludeRoot.absolutePath}",
+                )
+            }
         }
     }
 
@@ -69,8 +145,24 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(zvecJniLibsRoot)
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
         }
     }
 }
@@ -88,6 +180,78 @@ tasks.withType<Test>().configureEach {
     )?.let { outputPath ->
         systemProperty("aiBehaviorActualTraceFile", outputPath)
     }
+}
+
+val downloadZvecNativeLibs by tasks.registering {
+    description = "Download zvec v$zvecVersion Android arm64 native library and C API header."
+    inputs.property("zvecVersion", zvecVersion)
+    inputs.property("zvecArm64LibSha256", zvecArm64LibSha256)
+    inputs.property("zvecCApiHeaderSha256", zvecCApiHeaderSha256)
+    inputs.property("zvecAndroidArm64ZipSeed", zvecAndroidArm64ZipSeed ?: "")
+    inputs.property("zvecCApiHeaderSeed", zvecCApiHeaderSeed ?: "")
+    outputs.file(zvecArm64Lib)
+    outputs.file(zvecCApiHeader)
+
+    doLast {
+        if (!zvecArm64Lib.isFile) {
+            val libDir = zvecArm64Lib.parentFile
+            val zipFile = temporaryDir.resolve("libzvec-android-arm64-v8a.zip")
+            libDir.mkdirs()
+            if (zvecArm64ArchiveLib.isFile) {
+                zvecArm64ArchiveLib.copyTo(zvecArm64Lib, overwrite = true)
+            } else {
+                val seedZip = zvecAndroidArm64ZipSeed?.let(::file)?.takeIf { it.isFile }
+                if (seedZip == null) {
+                    downloadToFile("$zvecNativeBaseUrl/libzvec-android-arm64-v8a.zip", zipFile)
+                } else {
+                    seedZip.copyTo(zipFile, overwrite = true)
+                }
+                copy {
+                    from(zipTree(zipFile))
+                    into(libDir)
+                    include(zvecArchiveLibName)
+                    rename { zvecRuntimeLibName }
+                }
+            }
+            check(zvecArm64Lib.isFile) {
+                "Downloaded zvec archive did not contain $zvecArchiveLibName"
+            }
+        }
+        verifySha256(zvecArm64Lib, zvecArm64LibSha256)
+        zvecArm64ArchiveLib.delete()
+
+        if (!zvecCApiHeader.isFile) {
+            zvecCApiHeader.parentFile.mkdirs()
+            val seedHeader = zvecCApiHeaderSeed?.let(::file)?.takeIf { it.isFile }
+            if (seedHeader == null) {
+                downloadToFile(
+                    "https://raw.githubusercontent.com/alibaba/zvec/v$zvecVersion/src/include/zvec/c_api.h",
+                    zvecCApiHeader,
+                )
+            } else {
+                seedHeader.copyTo(zvecCApiHeader, overwrite = true)
+            }
+            check(zvecCApiHeader.isFile) {
+                "Failed to download zvec c_api.h"
+            }
+        }
+        verifySha256(zvecCApiHeader, zvecCApiHeaderSha256)
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(downloadZvecNativeLibs)
+}
+
+tasks.matching { task ->
+    task.name != "downloadZvecNativeLibs" &&
+        (
+            task.name.startsWith("configureCMake") ||
+                task.name.startsWith("buildCMake") ||
+                task.name.endsWith("NativeLibs")
+            )
+}.configureEach {
+    dependsOn(downloadZvecNativeLibs)
 }
 
 dependencies {

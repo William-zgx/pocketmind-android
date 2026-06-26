@@ -16,10 +16,12 @@ import com.bytedance.zgx.pocketmind.audit.RemoteSendDecision
 import com.bytedance.zgx.pocketmind.audit.InMemoryRemoteSendAuditStore
 import com.bytedance.zgx.pocketmind.audit.ToolAuditLog
 import com.bytedance.zgx.pocketmind.background.BackgroundTaskScheduler
+import com.bytedance.zgx.pocketmind.background.BackgroundTaskUseCases
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckPolicySummary
 import com.bytedance.zgx.pocketmind.background.PeriodicCheckScheduleRequest
 import com.bytedance.zgx.pocketmind.background.ScheduledTask
 import com.bytedance.zgx.pocketmind.background.ScheduledTaskStatus
+import com.bytedance.zgx.pocketmind.background.isActivePeriodicCheck
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupRepository
 import com.bytedance.zgx.pocketmind.data.FirstRunSetupStore
 import com.bytedance.zgx.pocketmind.data.ModelDownloadSource
@@ -214,6 +216,7 @@ class PocketMindViewModel(
         dispatcher = ioDispatcher,
         publicEvidenceBatchRequestValidator = toolRegistry::validatePublicEvidenceBatchRequest,
     )
+    private val backgroundTaskUseCases = BackgroundTaskUseCases(backgroundTaskScheduler)
 
     private val _uiState = MutableStateFlow(createInitialState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -501,11 +504,12 @@ class PocketMindViewModel(
 
     fun refreshBackgroundTasks() {
         syncTaskStateMemories()
+        val snapshot = backgroundTaskUseCases.snapshot()
         _uiState.update {
             it.copy(
-                backgroundTasks = loadBackgroundTasks(),
-                backgroundTaskHistory = loadBackgroundTaskHistory(),
-                periodicCheckPolicy = loadPeriodicCheckPolicy(),
+                backgroundTasks = snapshot.activeTasks,
+                backgroundTaskHistory = snapshot.history,
+                periodicCheckPolicy = snapshot.periodicCheckPolicy,
                 longTermMemories = loadLongTermMemories(),
             )
         }
@@ -517,101 +521,57 @@ class PocketMindViewModel(
 
     fun cancelBackgroundTask(taskId: String) {
         if (_uiState.value.isBusy) return
-        backgroundTaskScheduler.cancelScheduledTask(taskId)
-            .fold(
-                onSuccess = {
-                    syncTaskStateMemories()
-                    _uiState.update { state ->
-                        state.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = loadPeriodicCheckPolicy(),
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "后台任务已取消",
-                        )
-                    }
-                },
-                onFailure = { throwable ->
-                    syncTaskStateMemories()
-                    _uiState.update { state ->
-                        state.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = loadPeriodicCheckPolicy(),
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "后台任务取消失败：${throwable.cleanMessage()}",
-                        )
-                    }
-                },
+        val result = backgroundTaskUseCases.cancelScheduledTask(taskId)
+        syncTaskStateMemories()
+        _uiState.update { state ->
+            state.copy(
+                backgroundTasks = result.snapshot.activeTasks,
+                backgroundTaskHistory = result.snapshot.history,
+                periodicCheckPolicy = result.snapshot.periodicCheckPolicy,
+                longTermMemories = loadLongTermMemories(),
+                statusText = result.statusText,
             )
+        }
     }
 
     fun setPeriodicCheckPolicy(request: PeriodicCheckScheduleRequest) {
         if (_uiState.value.isBusy) return
         val previousPolicy = loadPeriodicCheckPolicy()
-        backgroundTaskScheduler.setPeriodicCheckPolicy(request)
-            .fold(
-                onSuccess = { policy ->
-                    if (policy.request.enabled && previousPolicy.isNotActivePeriodicCheck()) {
-                        longTermMemoryControls.unsuppressAutoManagedTaskState(
-                            taskStateMemoryRecordId(PeriodicCheckScheduleRequest.TASK_ID),
-                        )
-                    }
-                    syncTaskStateMemories()
-                    _uiState.update { state ->
-                        state.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = policy,
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "周期检查策略已保存",
-                        )
-                    }
-                },
-                onFailure = { throwable ->
-                    syncTaskStateMemories()
-                    _uiState.update {
-                        it.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = loadPeriodicCheckPolicy(),
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "周期检查策略保存失败：${throwable.cleanMessage()}",
-                        )
-                    }
-                },
+        val result = backgroundTaskUseCases.setPeriodicCheckPolicy(request)
+        if (
+            result.succeeded &&
+            result.snapshot.periodicCheckPolicy.request.enabled &&
+            !previousPolicy.isActivePeriodicCheck()
+        ) {
+            longTermMemoryControls.unsuppressAutoManagedTaskState(
+                taskStateMemoryRecordId(PeriodicCheckScheduleRequest.TASK_ID),
             )
+        }
+        syncTaskStateMemories()
+        _uiState.update { state ->
+            state.copy(
+                backgroundTasks = result.snapshot.activeTasks,
+                backgroundTaskHistory = result.snapshot.history,
+                periodicCheckPolicy = result.snapshot.periodicCheckPolicy,
+                longTermMemories = loadLongTermMemories(),
+                statusText = result.statusText,
+            )
+        }
     }
 
     fun disablePeriodicCheckPolicy() {
         if (_uiState.value.isBusy) return
-        backgroundTaskScheduler.disablePeriodicCheckPolicy()
-            .fold(
-                onSuccess = { policy ->
-                    syncTaskStateMemories()
-                    _uiState.update { state ->
-                        state.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = policy,
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "周期检查已关闭",
-                        )
-                    }
-                },
-                onFailure = { throwable ->
-                    syncTaskStateMemories()
-                    _uiState.update {
-                        it.copy(
-                            backgroundTasks = loadBackgroundTasks(),
-                            backgroundTaskHistory = loadBackgroundTaskHistory(),
-                            periodicCheckPolicy = loadPeriodicCheckPolicy(),
-                            longTermMemories = loadLongTermMemories(),
-                            statusText = "周期检查关闭失败：${throwable.cleanMessage()}",
-                        )
-                    }
-                },
+        val result = backgroundTaskUseCases.disablePeriodicCheckPolicy()
+        syncTaskStateMemories()
+        _uiState.update { state ->
+            state.copy(
+                backgroundTasks = result.snapshot.activeTasks,
+                backgroundTaskHistory = result.snapshot.history,
+                periodicCheckPolicy = result.snapshot.periodicCheckPolicy,
+                longTermMemories = loadLongTermMemories(),
+                statusText = result.statusText,
             )
+        }
     }
 
     fun refreshAuditEvents() {
@@ -5180,38 +5140,13 @@ class PocketMindViewModel(
     }
 
     private fun loadBackgroundTasks(): List<BackgroundTaskSummary> =
-        backgroundTaskScheduler.scheduledTasks()
-            .filter { task -> task.status == ScheduledTaskStatus.Scheduled }
-            .map { task -> task.toSummary() }
+        backgroundTaskUseCases.snapshot().activeTasks
 
     private fun loadBackgroundTaskHistory(): List<BackgroundTaskSummary> =
-        backgroundTaskScheduler.recentTasks()
-            .filter { task ->
-                task.status == ScheduledTaskStatus.Delivered ||
-                    task.status == ScheduledTaskStatus.Cancelled ||
-                    task.status == ScheduledTaskStatus.Deleted ||
-                    task.status == ScheduledTaskStatus.Failed
-            }
-            .map { task -> task.toSummary() }
+        backgroundTaskUseCases.snapshot().history
 
     private fun loadPeriodicCheckPolicy(): PeriodicCheckPolicySummary =
-        runCatching {
-            backgroundTaskScheduler.periodicCheckPolicy()
-        }.getOrDefault(PeriodicCheckPolicySummary.disabled())
-
-    private fun PeriodicCheckPolicySummary.isNotActivePeriodicCheck(): Boolean =
-        taskStatus != ScheduledTaskStatus.Scheduled &&
-            taskStatus != ScheduledTaskStatus.Running
-
-    private fun ScheduledTask.toSummary(): BackgroundTaskSummary =
-        BackgroundTaskSummary(
-            id = id,
-            type = type,
-            title = title,
-            body = body,
-            triggerAtMillis = triggerAtMillis,
-            status = status,
-        )
+        backgroundTaskUseCases.snapshot().periodicCheckPolicy
 
     private fun ScheduledTask.toTaskStateMemoryText(): String =
         listOf(
