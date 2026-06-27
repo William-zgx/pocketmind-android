@@ -3,7 +3,7 @@
   "policy": "Public release builds require VERIFY_STORE_POLICY=1 and an approved store policy record.",
   "status": "pending_policy_review",
   "privacyNoticePath": "docs/privacy_notice.md",
-  "privacyNoticeSha256": "18e054bcfae6ad780609a358e6fc8b53b97e0d5e6e866ef3bd91c886edcdcb7a",
+  "privacyNoticeSha256": "fd532ec9b312d6f52aabda730c650f01b58783a7a813d20b38935df9c661980b",
   "appListing": {
     "appName": "Solin",
     "subtitle": "Quiet intelligence, close at hand.",
@@ -134,6 +134,6 @@
     "reviewer": "",
     "reviewDate": "",
     "evidencePath": "docs/store_policy_review_evidence/pending.properties",
-    "evidenceSha256": "b013fc4dfe35f6ae3d3069515e6e8c3dec65b1e2c29929f9ed6471a3442a69e5"
+    "evidenceSha256": "65f137d8a09ba6719e4587f77d9561643b8f7f379fb23fb5353eef304b911c52"
   }
 }

@@ -88,9 +88,9 @@ flowchart TD
 | Agent | 产物 | 首要文件 |
 | --- | --- | --- |
 | Coordinator Agent | 拆分接口、合并节奏、发布门槛 | `docs/screen_ocr_agent_optimization_plan.md` |
-| Contract Agent | `ScreenObservation` / `ObservationElement` 数据模型和 JSON trace | `app/src/main/java/com/bytedance/zgx/pocketmind/device/` |
-| OCR Agent | ML Kit OCR block 化、bounds 保留、LocalOnly 输出 | `app/src/main/java/com/bytedance/zgx/pocketmind/multimodal/` |
-| Accessibility Agent | 节点采集、稳定 ID、执行前后 snapshot diff | `PocketMindAccessibilityService.kt` |
+| Contract Agent | `ScreenObservation` / `ObservationElement` 数据模型和 JSON trace | `app/src/main/java/com/bytedance/zgx/solin/device/` |
+| OCR Agent | ML Kit OCR block 化、bounds 保留、LocalOnly 输出 | `app/src/main/java/com/bytedance/zgx/solin/multimodal/` |
+| Accessibility Agent | 节点采集、稳定 ID、执行前后 snapshot diff | `SolinAccessibilityService.kt` |
 | Grounding Agent | 混合候选排序、坐标 fallback、可解释 evidence | `UiTargetResolver.kt` |
 | App Profile Agent | 外置 App profile DSL、真实 App 页面样本 | `docs/`、`app/src/test/resources/` |
 | Planner Agent | 本地模型 action grammar、step budget、replan prompt | `AgentLoopRuntime.kt`、`skill/` |
@@ -218,7 +218,7 @@ gantt
 
 1. Contract Agent：新增 `ScreenObservation` 数据模型、schema 测试、trace 摘要。
 2. OCR Agent：把 `ImageTextExtractor` 输出从纯文本扩展为 block list，并保持兼容文本摘要。
-3. Accessibility Agent：为 `PocketMindAccessibilityService` 输出统一 observation，补稳定元素 ID。
+3. Accessibility Agent：为 `SolinAccessibilityService` 输出统一 observation，补稳定元素 ID。
 4. Grounding Agent：让 `UiTargetResolver` 同时消费 Accessibility 和 OCR candidates。
 5. Eval Agent：新增 10 个 UI dump + OCR block 回放样本，先覆盖搜索入口负例。
 6. Safety Agent：补远程模式、审计、隐私 notice 和 store policy 回归断言。

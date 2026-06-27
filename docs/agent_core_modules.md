@@ -28,8 +28,8 @@ flowchart LR
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/tool/`
-- `app/src/main/java/com/bytedance/zgx/pocketmind/action/ActionExecutor.kt`
+- `app/src/main/java/com/bytedance/zgx/solin/tool/`
+- `app/src/main/java/com/bytedance/zgx/solin/action/ActionExecutor.kt`
 
 Responsibilities:
 
@@ -84,7 +84,7 @@ Tests:
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/orchestration/`
+- `app/src/main/java/com/bytedance/zgx/solin/orchestration/`
 
 Responsibilities:
 
@@ -135,13 +135,13 @@ Tests:
 - `AgentLoopRuntimeTest`
 - `AssistantOrchestratorTest`
 - `ToolExecutionBoundaryTest`
-- `PocketMindViewModelTest`
+- `SolinViewModelTest`
 
 ## Skill Framework
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/skill/`
+- `app/src/main/java/com/bytedance/zgx/solin/skill/`
 
 Responsibilities:
 
@@ -190,8 +190,8 @@ Tests:
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/device/`
-- `app/src/main/java/com/bytedance/zgx/pocketmind/resource/`
+- `app/src/main/java/com/bytedance/zgx/solin/device/`
+- `app/src/main/java/com/bytedance/zgx/solin/resource/`
 - `MemoryRepository`, `SessionRepository`, and `ChatUiState` context snapshots
 
 Responsibilities:
@@ -244,9 +244,9 @@ Tests:
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/action/ActionExecutor.kt`
+- `app/src/main/java/com/bytedance/zgx/solin/action/ActionExecutor.kt`
 - `PendingAgentConfirmation`
-- `PocketMindViewModel.confirmAgentConfirmation`
+- `SolinViewModel.confirmAgentConfirmation`
 
 Responsibilities:
 
@@ -288,15 +288,15 @@ Tests:
 
 - `ActionExecutorTest`
 - `AgentRuntimePermissionPolicyTest`
-- `PocketMindViewModelTest`
+- `SolinViewModelTest`
 - `MainActivitySpecialAccessUiTest`
 
 ## Safety And Audit
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/safety/`
-- `app/src/main/java/com/bytedance/zgx/pocketmind/audit/`
+- `app/src/main/java/com/bytedance/zgx/solin/safety/`
+- `app/src/main/java/com/bytedance/zgx/solin/audit/`
 - `AgentTraceStore`
 - `tool_audit_events` Room table
 
@@ -342,7 +342,7 @@ Tests:
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/memory/`
+- `app/src/main/java/com/bytedance/zgx/solin/memory/`
 - `memory_records` and `memory_embeddings` Room tables
 
 Responsibilities:
@@ -382,14 +382,14 @@ Tests:
 
 - `MemoryRepositoryTest`
 - `ModelRepositoryPathTest`
-- `PocketMindViewModelTest`
+- `SolinViewModelTest`
 - `MainActivityLongTermMemoryUiTest`
 
 ## Background Tasks
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/background/`
+- `app/src/main/java/com/bytedance/zgx/solin/background/`
 - `scheduled_tasks` Room table
 - `ReminderAlarmReceiver`
 
@@ -440,7 +440,7 @@ Tests:
 
 Code:
 
-- `app/src/main/java/com/bytedance/zgx/pocketmind/multimodal/`
+- `app/src/main/java/com/bytedance/zgx/solin/multimodal/`
 - `MainActivity` share intent handling
 - `MainActivity` in-app attachment picker handling
 
@@ -480,7 +480,7 @@ Tests:
 
 - `SharedInputTest`
 - `CurrentScreenshotOcrContractTest`
-- `PocketMindViewModelTest`
+- `SolinViewModelTest`
 - `MainActivitySharedIntentTest`
 
 ## Regression Strategy

@@ -21,14 +21,14 @@ DEFERRED_REASON="${DEFERRED_REASON:-}"
 STATUS_OVERRIDE="${STATUS_OVERRIDE:-}"
 STARTED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-PACKAGE_NAME="com.bytedance.zgx.pocketmind"
+PACKAGE_NAME="com.bytedance.zgx.solin"
 MAIN_ACTIVITY="${PACKAGE_NAME}/.debug.DeviceControlEvalActivity"
 RECEIVER_NAME="${PACKAGE_NAME}/.debug.DeviceControlEvalReceiver"
 ACTION_NAME="${PACKAGE_NAME}.debug.DEVICE_CONTROL_EVAL"
 RESULT_FILE_PREFIX="files/device_control_eval_result_"
 RESULT_FILE_SUFFIX=".properties"
 DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
-POCKETMIND_ACCESSIBILITY_SERVICE="${PACKAGE_NAME}/${PACKAGE_NAME}.device.PocketMindAccessibilityService"
+SOLIN_ACCESSIBILITY_SERVICE="${PACKAGE_NAME}/${PACKAGE_NAME}.device.SolinAccessibilityService"
 
 SELECTED_SERIAL=""
 API_LEVEL=""
@@ -85,7 +85,7 @@ capture_failure_diagnostics() {
   safe_label="$(sanitize_artifact_name "$label")"
   diag_dir="${DIAGNOSTICS_DIR}/${safe_label}"
   LAST_DIAGNOSTICS_DIR="$diag_dir"
-  remote_dump="/sdcard/pocketmind-eval-${safe_label}.xml"
+  remote_dump="/sdcard/solin-eval-${safe_label}.xml"
   mkdir -p "$diag_dir"
   {
     echo "label=$label"
@@ -339,7 +339,7 @@ if [[ "$SKIP_INSTALL" != "1" ]]; then
   "${ADB[@]}" install -r "$DEBUG_APK"
 fi
 
-pocketmind_accessibility_enabled() {
+solin_accessibility_enabled() {
   local dump bound_section enabled_line
   dump="$("${ADB[@]}" shell dumpsys accessibility 2>/dev/null | tr -d '\r')"
   bound_section="$(awk '
@@ -348,11 +348,11 @@ pocketmind_accessibility_enabled() {
     /Enabled services:/ {printing = 0}
   ' <<<"$dump")"
   enabled_line="$(grep -m 1 'Enabled services:' <<<"$dump" || true)"
-  grep -Fq "$POCKETMIND_ACCESSIBILITY_SERVICE" <<<"${bound_section}${enabled_line}"
+  grep -Fq "$SOLIN_ACCESSIBILITY_SERVICE" <<<"${bound_section}${enabled_line}"
 }
 
-if ! pocketmind_accessibility_enabled; then
-  fail_with_reason accessibility pocketmind-accessibility-not-enabled \
+if ! solin_accessibility_enabled; then
+  fail_with_reason accessibility solin-accessibility-not-enabled \
     "栖知 Accessibility is not enabled. Enable it in system Accessibility settings, then rerun with SKIP_INSTALL=1."
 fi
 

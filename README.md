@@ -121,8 +121,8 @@ Requirements:
 Clone the project:
 
 ```bash
-git clone https://github.com/William-zgx/pocketmind-android.git
-cd pocketmind-android
+git clone https://github.com/William-zgx/solin-android.git
+cd solin-android
 ```
 
 If your Android SDK is not in the default location, set it before building:
@@ -213,7 +213,7 @@ VERIFY_MODEL_URLS=1 scripts/verify_local.sh
 Internal bundled-model package validation:
 
 ```bash
-export POCKETMIND_BUNDLED_MODELS_DIR=/path/to/verified/model/files
+export SOLIN_BUNDLED_MODELS_DIR=/path/to/verified/model/files
 ./gradlew checkBundledModelsPackageOutputs
 ALLOW_DEBUG_KEYSTORE=1 scripts/package_bundled_models.sh
 ```
@@ -263,7 +263,7 @@ Common destinations:
 ## Project Layout
 
 ```text
-app/src/main/java/com/bytedance/zgx/pocketmind/
+app/src/main/java/com/bytedance/zgx/solin/
   action/          Mobile action planning and Android execution boundary
   audit/           Redacted tool audit storage
   background/      Reminders and scheduled task state

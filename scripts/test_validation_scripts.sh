@@ -146,10 +146,10 @@ case "${1:-}" in
           echo "WaitTime: ${FAKE_RC_PERF_WAIT_TIME_MS}"
         fi
         ;;
-      am\ start-foreground-service\ -a\ com.bytedance.zgx.pocketmind.rcperf.RUN\ -n\ com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService*)
-        echo "Starting service: Intent { act=com.bytedance.zgx.pocketmind.rcperf.RUN cmp=com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService }"
+      am\ start-foreground-service\ -a\ com.bytedance.zgx.solin.rcperf.RUN\ -n\ com.bytedance.zgx.solin/.rcperf.RcPerfHarnessService*)
+        echo "Starting service: Intent { act=com.bytedance.zgx.solin.rcperf.RUN cmp=com.bytedance.zgx.solin/.rcperf.RcPerfHarnessService }"
         ;;
-      am\ broadcast\ -a\ com.bytedance.zgx.pocketmind.debug.DEVICE_CONTROL_EVAL*)
+      am\ broadcast\ -a\ com.bytedance.zgx.solin.debug.DEVICE_CONTROL_EVAL*)
         echo "Broadcast completed: result=-1"
         ;;
       am\ force-stop\ *)
@@ -171,8 +171,8 @@ case "${1:-}" in
           exit 1
         fi
         ;;
-      dumpsys\ meminfo\ com.bytedance.zgx.pocketmind)
-        printf '** MEMINFO in pid 12345 [com.bytedance.zgx.pocketmind] **\n'
+      dumpsys\ meminfo\ com.bytedance.zgx.solin)
+        printf '** MEMINFO in pid 12345 [com.bytedance.zgx.solin] **\n'
         printf '                   Pss  Private  Private\n'
         printf '                 Total    Dirty    Clean\n'
         printf '   TOTAL %s   400000        0\n' "${FAKE_RC_PERF_MEMINFO_KB:-524288}"
@@ -180,8 +180,8 @@ case "${1:-}" in
       dumpsys\ accessibility)
         cat <<'FAKE_ACCESSIBILITY_DUMPSYS'
 Bound services:
-  ServiceRecord{com.bytedance.zgx.pocketmind/com.bytedance.zgx.pocketmind.device.PocketMindAccessibilityService}
-Enabled services: com.bytedance.zgx.pocketmind/com.bytedance.zgx.pocketmind.device.PocketMindAccessibilityService
+  ServiceRecord{com.bytedance.zgx.solin/com.bytedance.zgx.solin.device.SolinAccessibilityService}
+Enabled services: com.bytedance.zgx.solin/com.bytedance.zgx.solin.device.SolinAccessibilityService
 FAKE_ACCESSIBILITY_DUMPSYS
         ;;
       dumpsys\ window|dumpsys\ window\ windows)
@@ -191,7 +191,7 @@ mFocusedApp=ActivityRecord{com.taobao.taobao/.MainActivity}
 mFocusedWindow=Window{com.taobao.taobao/com.taobao.taobao.MainActivity}
 FAKE_WINDOW_DUMPSYS
         ;;
-      dumpsys\ package\ com.bytedance.zgx.pocketmind)
+      dumpsys\ package\ com.bytedance.zgx.solin)
         install_count="$(grep -c ' install ' "${FAKE_ADB_LOG:?}" 2>/dev/null || true)"
         if [[ "$install_count" -ge 2 ]]; then
           last_update_time="${FAKE_CURRENT_LAST_UPDATE_TIME:-2026-06-06 20:00:05}"
@@ -200,54 +200,54 @@ FAKE_WINDOW_DUMPSYS
         fi
         cat <<FAKE_PACKAGE_DUMPSYS
 Packages:
-  Package [com.bytedance.zgx.pocketmind] (abc123):
+  Package [com.bytedance.zgx.solin] (abc123):
     firstInstallTime=${FAKE_FIRST_INSTALL_TIME:-2026-06-06 20:00:00}
     lastUpdateTime=$last_update_time
     versionCode=${FAKE_PACKAGE_VERSION_CODE:-1} minSdk=28 targetSdk=36
     versionName=${FAKE_PACKAGE_VERSION_NAME:-0.1.0}
 FAKE_PACKAGE_DUMPSYS
         ;;
-      run-as\ com.bytedance.zgx.pocketmind\ am\ broadcast*\ -n\ com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver*)
+      run-as\ com.bytedance.zgx.solin\ am\ broadcast*\ -n\ com.bytedance.zgx.solin/.debug.DebugRemoteConfigReceiver*)
         if [[ "$*" == *"--ez clearRemoteConfig true"* ]]; then
           echo "Broadcast completed: result=-1, data=\"remote config cleared\""
         else
           echo "Broadcast completed: result=-1, data=\"remote config saved\""
         fi
         ;;
-      pm\ clear\ com.bytedance.zgx.pocketmind|pm\ clear\ com.bytedance.zgx.pocketmind.test)
+      pm\ clear\ com.bytedance.zgx.solin|pm\ clear\ com.bytedance.zgx.solin.test)
         echo "Success"
         ;;
-      run-as\ com.bytedance.zgx.pocketmind\ rm\ -f\ files/device_control_eval_result_*.properties)
+      run-as\ com.bytedance.zgx.solin\ rm\ -f\ files/device_control_eval_result_*.properties)
         echo "OK"
         ;;
-      rm\ -f\ /sdcard/pocketmind-eval-*.xml)
+      rm\ -f\ /sdcard/solin-eval-*.xml)
         echo "OK"
         ;;
       input\ tap*|input\ text*|input\ keyevent*|input\ swipe*)
         echo "OK"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-eval-*.xml)
+      uiautomator\ dump\ /sdcard/solin-eval-*.xml)
         echo "UI hierchary dumped to: ${*:3}"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-live-remote.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote.xml"
+      uiautomator\ dump\ /sdcard/solin-live-remote.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-live-remote.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-live-remote-before-input.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-before-input.xml"
+      uiautomator\ dump\ /sdcard/solin-live-remote-before-input.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-live-remote-before-input.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-live-remote-before-send.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-before-send.xml"
+      uiautomator\ dump\ /sdcard/solin-live-remote-before-send.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-live-remote-before-send.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-live-remote-after-send.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-live-remote-after-send.xml"
+      uiautomator\ dump\ /sdcard/solin-live-remote-after-send.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-live-remote-after-send.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-fresh-start.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-fresh-start.xml"
+      uiautomator\ dump\ /sdcard/solin-fresh-start.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-fresh-start.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-model-manager.xml)
-        echo "UI hierchary dumped to: /sdcard/pocketmind-model-manager.xml"
+      uiautomator\ dump\ /sdcard/solin-model-manager.xml)
+        echo "UI hierchary dumped to: /sdcard/solin-model-manager.xml"
         ;;
-      uiautomator\ dump\ /sdcard/pocketmind-release-*.xml)
+      uiautomator\ dump\ /sdcard/solin-release-*.xml)
         echo "UI hierchary dumped to: ${*:3}"
         ;;
       *)
@@ -281,7 +281,7 @@ FAKE_PACKAGE_DUMPSYS
       "screencap -p")
         printf 'fake-png\n'
         ;;
-      run-as\ com.bytedance.zgx.pocketmind\ cat\ files/device_control_eval_result_*.properties)
+      run-as\ com.bytedance.zgx.solin\ cat\ files/device_control_eval_result_*.properties)
         result_path="${*:4}"
         request_id="${result_path#files/device_control_eval_result_}"
         request_id="${request_id%.properties}"
@@ -411,7 +411,7 @@ FAKE_PACKAGE_DUMPSYS
           fi
         }
         ;;
-      cat\ /sdcard/pocketmind-eval-*.xml)
+      cat\ /sdcard/solin-eval-*.xml)
         cat <<'FAKE_REAL_APP_UI'
 <hierarchy>
   <node text="搜索商品" enabled="true" clickable="true" bounds="[16,72][1064,152]" />
@@ -419,7 +419,7 @@ FAKE_PACKAGE_DUMPSYS
 </hierarchy>
 FAKE_REAL_APP_UI
         ;;
-      cat\ /sdcard/Android/data/com.bytedance.zgx.pocketmind/files/rc_perf_result_*.properties)
+      cat\ /sdcard/Android/data/com.bytedance.zgx.solin/files/rc_perf_result_*.properties)
         # The in-app RC perf harness only writes its result once it has finished a real local
         # model run. Until FAKE_RC_PERF_RESULT_READY is set we report nothing so the collector
         # exercises its polling loop and timeout path.
@@ -459,10 +459,10 @@ FAKE_REAL_APP_UI
     fi
     mkdir -p "$(dirname "$destination")"
     case "$source" in
-      /sdcard/pocketmind-live-remote.xml)
-        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${POCKETMIND_LIVE_REMOTE_EXPECTED_TEXT:-POCKETMIND_LIVE_OK}}" > "$destination"
+      /sdcard/solin-live-remote.xml)
+        printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_LIVE_REMOTE_UI_TEXT:-${SOLIN_LIVE_REMOTE_EXPECTED_TEXT:-SOLIN_LIVE_OK}}" > "$destination"
         ;;
-      /sdcard/pocketmind-live-remote-before-input.xml)
+      /sdcard/solin-live-remote-before-input.xml)
         cat > "$destination" <<'FAKE_LIVE_REMOTE_INPUT_UI'
 <hierarchy>
   <node class="android.widget.EditText" enabled="true" clickable="true" bounds="[169,2103][621,2313]" />
@@ -470,7 +470,7 @@ FAKE_REAL_APP_UI
 </hierarchy>
 FAKE_LIVE_REMOTE_INPUT_UI
         ;;
-      /sdcard/pocketmind-live-remote-before-send.xml)
+      /sdcard/solin-live-remote-before-send.xml)
         cat > "$destination" <<'FAKE_LIVE_REMOTE_SEND_UI'
 <hierarchy>
   <node class="android.widget.EditText" enabled="true" clickable="true" bounds="[169,2103][621,2313]" />
@@ -478,7 +478,7 @@ FAKE_LIVE_REMOTE_INPUT_UI
 </hierarchy>
 FAKE_LIVE_REMOTE_SEND_UI
         ;;
-      /sdcard/pocketmind-live-remote-after-send.xml)
+      /sdcard/solin-live-remote-after-send.xml)
         cat > "$destination" <<'FAKE_LIVE_REMOTE_CONFIRM_UI'
 <hierarchy>
   <node text="即将发送到远程模型" enabled="true" clickable="false" bounds="[80,900][980,980]" />
@@ -490,7 +490,7 @@ FAKE_LIVE_REMOTE_SEND_UI
 </hierarchy>
 FAKE_LIVE_REMOTE_CONFIRM_UI
         ;;
-      /sdcard/pocketmind-fresh-start.xml)
+      /sdcard/solin-fresh-start.xml)
         if [[ "${FAKE_FRESH_START_SHOW_FIRST_RUN_ONCE:-0}" == "1" || "${FAKE_FRESH_START_SHOW_STUCK_FIRST_RUN:-0}" == "1" ]]; then
           fresh_start_tap_count="$(grep -c 'input tap' "${FAKE_ADB_LOG:?}" 2>/dev/null || true)"
           if [[ "${FAKE_FRESH_START_SHOW_STUCK_FIRST_RUN:-0}" == "1" || "$fresh_start_tap_count" == "0" ]]; then
@@ -527,10 +527,10 @@ FAKE_FRESH_START_AFTER_SKIP_UI
 FAKE_FRESH_START_UI
         fi
         ;;
-      /sdcard/pocketmind-model-manager.xml)
+      /sdcard/solin-model-manager.xml)
         printf '<hierarchy><node text="%s" /></hierarchy>\n' "${FAKE_MODEL_MANAGER_UI_TEXT:-可下载或导入本地模型离线使用；远程多模态可选。切换远程会提醒，设备动作仍会先确认。}" > "$destination"
         ;;
-      /sdcard/pocketmind-release-*.xml)
+      /sdcard/solin-release-*.xml)
         cat > "$destination" <<'FAKE_RELEASE_SCREENSHOT_UI'
 <hierarchy>
   <node text="栖知" bounds="[80,80][360,140]" />
@@ -1166,7 +1166,7 @@ operationsRecordField=crashAnrSmoke.evidence
 operationsRecordFile=$operations_record_file
 window=test fixture
 track=local-emulator
-packageName=com.bytedance.zgx.pocketmind
+packageName=com.bytedance.zgx.solin
 deviceReportFile=$device_report
 deviceReportSha256=$(shasum -a 256 "$device_report" | awk '{print $1}')
 deviceReportSizeBytes=$(wc -c < "$device_report" | tr -d ' ')
@@ -1368,7 +1368,7 @@ import pathlib
 import re
 import sys
 
-kotlin = pathlib.Path("app/src/main/java/com/bytedance/zgx/pocketmind/capability/CapabilityMatrix.kt").read_text()
+kotlin = pathlib.Path("app/src/main/java/com/bytedance/zgx/solin/capability/CapabilityMatrix.kt").read_text()
 capability_matrix = json.loads(pathlib.Path("docs/capability_matrix.json").read_text())
 
 def extract_quoted(pattern, source, label):
@@ -1394,7 +1394,7 @@ if len(set(json_ids)) != len(json_ids) or any(not title.strip() for title in jso
 PY
 grep -q 'requiredBehaviorEvalBoundaries' docs/capability_matrix.json ||
   fail "Capability matrix must declare required behavior eval boundaries"
-grep -q 'requiredBehaviorEvalBoundaries' app/src/main/java/com/bytedance/zgx/pocketmind/capability/CapabilityMatrix.kt ||
+grep -q 'requiredBehaviorEvalBoundaries' app/src/main/java/com/bytedance/zgx/solin/capability/CapabilityMatrix.kt ||
   fail "CapabilityMatrix must own required behavior eval boundary declarations"
 grep -q -- '--capability-matrix' scripts/verify_ai_behavior_eval.sh ||
   fail "AI behavior eval gate must accept an explicit capability matrix input"
@@ -1410,7 +1410,7 @@ grep -q 'expectedRiskLevel' scripts/verify_ai_behavior_eval.sh ||
   fail "AI behavior eval gate must validate risk level fixtures"
 grep -q 'privacy-mismatch' scripts/verify_ai_behavior_eval.sh ||
   fail "AI behavior eval gate must reject inconsistent privacy fixtures"
-grep -q 'val supported: Set<String>' app/src/main/java/com/bytedance/zgx/pocketmind/action/ActionModels.kt ||
+grep -q 'val supported: Set<String>' app/src/main/java/com/bytedance/zgx/solin/action/ActionModels.kt ||
   fail "MobileActionFunctions must expose supported tool names for eval validation"
 grep -q 'supported_tool_names' scripts/verify_ai_behavior_eval.sh ||
   fail "AI behavior eval gate must validate expected tools against supported tool names"
@@ -1451,7 +1451,7 @@ grep -q 'actual-trace-unknown-case-id' scripts/verify_ai_behavior_eval.sh ||
 grep -q 'trace-diff-missing-required-failure-mode' scripts/verify_ai_behavior_eval.sh ||
   fail "AI behavior eval gate must require fail-closed actual failure modes"
 AI_BEHAVIOR_FIXTURE_DIR_SHA="$(fixture_dir_sha256 app/src/test/resources/ai_behavior_eval)"
-AI_BEHAVIOR_ACTION_MODELS_FILE="app/src/main/java/com/bytedance/zgx/pocketmind/action/ActionModels.kt"
+AI_BEHAVIOR_ACTION_MODELS_FILE="app/src/main/java/com/bytedance/zgx/solin/action/ActionModels.kt"
 AI_BEHAVIOR_ACTION_MODELS_SHA="$(shasum -a 256 "$AI_BEHAVIOR_ACTION_MODELS_FILE" | awk '{print $1}')"
 AI_BEHAVIOR_CAPABILITY_MATRIX_FILE="docs/capability_matrix.json"
 AI_BEHAVIOR_CAPABILITY_MATRIX_SHA="$(shasum -a 256 "$AI_BEHAVIOR_CAPABILITY_MATRIX_FILE" | awk '{print $1}')"
@@ -2532,7 +2532,7 @@ expect_success \
   GRADLE_CMD="$FAKE_GRADLE" \
   FAKE_AI_BEHAVIOR_ACTUAL_TRACE_SOURCE="$AI_ACTUAL_TRACE" \
   scripts/collect_ai_behavior_actual_trace.sh
-grep -q -- ":app:testDebugUnitTest --tests com.bytedance.zgx.pocketmind.eval.AiBehaviorActualTraceGeneratorTest" "$FAKE_GRADLE_LOG" ||
+grep -q -- ":app:testDebugUnitTest --tests com.bytedance.zgx.solin.eval.AiBehaviorActualTraceGeneratorTest" "$FAKE_GRADLE_LOG" ||
   fail "AI behavior actual trace collector must run the generator test"
 AI_COLLECTOR_REPORT="$AI_COLLECTOR_DIR/ai-behavior-actual-trace-collection.properties"
 AI_COLLECTOR_TRACE="$AI_COLLECTOR_DIR/ai-behavior-actual-trace.jsonl"
@@ -2719,7 +2719,7 @@ grep -q 'android:permission="android.permission.DUMP"' app/src/rcPerfRelease/And
   fail "rcPerfRelease service must require a shell-held signature permission"
 grep -q 'android:foregroundServiceType="specialUse"' app/src/rcPerfRelease/AndroidManifest.xml ||
   fail "rcPerfRelease service must run as a foreground special-use service"
-grep -q 'com.bytedance.zgx.pocketmind.rcperf.RUN' app/src/rcPerfRelease/AndroidManifest.xml ||
+grep -q 'com.bytedance.zgx.solin.rcperf.RUN' app/src/rcPerfRelease/AndroidManifest.xml ||
   fail "rcPerfRelease service must expose only the app-specific rc perf action"
 grep -q 'RC_PERF_ACTION="${PACKAGE_NAME}.rcperf.RUN"' scripts/collect_rc_perf_from_device.sh ||
   fail "rc perf collector must use the app-specific rc perf action"
@@ -3235,7 +3235,7 @@ assert_report_contains "$ARTIFACT_DIR/perf-stale.properties" "failedTarget=basel
 assert_report_contains_text "$ARTIFACT_DIR/perf-stale.properties" "recorded-at-invalid-or-stale"
 
 RELEASE_MAPPING="$TMP_DIR/mapping.txt"
-printf 'com.bytedance.zgx.pocketmind.Sample -> a:\n' > "$RELEASE_MAPPING"
+printf 'com.bytedance.zgx.solin.Sample -> a:\n' > "$RELEASE_MAPPING"
 expect_success \
   "release mapping verifier accepts non-empty mapping file" \
   scripts/verify_release_mapping.sh --file "$RELEASE_MAPPING" --report "$ARTIFACT_DIR/release-mapping.properties"
@@ -3328,7 +3328,7 @@ cat > "$RELEASE_RECORD_APPROVED" <<RELEASE_RECORD_APPROVED_JSON
   "version": 1,
   "status": "approved",
   "release": {
-    "applicationId": "com.bytedance.zgx.pocketmind",
+    "applicationId": "com.bytedance.zgx.solin",
     "versionCode": 1,
     "versionName": "0.1.0",
     "gitCommit": "$RELEASE_RECORD_HEAD",
@@ -3679,8 +3679,8 @@ cat > "$STORE_POLICY_APPROVED" <<STORE_POLICY_APPROVED_JSON
     "shortDescription": "Privacy-first pocket AI: local, optional remote, confirmed actions.",
     "fullDescription": "Solin is a privacy-first pocket AI assistant for Android: it is locally usable with downloaded or imported models, can optionally use user-configured remote multimodal models for text and image requests, and only executes device actions after explicit confirmation. It stores user sessions locally, protects private context with confirmation, and clearly separates optional remote model calls from local-only data.",
     "category": "Productivity",
-    "contactEmail": "release@pocketmind.app",
-    "privacyPolicyUrl": "https://pocketmind.app/privacy"
+    "contactEmail": "release@solin.app",
+    "privacyPolicyUrl": "https://solin.app/privacy"
   },
   "dataSafety": {
     "userDataCollected": true,
@@ -4005,8 +4005,8 @@ expect_failure \
 assert_report_contains "$ARTIFACT_DIR/store-policy-permission-mismatch.properties" "status=failed"
 STORE_POLICY_PLACEHOLDER_CONTACT="$TMP_DIR/store-policy-placeholder-contact.json"
 sed \
-  -e 's#release@pocketmind.app#release@example.com#' \
-  -e 's#https://pocketmind.app/privacy#https://example.com/privacy#' \
+  -e 's#release@solin.app#release@example.com#' \
+  -e 's#https://solin.app/privacy#https://example.com/privacy#' \
   "$STORE_POLICY_APPROVED" > "$STORE_POLICY_PLACEHOLDER_CONTACT"
 expect_failure \
   "store policy verifier rejects placeholder contact and privacy URL" \
@@ -4094,7 +4094,7 @@ actual_android_test_count=20
 serial=emulator-5554
 api_level=36
 abi=arm64-v8a
-avd=pocketmind_ci_api36_arm64
+avd=solin_ci_api36_arm64
 instrumentation_output_file=$TMP_DIR/ci-instrumentation.txt
 device_report_file=$TMP_DIR/ci-device-verification.properties
 OPERATIONS_CI_CONNECTED_EVIDENCE_PROPERTIES
@@ -4124,13 +4124,13 @@ actual_android_test_count=20
 serial=emulator-${api_level}
 api_level=${api_level}
 abi=arm64-v8a
-avd=pocketmind_ci_api${api_level}_arm64_v8a
+avd=solin_ci_api${api_level}_arm64_v8a
 instrumentation_output_file=$TMP_DIR/ci-api-${api_level}-instrumentation.txt
 device_report_file=$TMP_DIR/ci-api-${api_level}-device-verification.properties
 OPERATIONS_CI_API_REGRESSION_PROPERTIES
   api_report_sha="$(shasum -a 256 "$api_report" | awk '{print $1}')"
   OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}Status=passed")
-  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}Avd=pocketmind_ci_api${api_level}_arm64_v8a")
+  OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}Avd=solin_ci_api${api_level}_arm64_v8a")
   OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}ReportFile=$api_report")
   OPERATIONS_CI_API_MATRIX_LINES+=("api${api_level}ReportSha256=$api_report_sha")
 done
@@ -4288,7 +4288,7 @@ instrumentation_output_file=$OPERATIONS_SMOKE_INSTRUMENTATION
 logcat_file=$OPERATIONS_SMOKE_LOGCAT
 OPERATIONS_SMOKE_DEVICE_REPORT_TXT
 cat > "$OPERATIONS_SMOKE_LOGCAT" <<'OPERATIONS_SMOKE_LOGCAT_TXT'
-06-06 20:00:00.000  1000  1000 I ActivityTaskManager: Displayed com.bytedance.zgx.pocketmind/.MainActivity
+06-06 20:00:00.000  1000  1000 I ActivityTaskManager: Displayed com.bytedance.zgx.solin/.MainActivity
 06-06 20:00:01.000  1000  1000 I LiteRT: nativeCheckLoaded returned true
 OPERATIONS_SMOKE_LOGCAT_TXT
 expect_success \
@@ -4313,7 +4313,7 @@ assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noCrashLoop=true"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noFatalNativeLiteRtLmFailure=true"
 assert_report_contains "$OPERATIONS_SMOKE_EVIDENCE" "noReproducibleAnr=true"
 cat > "$OPERATIONS_SMOKE_ANR_LOGCAT" <<'OPERATIONS_SMOKE_ANR_LOGCAT_TXT'
-06-06 20:00:02.000  1000  1000 E ActivityManager: ANR in com.bytedance.zgx.pocketmind
+06-06 20:00:02.000  1000  1000 E ActivityManager: ANR in com.bytedance.zgx.solin
 OPERATIONS_SMOKE_ANR_LOGCAT_TXT
 expect_failure \
   "crash/ANR smoke collector rejects ANR logcat signal" \
@@ -4327,7 +4327,7 @@ assert_report_contains "$OPERATIONS_SMOKE_ANR_REPORT" "noReproducibleAnr=false"
 assert_report_contains_text "$OPERATIONS_SMOKE_ANR_REPORT" "anr-signal-detected"
 cat > "$OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT" <<'OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT_TXT'
 06-06 20:00:03.000  1000  1000 E AndroidRuntime: FATAL EXCEPTION: main
-06-06 20:00:03.001  1000  1000 E AndroidRuntime: Process: com.bytedance.zgx.pocketmind, PID: 12345
+06-06 20:00:03.001  1000  1000 E AndroidRuntime: Process: com.bytedance.zgx.solin, PID: 12345
 OPERATIONS_SMOKE_JAVA_CRASH_LOGCAT_TXT
 expect_failure \
   "crash/ANR smoke collector treats one Java crash as one launch crash" \
@@ -4365,7 +4365,7 @@ command=manual-release-rollback-review
 reproduciblePath=$OPERATIONS_ROLLBACK_EVIDENCE
 operationsRecordField=rollback.evidence
 operationsRecordFile=$OPERATIONS_APPROVED
-decisionChannel=#pocketmind-release
+decisionChannel=#solin-release
 criteria=install failure,crash loop,model download verification failure,privacy boundary failure,critical tool execution regression
 firstStagedRolloutAction=Halt rollout, keep collecting Android Vitals and user reports, then decide whether to resume, replace, or ship a fixed build.
 playVersionCodePolicy=Any replacement artifact must use a higher versionCode; Play cannot ordinary-update users to a lower versionCode.
@@ -4526,7 +4526,7 @@ cat > "$OPERATIONS_APPROVED" <<OPERATIONS_APPROVED_JSON
   },
   "rollback": {
     "owner": "Release Owner",
-    "decisionChannel": "#pocketmind-release",
+    "decisionChannel": "#solin-release",
     "criteria": [
       "install failure",
       "crash loop",
@@ -7434,7 +7434,7 @@ expect_success \
 assert_report_contains "$ARTIFACT_DIR/emulator-api-matrix-prepare-apply.properties" "status=passed"
 grep -q -- '--sdk_root=.*platforms;android-32.*system-images;android-32;google_apis;arm64-v8a' "$FAKE_SDKMANAGER_LOG" ||
   fail "prepare apply must install missing API 32 platform and system image"
-grep -q -- 'create avd --force --name pocketmind_api32_arm64_v8a --package system-images;android-32;google_apis;arm64-v8a' "$FAKE_AVDMANAGER_LOG" ||
+grep -q -- 'create avd --force --name solin_api32_arm64_v8a --package system-images;android-32;google_apis;arm64-v8a' "$FAKE_AVDMANAGER_LOG" ||
   fail "prepare apply must create the missing API 32 arm64 AVD"
 rm -rf "$FAKE_AVD_ROOT/api28.avd"
 FAKE_SDKMANAGER_INSTALLED=$'system-images;android-36;google_apis;arm64-v8a | 1 | Fake'
@@ -7550,7 +7550,7 @@ assert_report_contains "$ARTIFACT_DIR/regression-emulator-api-matrix-failed.prop
 SAFE_PRIVACY_DIR="$TMP_DIR/privacy-safe"
 mkdir -p "$SAFE_PRIVACY_DIR"
 SAFE_PRIVACY_FILE="$SAFE_PRIVACY_DIR/readme.txt"
-printf 'hello pocketmind\n' > "$SAFE_PRIVACY_FILE"
+printf 'hello solin\n' > "$SAFE_PRIVACY_FILE"
 SAFE_PRIVACY_FILE_SHA="$(shasum -a 256 "$SAFE_PRIVACY_FILE" | awk '{print $1}')"
 expect_success \
   "privacy scan accepts safe directory" \
@@ -9232,7 +9232,7 @@ assert_no_gradle_call
 assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "status=failed"
 assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "failedTarget=harness"
 assert_report_contains "$RC_COLLECT_TIMEOUT_REPORT" "reason=harness-timeout"
-force_stop_count="$(grep -c -- "-s device-a shell am force-stop com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" || true)"
+force_stop_count="$(grep -c -- "-s device-a shell am force-stop com.bytedance.zgx.solin" "$FAKE_ADB_LOG" || true)"
 [[ "$force_stop_count" -ge 2 ]] ||
   fail "rc perf collector must force-stop the app after a harness timeout while preserving data"
 
@@ -9277,7 +9277,7 @@ expect_failure \
   FAKE_RC_PERF_TOTAL_TIME_MS=1200 \
   FAKE_RC_PERF_MEMINFO_KB=524288 \
   FAKE_RC_PERF_RESULT_READY=1 \
-  FAKE_RC_PERF_LOGCAT_OOM_ANR="E AndroidRuntime: java.lang.OutOfMemoryError in com.bytedance.zgx.pocketmind" \
+  FAKE_RC_PERF_LOGCAT_OOM_ANR="E AndroidRuntime: java.lang.OutOfMemoryError in com.bytedance.zgx.solin" \
   REPORT_FILE="$RC_COLLECT_OOM_REPORT" \
   OUT_FILE="$RC_COLLECT_OOM_BASELINE" \
   GRADLE_CMD="$FAKE_GRADLE" scripts/collect_rc_perf_from_device.sh
@@ -9324,7 +9324,7 @@ assert_report_contains "$RC_COLLECT_BASELINE" "backend=GPU"
 assert_report_contains "$RC_COLLECT_BASELINE" "modelId=chat-e2b"
 assert_report_contains "$RC_COLLECT_BASELINE.verification.properties" "artifactSchema=PerfBaselineVerification/v1"
 assert_report_contains "$RC_COLLECT_BASELINE.verification.properties" "status=passed"
-grep -q -- "-s device-a shell am start-foreground-service -a com.bytedance.zgx.pocketmind.rcperf.RUN -n com.bytedance.zgx.pocketmind/.rcperf.RcPerfHarnessService --es requestId" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell am start-foreground-service -a com.bytedance.zgx.solin.rcperf.RUN -n com.bytedance.zgx.solin/.rcperf.RcPerfHarnessService --es requestId" "$FAKE_ADB_LOG" ||
   fail "rc perf collector must trigger the harness service with the app-specific action"
 if grep -q -- "android.intent.action.RUN" "$FAKE_ADB_LOG"; then
   fail "rc perf collector must not send the generic RUN broadcast action"
@@ -9332,7 +9332,7 @@ fi
 if grep -Eq -- "deepseekApiKey|deepseekBaseUrl" "$FAKE_ADB_LOG"; then
   fail "rc perf collector must not pass unused remote secret extras"
 fi
-if grep -q -- "pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+if grep -q -- "pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG"; then
   fail "rc perf collector must not clear app data"
 fi
 if grep -Eq -- "(rm|unlink|delete).*(model|litertlm)" "$FAKE_ADB_LOG"; then
@@ -9909,9 +9909,9 @@ grep -q -- "-s device-a logcat -c" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to clear the logcat window before validation"
 grep -q -- "-s device-a logcat -d -t 500" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to capture logcat after validation"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to clear target app data before default success launch"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin.test" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to clear test app data before default success launch"
 
 reset_logs
@@ -9919,13 +9919,13 @@ expect_success \
   "install helper scopes instrumentation class" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'device-a\tdevice' \
-  INSTRUMENTATION_CLASS="com.bytedance.zgx.pocketmind.MainActivitySmokeTest" \
+  INSTRUMENTATION_CLASS="com.bytedance.zgx.solin.MainActivitySmokeTest" \
   GRADLE_CMD="$FAKE_GRADLE" scripts/install_and_test_device.sh
 assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation=passed"
-assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_class=com.bytedance.zgx.pocketmind.MainActivitySmokeTest"
-grep -q -- "-s device-a shell am instrument -w -r -e class com.bytedance.zgx.pocketmind.MainActivitySmokeTest com.bytedance.zgx.pocketmind.test/androidx.test.runner.AndroidJUnitRunner" "$FAKE_ADB_LOG" ||
+assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_class=com.bytedance.zgx.solin.MainActivitySmokeTest"
+grep -q -- "-s device-a shell am instrument -w -r -e class com.bytedance.zgx.solin.MainActivitySmokeTest com.bytedance.zgx.solin.test/androidx.test.runner.AndroidJUnitRunner" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to pass the requested instrumentation class"
 
 reset_logs
@@ -9939,12 +9939,12 @@ assert_gradle_called
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "clean_device=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected clean-device install helper to clear target app data before success launch"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin.test" "$FAKE_ADB_LOG" ||
   fail "Expected clean-device install helper to clear test app data before success launch"
-pm_clear_line="$(grep -n -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
-launch_line="$(grep -n -- "-s device-a shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
+pm_clear_line="$(grep -n -- "-s device-a shell pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
+launch_line="$(grep -n -- "-s device-a shell am start -W -n com.bytedance.zgx.solin/.MainActivity" "$FAKE_ADB_LOG" | head -n 1 | cut -d: -f1)"
 if [[ -z "$pm_clear_line" || -z "$launch_line" || "$pm_clear_line" -ge "$launch_line" ]]; then
   fail "Expected target app data to be cleared before launching app after successful clean-device validation"
 fi
@@ -9966,7 +9966,7 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=in
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_timeout_seconds=1"
 grep -q "timed out after 1s" <<<"$LAST_OUTPUT" ||
   fail "Expected install helper to report instrumentation timeout"
-grep -q -- "-s device-a shell am force-stop com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell am force-stop com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected install helper to stop target package after instrumentation timeout"
 
 reset_logs
@@ -9983,11 +9983,11 @@ assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "status=fa
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "clean_device=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reset_app_data_after_tests=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "reason=instrumentation-timeout"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected clean-device install helper to clear target app data after timeout"
-grep -q -- "-s device-a shell pm clear com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a shell pm clear com.bytedance.zgx.solin.test" "$FAKE_ADB_LOG" ||
   fail "Expected clean-device install helper to clear test app data after timeout"
-grep -q -- "-s device-a uninstall com.bytedance.zgx.pocketmind.test" "$FAKE_ADB_LOG" ||
+grep -q -- "-s device-a uninstall com.bytedance.zgx.solin.test" "$FAKE_ADB_LOG" ||
   fail "Expected clean-device install helper to uninstall test package after timeout"
 
 reset_logs
@@ -10043,10 +10043,10 @@ assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.propertie
   fail "Expected review install helper to preserve start output"
 grep -q -- "-s device-a install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
   fail "Expected review install helper to install debug APK"
-if grep -q -- "pm clear com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+if grep -q -- "pm clear com.bytedance.zgx.solin" "$FAKE_ADB_LOG"; then
   fail "Review install helper must not clear app data"
 fi
-if grep -q -- "uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG"; then
+if grep -q -- "uninstall com.bytedance.zgx.solin" "$FAKE_ADB_LOG"; then
   fail "Review install helper must not uninstall app by default"
 fi
 if grep -q -- "am instrument" "$FAKE_ADB_LOG"; then
@@ -10058,14 +10058,14 @@ expect_success \
   "review install helper can inject debug remote config without logging secrets" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'device-a\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
-  POCKETMIND_REVIEW_REMOTE_BASE_URL="https://example.invalid" \
-  POCKETMIND_REVIEW_REMOTE_MODEL="example-model" \
-  POCKETMIND_REVIEW_REMOTE_API_KEY="example-secret" \
+  SOLIN_REVIEW_REMOTE_BASE_URL="https://example.invalid" \
+  SOLIN_REVIEW_REMOTE_MODEL="example-model" \
+  SOLIN_REVIEW_REMOTE_API_KEY="example-secret" \
   scripts/install_review_device.sh
 assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config=saved"
-assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config_source=POCKETMIND_REVIEW_REMOTE_BASE_URL,POCKETMIND_REVIEW_REMOTE_MODEL,POCKETMIND_REVIEW_REMOTE_API_KEY"
-grep -q -- "-s device-a shell run-as com.bytedance.zgx.pocketmind am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+assert_report_contains "$ARTIFACT_DIR/manual-acceptance-install-device.properties" "remote_config_source=SOLIN_REVIEW_REMOTE_BASE_URL,SOLIN_REVIEW_REMOTE_MODEL,SOLIN_REVIEW_REMOTE_API_KEY"
+grep -q -- "-s device-a shell run-as com.bytedance.zgx.solin am broadcast --user 0 -n com.bytedance.zgx.solin/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
   fail "Expected review install helper to use debug receiver via run-as"
 if grep -q "example-secret" "$ARTIFACT_DIR/manual-acceptance-install-device.properties"; then
   fail "Review install report must not persist remote API key"
@@ -10253,11 +10253,11 @@ assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "screenshot=$ARTIFACT_DIR/fresh-start.png"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "window_dump=$ARTIFACT_DIR/fresh-start.xml"
 assert_report_contains "$ARTIFACT_DIR/fresh-start-main-shell.properties" "model_manager_window_dump=$ARTIFACT_DIR/model-manager.xml"
-grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to clean install the app"
 grep -q -- "-s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to install debug APK"
-grep -q -- "-s emulator-5554 shell am start -W -n com.bytedance.zgx.pocketmind/.MainActivity" "$FAKE_ADB_LOG" ||
+grep -q -- "-s emulator-5554 shell am start -W -n com.bytedance.zgx.solin/.MainActivity" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to launch MainActivity"
 grep -q -- "-s emulator-5554 shell input tap 534 212" "$FAKE_ADB_LOG" ||
   fail "Expected fresh start helper to tap the model manager button"
@@ -10311,9 +10311,9 @@ expect_failure \
   "live remote emulator reports missing base url reason before Gradle" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
-  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
-  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
-  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  SOLIN_LIVE_REMOTE_MODEL="validation-model" \
+  SOLIN_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  SOLIN_LIVE_REMOTE_WAIT_SECONDS=0 \
   scripts/live_remote_emulator.sh
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
@@ -10330,10 +10330,10 @@ expect_failure \
   "live remote emulator rejects physical serial" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" GRADLE_CMD="$FAKE_GRADLE" \
-  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
-  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
-  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
-  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  SOLIN_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  SOLIN_LIVE_REMOTE_MODEL="validation-model" \
+  SOLIN_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  SOLIN_LIVE_REMOTE_WAIT_SECONDS=0 \
   scripts/live_remote_emulator.sh
 assert_no_gradle_call
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=failed"
@@ -10345,11 +10345,11 @@ expect_success \
   "live remote helper allows explicit physical target" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'device-a\tdevice' ANDROID_SERIAL="device-a" GRADLE_CMD="$FAKE_GRADLE" \
-  POCKETMIND_LIVE_REMOTE_TARGET=device \
-  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
-  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
-  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
-  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  SOLIN_LIVE_REMOTE_TARGET=device \
+  SOLIN_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  SOLIN_LIVE_REMOTE_MODEL="validation-model" \
+  SOLIN_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  SOLIN_LIVE_REMOTE_WAIT_SECONDS=0 \
   scripts/live_remote_emulator.sh
 grep -q -- "-s device-a install -r app/build/outputs/apk/debug/app-debug.apk" "$FAKE_ADB_LOG" ||
   fail "Expected explicit physical live remote helper to install the debug APK on the selected device"
@@ -10362,7 +10362,7 @@ grep -q -- "-s device-a shell input tap 979 2244" "$FAKE_ADB_LOG" ||
 grep -q -- "-s device-a shell input tap 530 1910" "$FAKE_ADB_LOG" ||
   fail "Expected explicit physical live remote helper to confirm remote send from UI dump coordinates"
 receiver_broadcast_count="$(
-  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]solin am broadcast .* -n com[.]bytedance[.]zgx[.]solin/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
 )"
 [[ "$receiver_broadcast_count" -ge 2 ]] ||
   fail "Expected explicit physical live remote helper to configure and clear the debug receiver"
@@ -10370,7 +10370,7 @@ assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "status=pas
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "target=live-remote-device"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "device_target=device"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "serial=device-a"
-assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
+assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "api_key_source=SOLIN_LIVE_REMOTE_API_KEY"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "base_url=<redacted>"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "model=<redacted>"
 assert_report_contains "$ARTIFACT_DIR/live-remote-device.properties" "input_dump=$ARTIFACT_DIR/live-remote-before-input.xml"
@@ -10395,15 +10395,15 @@ expect_success \
   "live remote emulator uses app uid for debug receiver broadcasts" \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
-  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
-  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
-  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
-  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  SOLIN_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  SOLIN_LIVE_REMOTE_MODEL="validation-model" \
+  SOLIN_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  SOLIN_LIVE_REMOTE_WAIT_SECONDS=0 \
   scripts/live_remote_emulator.sh
 grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
   fail "Expected live remote helper to assemble the debug APK"
 receiver_broadcast_count="$(
-  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]solin am broadcast .* -n com[.]bytedance[.]zgx[.]solin/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
 )"
 [[ "$receiver_broadcast_count" -ge 2 ]] ||
   fail "Expected live remote helper to configure and clear the debug receiver through run-as"
@@ -10414,14 +10414,14 @@ grep -q -- "--ez clearState true" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to request state clearing during setup"
 grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to clear remote config on exit"
-grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.solin/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
   fail "Expected live remote helper to pin debug receiver broadcasts to user 0"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "target=live-remote-emulator"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "device_target=emulator"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "failedTarget="
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "reason="
-assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "api_key_source=POCKETMIND_LIVE_REMOTE_API_KEY"
+assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "api_key_source=SOLIN_LIVE_REMOTE_API_KEY"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "base_url=<redacted>"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "evidence_dir=$ARTIFACT_DIR"
 assert_report_contains "$ARTIFACT_DIR/live-remote-emulator.properties" "screenshot=$ARTIFACT_DIR/live-remote-result.png"
@@ -10445,10 +10445,10 @@ expect_failure \
   env ANDROID_SDK_ROOT="$FAKE_SDK" ANDROID_HOME="$FAKE_SDK" \
   FAKE_ADB_DEVICES=$'emulator-5554\tdevice' GRADLE_CMD="$FAKE_GRADLE" \
   FAKE_LIVE_REMOTE_UI_TEXT="WRONG_REMOTE_TEXT" \
-  POCKETMIND_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
-  POCKETMIND_LIVE_REMOTE_MODEL="validation-model" \
-  POCKETMIND_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
-  POCKETMIND_LIVE_REMOTE_WAIT_SECONDS=0 \
+  SOLIN_LIVE_REMOTE_BASE_URL="https://remote.example.test/v1" \
+  SOLIN_LIVE_REMOTE_MODEL="validation-model" \
+  SOLIN_LIVE_REMOTE_API_KEY="$LIVE_REMOTE_TEST_TOKEN" \
+  SOLIN_LIVE_REMOTE_WAIT_SECONDS=0 \
   scripts/live_remote_emulator.sh
 grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
   fail "Expected live remote helper to assemble the debug APK before expected-text validation"
@@ -10488,20 +10488,20 @@ expect_success \
 grep -q -- ":app:assembleDebug" "$FAKE_GRADLE_LOG" ||
   fail "Expected release screenshot helper to assemble the debug APK"
 receiver_broadcast_count="$(
-  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]pocketmind am broadcast .* -n com[.]bytedance[.]zgx[.]pocketmind/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
+  grep -cE -- "shell run-as com[.]bytedance[.]zgx[.]solin am broadcast .* -n com[.]bytedance[.]zgx[.]solin/[.]debug[.]DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" || true
 )"
 [[ "$receiver_broadcast_count" -ge 1 ]] ||
   fail "Expected release screenshot helper to clear the debug receiver through run-as"
 if grep -q -- "-s emulator-5554 shell am broadcast" "$FAKE_ADB_LOG"; then
   fail "Release screenshot helper must not broadcast to the debug receiver from the shell uid"
 fi
-grep -q -- "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_BASE_URL" "$FAKE_ADB_LOG" ||
+grep -q -- "com.bytedance.zgx.solin.extra.DEBUG_SCREENSHOT_REMOTE_BASE_URL" "$FAKE_ADB_LOG" ||
   fail "Expected release screenshot helper to configure debug remote base URL through MainActivity extras"
-grep -q -- "com.bytedance.zgx.pocketmind.extra.DEBUG_SCREENSHOT_REMOTE_MODEL_NAME" "$FAKE_ADB_LOG" ||
+grep -q -- "com.bytedance.zgx.solin.extra.DEBUG_SCREENSHOT_REMOTE_MODEL_NAME" "$FAKE_ADB_LOG" ||
   fail "Expected release screenshot helper to configure debug remote model through MainActivity extras"
 grep -q -- "--ez clearRemoteConfig true" "$FAKE_ADB_LOG" ||
   fail "Expected release screenshot helper to clear remote config on exit"
-grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.pocketmind/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
+grep -q -- "am broadcast --user 0 -n com.bytedance.zgx.solin/.debug.DebugRemoteConfigReceiver" "$FAKE_ADB_LOG" ||
   fail "Expected release screenshot helper to pin debug receiver broadcasts to user 0"
 assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "status=passed"
 assert_report_contains "$ARTIFACT_DIR/release-screenshots.properties" "failedTarget="
@@ -10577,7 +10577,7 @@ assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "status=
 assert_report_contains "$ARTIFACT_DIR/emulator-verification.properties" "clean_device=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "clean_device=1"
 assert_report_contains "$ARTIFACT_DIR/device-verification.properties" "instrumentation_output_file=$ARTIFACT_DIR/instrumentation.txt"
-grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.pocketmind" "$FAKE_ADB_LOG" ||
+grep -q -- "-s emulator-5554 uninstall com.bytedance.zgx.solin" "$FAKE_ADB_LOG" ||
   fail "Expected regression emulator to force CLEAN_DEVICE=1 through device helper"
 
 reset_logs

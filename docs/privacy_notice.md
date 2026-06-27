@@ -125,10 +125,14 @@ used only for one-shot current-screen screenshot OCR after foreground consent.
 
 For screen understanding specifically, screen pixels, OCR excerpts,
 Accessibility text, Accessibility snapshot nodes/bounds metadata, and
-post-action verification summaries stay `LocalOnly`. They are not automatically
-included in remote history, sent to a remote endpoint, or sent to a remote VLM.
+post-action structured observations and verification summaries stay
+`LocalOnly`. They are not automatically included in remote history, sent to a
+remote endpoint, or sent to a remote VLM.
 The same content may leave the device only if the user manually creates a
 separate `RemoteEligible` message containing it.
+Current-screen screenshot OCR may return a fused LocalOnly screen observation
+that combines OCR text/bounds with transient Accessibility nodes/bounds; it
+does not persist screenshots, pixels, URI/path metadata, or window titles.
 
 ## External Intents And Attachments
 
@@ -161,7 +165,7 @@ recommended-model provenance guarantees.
 The Hugging Face read token saved in the app is used only to prepare and
 download gated model assets that require Hugging Face authorization. It does
 not approve model licensing, redistribution, or publication. Build-time tokens
-such as `POCKETMIND_HF_TOKEN` belong to internal packaging flows and must not
+such as `SOLIN_HF_TOKEN` belong to internal packaging flows and must not
 be committed, logged, or placed in reports.
 
 The recommended local chat path currently starts with the E2B model, which is a
