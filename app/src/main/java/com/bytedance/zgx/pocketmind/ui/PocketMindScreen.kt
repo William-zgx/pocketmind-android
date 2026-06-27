@@ -615,7 +615,7 @@ private fun ChatTopBar(
                 ) {
                     Text(
                         modifier = Modifier.testTag("app_title"),
-                        text = "PocketMind",
+                        text = "栖知",
                         style = if (compactTopBar) {
                             MaterialTheme.typography.titleSmall
                         } else {
@@ -3857,13 +3857,13 @@ internal const val REMOTE_ATTACHMENT_PROTECTION_NOTICE =
     "远程模型模式下，主动选择的图片只会在逐次预览确认后发送给远程视觉模型；其他附件和分享文本不会读取正文、文本摘录或 OCR 摘录。若模型或接口不支持图片，会直接提示不支持。"
 
 internal const val PRODUCT_POSITIONING_TEXT =
-    "隐私优先的随身 AI 助手：可下载或导入本地模型，远程多模态可选，设备动作必须确认执行；能力与信任中心会集中说明数据边界和权限。"
+    "让 AI 住在手机里：可下载或导入本地模型，远程多模态可选，设备动作必须确认执行；能力与信任中心会集中说明数据边界和权限。"
 
 internal const val PRODUCT_POSITIONING_SHORT_TEXT =
-    "隐私优先的随身 AI 助手"
+    "让 AI 住在手机里"
 
 internal const val PRODUCT_HOME_TITLE_TEXT =
-    "隐私优先的随身 AI 助手"
+    "让 AI 住在手机里"
 
 internal const val PRODUCT_HOME_DESCRIPTION_TEXT =
     "本地模型可下载或导入，远程多模态可选，设备动作必须确认执行。没有模型时只展示启动选项，不读取本地数据，也不会自动发送远程请求。"
@@ -3951,7 +3951,7 @@ internal const val VOICE_INPUT_PERMISSION_DISCLOSURE_TITLE =
     "开启语音输入"
 
 internal const val VOICE_INPUT_PERMISSION_DISCLOSURE_BODY =
-    "语音会交由 Android 系统语音识别服务处理；PocketMind 不保存音频文件，转写结果只进入输入框，不会自动发送。确认后才会请求麦克风权限或开始收音。"
+    "语音会交由 Android 系统语音识别服务处理；栖知不保存音频文件，转写结果只进入输入框，不会自动发送。确认后才会请求麦克风权限或开始收音。"
 
 internal const val TRUST_LOCAL_BOUNDARY_TEXT =
     "会话、长期记忆、设备上下文和本地工具结果默认留在本机；切到远程模型时，标记为仅本机的隐私消息和工具结果不会进入远程历史。"
@@ -4057,7 +4057,7 @@ internal fun actionDataBoundaryDisplayRows(functionName: String): List<String> =
         MobileActionFunctions.SHARE_TEXT,
         -> listOf(
             "确认后会把草稿或分享内容交给外部 App；目标 App 的后续处理由你继续确认。",
-            "PocketMind 只能记录外部界面已打开，不能在未确认结果前宣称已完成。",
+            "栖知只能记录外部界面已打开，不能在未确认结果前宣称已完成。",
         )
 
         MobileActionFunctions.OPEN_WIFI_SETTINGS,
@@ -5139,8 +5139,8 @@ private fun MessageBubble(
                 Text(
                     text = when {
                         isUser -> "你"
-                        isStreaming -> "PocketMind · 生成中"
-                        else -> "PocketMind"
+                        isStreaming -> "栖知 · 生成中"
+                        else -> "栖知"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = textColor.copy(alpha = 0.72f),

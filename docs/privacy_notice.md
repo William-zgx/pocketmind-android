@@ -1,13 +1,13 @@
 # Privacy Notice
 
-This notice describes the privacy boundary implemented by PocketMind for
+This notice describes the privacy boundary implemented by Solin for
 Android release candidates. It is not a publication approval: public
 distribution still requires release, security, legal, store-policy, and support
 owner review for the exact build and channel.
 
 ## Boundary Summary
 
-PocketMind is local-first. Conversation data, local model state, memory,
+Solin is local-first. Conversation data, local model state, memory,
 background tasks, Agent traces, pending confirmations, Skill checkpoints, and
 tool audit metadata are stored in local Android app storage unless a specific
 remote or Android system boundary below is crossed.
@@ -53,7 +53,7 @@ removes the stored secret.
 
 Remote model mode sends requests only after the user-configured
 OpenAI-compatible chat endpoint exists and the active backend is switched to
-remote. PocketMind accepts a base URL and appends `/chat/completions` unless
+remote. Solin accepts a base URL and appends `/chat/completions` unless
 the configured URL already points at that endpoint. "OpenAI-compatible" means
 the request and response shape; it does not imply OpenAI operates the endpoint.
 
@@ -73,7 +73,7 @@ confirmation before they can leave the phone. Image bytes are attached as
 OpenAI-compatible `image_url` content parts only when image input is enabled,
 the selected remote profile declares vision support, the endpoint/model
 supports that message shape, and the user confirms the send. If the endpoint
-rejects image content, PocketMind reports image-input failure and does not
+rejects image content, Solin reports image-input failure and does not
 fall back to OCR.
 
 Remote transport requires HTTPS, except for local debug hosts such as

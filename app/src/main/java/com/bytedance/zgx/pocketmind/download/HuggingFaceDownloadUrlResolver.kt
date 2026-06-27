@@ -78,7 +78,7 @@ class HuggingFaceDownloadUrlResolver(
         val builder = Request.Builder()
             .url(url)
             .header("Authorization", authorizationHeader)
-            .header("User-Agent", "PocketMind model downloader")
+            .header("User-Agent", "Solin model downloader")
         when (method) {
             ProbeMethod.Head -> builder.head()
             ProbeMethod.RangeGet -> builder.get().header("Range", "bytes=0-0")

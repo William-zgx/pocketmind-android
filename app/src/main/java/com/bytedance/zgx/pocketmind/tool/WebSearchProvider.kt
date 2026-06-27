@@ -20,7 +20,7 @@ private const val MAX_WEB_SEARCH_RESULTS_JSON_CHARS = 4_000
 private const val WEB_SEARCH_EVIDENCE_SCHEMA_VERSION = 1
 private const val DEFAULT_WEB_SEARCH_MAX_RESULTS = 3
 private const val MAX_WEB_SEARCH_MAX_RESULTS = 5
-private const val WEB_SEARCH_USER_AGENT = "PocketMind/0.1 Android WebSearch"
+private const val WEB_SEARCH_USER_AGENT = "Solin/0.1 Android WebSearch"
 private val currentFreshnessTermRegex =
     Regex(
         """(?i)(最新|目前|当前|现在|近期|最近|今日|今天|今年|当下|热搜|热点|热门|火热|榜单|排行|排名|趋势|\blatest\b|\bcurrent\b|\bcurrently\b|\brecent\b|\btrending\b|\bhottest\b|\bpopular\b|\branking\b|\brankings\b|\bleaderboard\b|\btoday\b|\bnow\b)""",

@@ -23,7 +23,7 @@ class DeviceControlEvalActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         profile = EvalSearchProfile.fromIntentValue(intent.getStringExtra(EXTRA_PROFILE))
-        title = "PocketMind Device Control Eval"
+        title = "Solin Device Control Eval"
 
         statusView = TextView(this).apply {
             text = "Eval status idle"
@@ -47,7 +47,7 @@ class DeviceControlEvalActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "PocketMind Device Control Eval - ${profile.title}"
+            text = "Solin Device Control Eval - ${profile.title}"
             textSize = 22f
         })
         root.addView(statusView)

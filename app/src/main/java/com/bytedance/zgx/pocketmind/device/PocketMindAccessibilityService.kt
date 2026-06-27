@@ -518,7 +518,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun readCurrentScreenText(maxChars: Int): CurrentScreenTextReadResult {
             val service = activeService?.get()
-                ?: return CurrentScreenTextReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return CurrentScreenTextReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在读取当前屏幕")
             return runDeviceControlWithTimeout(
                 timeoutMillis = OBSERVE_HARD_TIMEOUT_MILLIS,
@@ -530,7 +530,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun observeCurrentScreen(maxTextChars: Int, maxNodes: Int): ScreenStateReadResult {
             val service = activeService?.get()
-                ?: return ScreenStateReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return ScreenStateReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在观察当前屏幕")
             return runDeviceControlWithTimeout(
                 timeoutMillis = OBSERVE_HARD_TIMEOUT_MILLIS,
@@ -547,7 +547,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun performTap(target: String, timeoutMillis: Long): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在点击：$target")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.tapTarget(target, timeoutMillis)
@@ -556,7 +556,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun performTypeText(text: String, target: String?, timeoutMillis: Long): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在输入文本")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.typeText(text, target, timeoutMillis)
@@ -565,7 +565,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun performSubmitSearch(timeoutMillis: Long): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在提交搜索")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.submitSearch(timeoutMillis)
@@ -578,7 +578,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
             timeoutMillis: Long,
         ): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在滚动页面")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.scrollTarget(direction, target, timeoutMillis)
@@ -587,7 +587,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun performPressBack(timeoutMillis: Long): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在返回上一页")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.pressBack(timeoutMillis)
@@ -596,7 +596,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
 
         internal fun performWait(timeoutMillis: Long): UiActionReadResult {
             val service = activeService?.get()
-                ?: return UiActionReadResult.PermissionDenied("未开启 PocketMind 无障碍服务")
+                ?: return UiActionReadResult.PermissionDenied("未开启栖知无障碍服务")
             showControlProgress("正在等待页面稳定")
             return runDeviceControlWithTimeout(timeoutMillis = timeoutMillis.uiActionHardTimeout()) {
                 service.waitForScreen(timeoutMillis)
@@ -612,7 +612,7 @@ class PocketMindAccessibilityService : AccessibilityService() {
         }
 
         private val deviceControlExecutor = Executors.newFixedThreadPool(2) { runnable ->
-            Thread(runnable, "PocketMindDeviceControl").apply {
+            Thread(runnable, "SolinDeviceControl").apply {
                 isDaemon = true
             }
         }
@@ -675,7 +675,7 @@ private fun String.controlProgressMessage(): String {
         .trim()
         .takeIf { it.isNotBlank() }
         ?: DeviceControlSessionService.DEFAULT_REASON
-    return "PocketMind · ${compact.take(64)}"
+    return "栖知 · ${compact.take(64)}"
 }
 
 private fun AccessibilityNodeInfo.findEditableForTyping(): AccessibilityNodeInfo? =

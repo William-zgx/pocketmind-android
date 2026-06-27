@@ -161,7 +161,7 @@ pocketmind_accessibility_enabled() {
 
 if ! pocketmind_accessibility_enabled; then
   fail_with_reason pocketmind-accessibility-not-enabled \
-    "PocketMind Accessibility is not enabled. Enable it in system Accessibility settings, then rerun with SKIP_POCKETMIND_INSTALL=1."
+    "栖知 Accessibility is not enabled. Enable it in system Accessibility settings, then rerun with SKIP_POCKETMIND_INSTALL=1."
 fi
 
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null

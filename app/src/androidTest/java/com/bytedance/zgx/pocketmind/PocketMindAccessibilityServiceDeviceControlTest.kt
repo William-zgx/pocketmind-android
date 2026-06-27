@@ -96,9 +96,9 @@ class PocketMindAccessibilityServiceDeviceControlTest {
         ActivityScenario.launch<MainActivity>(
             mainActivitySkipStartupIntent(targetContext, ReadyRemoteModelConfig),
         ).use {
-            val initial = waitForScreenState(textContains = "PocketMind")
+            val initial = waitForScreenState(textContains = "栖知")
             assertEquals(targetContext.packageName, initial.packageName)
-            assertTrue(initial.nodes.any { node -> node.text.contains("PocketMind") })
+            assertTrue(initial.nodes.any { node -> node.text.contains("栖知") })
 
             val typed = PocketMindAccessibilityService.performTypeText(
                 text = "device control emulator input",
@@ -120,7 +120,7 @@ class PocketMindAccessibilityServiceDeviceControlTest {
         enablePocketMindAccessibilityService()
 
         ActivityScenario.launch(DeviceControlEvalActivity::class.java).use {
-            val initial = waitForScreenState(textContains = "PocketMind Device Control Eval")
+            val initial = waitForScreenState(textContains = "Solin Device Control Eval")
             assertEquals(targetContext.packageName, initial.packageName)
             assertTrue(initial.nodes.any { node -> node.bounds != null })
             assertTrue(initial.nodes.any { node -> node.clickable })
@@ -256,8 +256,8 @@ class PocketMindAccessibilityServiceDeviceControlTest {
     }
 
     private fun manualEnableMessage(flattened: String, observedValue: String): String =
-        "PocketMind Accessibility is not active. Expected $flattened, got: $observedValue. " +
-            "Install the debug and test APKs, enable PocketMind in system Accessibility settings, " +
+        "栖知 Accessibility is not active. Expected $flattened, got: $observedValue. " +
+            "Install the debug and test APKs, enable 栖知 in system Accessibility settings, " +
             "then rerun device-control acceptance with SKIP_INSTALL=1 or DEVICE_CONTROL_SKIP_INSTALL=1."
 
     private fun waitForScreenState(

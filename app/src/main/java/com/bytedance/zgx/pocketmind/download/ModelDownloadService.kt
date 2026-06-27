@@ -120,7 +120,7 @@ class ModelDownloadService(
             preparedDownloadUrl.authorizationHeader?.let { authorizationHeader ->
                 connection.setRequestProperty("Authorization", authorizationHeader)
             }
-            connection.setRequestProperty("User-Agent", "PocketMind model downloader")
+            connection.setRequestProperty("User-Agent", "Solin model downloader")
             if (connection is HttpURLConnection) {
                 connection.requestMethod = "GET"
                 val code = connection.responseCode

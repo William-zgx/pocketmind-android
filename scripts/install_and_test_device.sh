@@ -463,8 +463,8 @@ require_pocketmind_accessibility_if_needed() {
     return 0
   fi
   cat >&2 <<EOF
-PocketMind Accessibility service is not enabled.
-Open system Accessibility settings, enable PocketMind, then rerun with SKIP_INSTALL=1
+栖知 Accessibility service is not enabled.
+Open system Accessibility settings, enable 栖知, then rerun with SKIP_INSTALL=1
 or DEVICE_CONTROL_SKIP_INSTALL=1 so the debug APK is not reinstalled.
 Expected service: $POCKETMIND_ACCESSIBILITY_SERVICE
 EOF
@@ -589,7 +589,7 @@ instrumentation_test_count_for() {
 }
 
 if ! install_device_apks; then
-  fail_with_reason install install-command-failed "Failed to install PocketMind debug or androidTest APK."
+  fail_with_reason install install-command-failed "Failed to install 栖知 debug or androidTest APK."
 fi
 
 if ! prepare_device_for_instrumentation; then
@@ -646,7 +646,7 @@ USB install / Install via USB, and accept any install confirmation shown on the 
 Then rerun scripts/install_and_test_device.sh.
 EOF
   fi
-  if grep -q "PocketMind Accessibility service is not enabled" <<<"$TEST_OUTPUT"; then
+  if grep -q "栖知 Accessibility service is not enabled" <<<"$TEST_OUTPUT"; then
     FAILED_TARGET="accessibility-permission"
     FAILURE_REASON="pocketmind-accessibility-not-enabled"
   fi

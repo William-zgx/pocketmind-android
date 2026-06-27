@@ -289,7 +289,7 @@ class MainActivitySharedIntentTest {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/PocketMindTest")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/SolinTest")
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = checkNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)) {

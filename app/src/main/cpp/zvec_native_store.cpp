@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr const char *kLogTag = "PocketMindZvec";
+constexpr const char *kLogTag = "SolinZvec";
 constexpr const char *kStoreClass =
     "com/bytedance/zgx/pocketmind/storage/ZvecNativeStore";
 constexpr const char *kRecordClass =

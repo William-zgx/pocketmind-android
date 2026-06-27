@@ -1,12 +1,12 @@
 # 屏幕理解与手机操作优化计划
 
-本文定义 PocketMind 下一阶段“用本地模型更可靠地理解屏幕并操作手机”的执行计划。
+本文定义栖知下一阶段“用本地模型更可靠地理解屏幕并操作手机”的执行计划。
 它不是发布验收记录；完成证据仍写入 `docs/validation_report.md` 和
 `docs/phone_acceptance.md`。
 
 ## 根目标
 
-让 PocketMind 在用户明确授权后，能把“当前屏幕上有什么、下一步该点哪里、执行后是否成功”
+让栖知在用户明确授权后，能把“当前屏幕上有什么、下一步该点哪里、执行后是否成功”
 表示为可验证的本地证据，并在真实手机上完成更多低风险、多步骤任务。
 
 成功标准：
@@ -187,7 +187,7 @@ gantt
 
 ## 开源参考
 
-| 项目 | 可借鉴点 | 在 PocketMind 中的落点 |
+| 项目 | 可借鉴点 | 在栖知中的落点 |
 | --- | --- | --- |
 | [AndroidWorld](https://github.com/google-research/android_world) | 任务 DSL、动态参数、可重复 benchmark、reward signal | 真机/eval 任务格式和成功判定。 |
 | [DroidBot](https://github.com/honeynet/droidbot) | UI 状态图、探索式输入、事件转移记录 | 页面状态签名、失败重放、App profile 样本采集。 |

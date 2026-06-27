@@ -67,10 +67,10 @@ class DeviceControlSessionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "PocketMind 手机控制",
+                "栖知手机控制",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "PocketMind 执行用户确认的手机操作时保持控制会话可见"
+                description = "栖知执行用户确认的手机操作时保持控制会话可见"
             },
         )
     }
@@ -87,7 +87,7 @@ class DeviceControlSessionService : Service() {
         }
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("PocketMind 正在操作手机")
+            .setContentTitle("栖知正在操作手机")
             .setContentText(reason)
             .setStyle(Notification.BigTextStyle().bigText(reason))
             .setOngoing(true)
@@ -128,7 +128,7 @@ class DeviceControlSessionService : Service() {
         private const val EXTRA_REASON = "reason"
         const val CHANNEL_ID = "pocketmind_device_control_session"
         const val NOTIFICATION_ID = 41_204
-        const val DEFAULT_REASON = "PocketMind 正在执行用户确认的手机操作"
+        const val DEFAULT_REASON = "栖知正在执行用户确认的手机操作"
 
         fun start(context: Context, reason: String = DEFAULT_REASON): Boolean =
             runCatching {

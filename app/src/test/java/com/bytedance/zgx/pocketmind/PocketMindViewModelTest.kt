@@ -7900,7 +7900,7 @@ class PocketMindViewModelTest {
         val store = FakeMemoryRecordStore()
         val memoryRepository = MemoryRepository(recordStore = store)
         memoryRepository.indexPreference("pref-1", "回答尽量简洁")
-        memoryRepository.indexUserFact("fact-1", "我的项目是 PocketMind")
+        memoryRepository.indexUserFact("fact-1", "我的项目是 Solin")
         val viewModel = createViewModel(
             firstRunStore = FakeFirstRunSetupStore(memoryEnabled = false),
             memoryRepository = memoryRepository,
@@ -7913,7 +7913,7 @@ class PocketMindViewModelTest {
             listOf("pref-1", "fact-1"),
             viewModel.uiState.value.longTermMemories.map { it.id },
         )
-        assertTrue(memoryRepository.search("PocketMind").isEmpty())
+        assertTrue(memoryRepository.search("Solin").isEmpty())
 
         viewModel.forgetLongTermMemory("pref-1")
         advanceUntilIdle()

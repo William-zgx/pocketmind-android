@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedFor": "PocketMind multi-agent capability roadmap",
+  "generatedFor": "Solin multi-agent capability roadmap",
   "updatedDate": "2026-06-25",
   "policy": "This ledger tracks roadmap completion evidence. Local verifier evidence never replaces physical device, emulator, production signing, performance, store, security, legal, or release-owner approval evidence.",
   "items": [

@@ -195,7 +195,7 @@ pocketmind_accessibility_enabled() {
 
 if ! pocketmind_accessibility_enabled; then
   fail_with_reason accessibility pocketmind-accessibility-not-enabled \
-    "PocketMind Accessibility is not enabled. Enable it in system Accessibility settings, then rerun with SKIP_INSTALL=1."
+    "栖知 Accessibility is not enabled. Enable it in system Accessibility settings, then rerun with SKIP_INSTALL=1."
 fi
 
 "${ADB[@]}" shell am start -W -n "$MAIN_ACTIVITY" >/dev/null
@@ -294,7 +294,7 @@ assert_file_contains_any() {
 
 observe_file="$(broadcast_command observe --es command observe)"
 assert_file_contains "$observe_file" "resultType=available"
-assert_file_contains "$observe_file" "PocketMind Device Control Eval"
+assert_file_contains "$observe_file" "Solin Device Control Eval"
 assert_file_contains "$observe_file" "hasBounds=true"
 assert_file_contains "$observe_file" "hasClickable=true"
 assert_file_contains "$observe_file" "hasEditable=true"
@@ -388,9 +388,9 @@ run_app_search_case() {
   fi
 }
 
-run_app_search_case taobao "淘宝" "海河牛奶" "搜索入口" "搜索输入框" "PocketMind Device Control Eval - 淘宝" "综合" 1
-run_app_search_case pdd "拼多多" "纸巾" "搜索入口" "搜索输入框" "PocketMind Device Control Eval - 拼多多" "百亿补贴" 1
-run_app_search_case gaode "高德" "机场" "搜索入口" "搜索输入框" "PocketMind Device Control Eval - 高德地图" "路线" 0
-run_app_search_case browser "浏览器" "Kotlin协程" "地址栏" "地址栏" "PocketMind Device Control Eval - 浏览器" "搜索结果" 0
+run_app_search_case taobao "淘宝" "海河牛奶" "搜索入口" "搜索输入框" "Solin Device Control Eval - 淘宝" "综合" 1
+run_app_search_case pdd "拼多多" "纸巾" "搜索入口" "搜索输入框" "Solin Device Control Eval - 拼多多" "百亿补贴" 1
+run_app_search_case gaode "高德" "机场" "搜索入口" "搜索输入框" "Solin Device Control Eval - 高德地图" "路线" 0
+run_app_search_case browser "浏览器" "Kotlin协程" "地址栏" "地址栏" "Solin Device Control Eval - 浏览器" "搜索结果" 0
 
 echo "Device control debug eval passed."

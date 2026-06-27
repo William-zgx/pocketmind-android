@@ -1,6 +1,6 @@
-# PocketMind Agent Core Modules
+# Solin Agent Core Modules
 
-This is the current architecture reference for PocketMind's end-side Agent.
+This is the current architecture reference for Solin's end-side Agent.
 Keep it about module ownership, boundaries, current status, and regression
 coverage. Historical migration plans belong in
 `docs/agent_loop_multi_agent_plan.md`.
@@ -124,7 +124,7 @@ Current status:
   checkpoints, and selected no-payload continuation cursors can restore after
   process death. Raw tool arguments, model output, private payload, and
   arbitrary sequence text are not restored.
-- External Activity launches move to `AwaitingExternalOutcome` when PocketMind
+- External Activity launches move to `AwaitingExternalOutcome` when Solin
   can prove only that the external UI opened. Follow-up planning waits for the
   user to record whether the target-side outcome completed.
 - Run-level step and observation budgets fail closed before another pending

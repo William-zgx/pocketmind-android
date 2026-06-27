@@ -351,7 +351,7 @@ class UiAutomatorDumpReplayTest {
         assertBrowserResultDump(
             beforePath = "ui_dumps/real_app_search/chrome_address_home.xml",
             afterPath = "ui_dumps/real_app_search/chrome_search_results.xml",
-            query = "PocketMindAgentChrome",
+            query = "SolinAgentChrome",
             expectedPackageName = "com.android.chrome",
         )
     }
@@ -372,7 +372,7 @@ class UiAutomatorDumpReplayTest {
         assertBrowserResultDump(
             beforePath = "ui_dumps/real_app_search/android_browser_address_home.xml",
             afterPath = "ui_dumps/real_app_search/android_browser_search_results.xml",
-            query = "PocketMindAgentBrowser",
+            query = "SolinAgentBrowser",
             expectedPackageName = "com.android.browser",
         )
     }
@@ -393,7 +393,7 @@ class UiAutomatorDumpReplayTest {
         assertBrowserResultDump(
             beforePath = "ui_dumps/real_app_search/uc_address_home.xml",
             afterPath = "ui_dumps/real_app_search/uc_search_results.xml",
-            query = "PocketMindAgentUC",
+            query = "SolinAgentUC",
             expectedPackageName = "com.UCMobile",
         )
     }

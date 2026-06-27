@@ -90,7 +90,7 @@ class AndroidCurrentScreenshotOcrProvider(
         val width = metrics.widthPixels.coerceAtLeast(1)
         val height = metrics.heightPixels.coerceAtLeast(1)
         val densityDpi = metrics.densityDpi.coerceAtLeast(1)
-        val handlerThread = HandlerThread("PocketMindCurrentScreenshotOcr")
+        val handlerThread = HandlerThread("SolinCurrentScreenshotOcr")
         handlerThread.start()
         val handler = Handler(handlerThread.looper)
         val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, IMAGE_READER_MAX_IMAGES)
@@ -159,7 +159,7 @@ class AndroidCurrentScreenshotOcrProvider(
     )
 
     private companion object {
-        const val VIRTUAL_DISPLAY_NAME = "PocketMindCurrentScreenshotOcr"
+        const val VIRTUAL_DISPLAY_NAME = "SolinCurrentScreenshotOcr"
         const val IMAGE_READER_MAX_IMAGES = 2
         const val CAPTURE_TIMEOUT_MILLIS = 2_500L
     }

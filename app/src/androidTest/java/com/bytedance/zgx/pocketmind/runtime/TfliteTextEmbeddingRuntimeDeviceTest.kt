@@ -37,7 +37,7 @@ class TfliteTextEmbeddingRuntimeDeviceTest {
         }
         val nonNullRuntime = runtime ?: throw AssertionError("embedding runtime factory returned null")
         try {
-            val vector = nonNullRuntime.embed("PocketMind semantic memory probe")
+            val vector = nonNullRuntime.embed("Solin semantic memory probe")
             assertEquals(TfliteTextEmbeddingRuntimeFactory.EMBEDDING_DIMENSION, vector.size)
             assertTrue(
                 "embedding vector contains invalid values",

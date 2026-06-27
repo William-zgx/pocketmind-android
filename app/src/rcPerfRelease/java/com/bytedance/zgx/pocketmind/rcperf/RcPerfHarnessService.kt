@@ -106,10 +106,10 @@ class RcPerfHarnessService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "PocketMind RC 性能采集",
+                "栖知 RC 性能采集",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "PocketMind RC 版本性能采集运行中"
+                description = "栖知 RC 版本性能采集运行中"
             },
         )
     }
@@ -126,7 +126,7 @@ class RcPerfHarnessService : Service() {
         }
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("PocketMind 正在采集 RC 性能")
+            .setContentTitle("栖知正在采集 RC 性能")
             .setContentText("正在运行本地模型性能采集")
             .setOngoing(true)
             .setShowWhen(false)

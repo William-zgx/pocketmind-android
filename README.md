@@ -1,13 +1,20 @@
-# PocketMind Android
+# Solin Android
 
-PocketMind is a privacy-first Android assistant. It can answer with local
+Localized release names:
+
+| Locale | App name | Subtitle |
+| --- | --- | --- |
+| Chinese | 栖知 | 让 AI 住在手机里 |
+| English | Solin | Quiet intelligence, close at hand. |
+
+Solin is a privacy-first Android assistant. It can answer with local
 LiteRT-LM models, use a user-configured OpenAI-compatible remote endpoint, and
 run confirmed phone-side tools such as reminders, sharing, app navigation,
 screen text reads, OCR, contacts, calendar, and low-risk app search.
 
-![Cartoon PocketMind Android project visual: local AI stays on device, remote use is optional, and phone-side tools are confirmed.](docs/assets/pocketmind-readme-hero.png)
+![Cartoon Solin Android project visual: local AI stays on device, remote use is optional, and phone-side tools are confirmed.](docs/assets/solin-readme-hero.png)
 
-_Cartoon-style GPT Image 2 illustration of PocketMind's local-first model path,
+_Cartoon-style GPT Image 2 illustration of Solin's local-first model path,
 optional remote endpoint, and confirmed phone-side tools._
 
 ## Product Contract
@@ -55,7 +62,7 @@ flowchart LR
 
 ## First Screen And Trust Flow
 
-PocketMind opens into the assistant surface. The first-run path asks the user
+Solin opens into the assistant surface. The first-run path asks the user
 to choose remote setup, recommended local download, trusted model import, or an
 internal bundled-model package. Local model setup, remote sends, attachments,
 voice, memory, and tool execution remain visible user choices.
@@ -69,13 +76,13 @@ acceptance.
 
 Phone control is limited to low-risk navigation and search. The supported
 continuation path is observe, tap, type, submit search, scroll, back, and wait.
-PocketMind checkpoints low-risk app control, including a 5-step checkpoint, and
+Solin checkpoints low-risk app control, including a 5-step checkpoint, and
 keeps sending, deleting, paying, ordering, publishing, sensitive input, and
 permission changes on the confirmation path.
 
 ## Current Status
 
-PocketMind is an experimental open-source Android project. It is suitable for
+Solin is an experimental open-source Android project. It is suitable for
 local development, personal evaluation, and controlled tester builds. It is not
 yet ready for broad app-store or production distribution.
 
@@ -310,6 +317,6 @@ material that cannot be redistributed.
 
 ## License
 
-PocketMind Android app code is distributed under the MIT License. Recommended
+Solin Android app code is distributed under the MIT License. Recommended
 model downloads are third-party artifacts governed by their upstream licenses;
 see `docs/model_manifest.md` and the release license checklist.
