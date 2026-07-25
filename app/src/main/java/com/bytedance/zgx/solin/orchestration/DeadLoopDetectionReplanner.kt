@@ -63,16 +63,36 @@ class DeadLoopDetectionReplanner(
         }
 
         // ── Rule 2: Same screen observations ───────────────────────────────
-        // TODO: Need priorScreenObservations from runtime — currently not
-        // available in AgentObservationReplanContext. When the runtime provides
-        // screen observation history, re-enable this rule:
-        //   val observations = ... // runtime-provided List<ScreenObservationFingerprint>
-        //   if (observations.size >= maxSameScreen) {
-        //       val recentObs = observations.takeLast(maxSameScreen)
-        //       val allSameScreen = recentObs.all { it.packageName == observations.last().packageName &&
-        //           (it.textSummary ?: "").hashCode() == (observations.last().textSummary ?: "").hashCode() }
-        //       if (allSameScreen) { /* force back */ }
-        //   }
+        // The runtime now supplies screen-observation fingerprints via
+        // AgentObservationReplanContext. When the last [maxSameScreen] observations describe
+        // the same surface (package + text digest + element count) despite intervening
+        // actions, the run is stuck on a frozen screen — force a back press to break out.
+        val observations = context.screenObservationHistory
+        if (observations.size >= maxSameScreen) {
+            val recentObs = observations.takeLast(maxSameScreen)
+            val newest = recentObs.last()
+            val allSameScreen = recentObs.all { it.sameSurfaceAs(newest) }
+            if (allSameScreen && context.previousRequest.toolName != MobileActionFunctions.UI_PRESS_BACK) {
+                val reason = "dead_loop: same screen x$maxSameScreen"
+                val draft = ActionDraft(
+                    functionName = MobileActionFunctions.UI_PRESS_BACK,
+                    title = "强制返回",
+                    summary = "连续 $maxSameScreen 次观测到同一屏幕且无进展，强制返回上一页以打破停滞",
+                    parameters = emptyMap(),
+                )
+                val request = ToolRequest(
+                    toolName = MobileActionFunctions.UI_PRESS_BACK,
+                    arguments = emptyMap(),
+                    reason = reason,
+                )
+                return AgentObservationReplan(
+                    request = request,
+                    draft = draft,
+                    plannedByModel = false,
+                    fallbackReason = reason,
+                )
+            }
+        }
 
         // ── Rule 3: Repeated scrolls in same direction ─────────────────────
         val scrollRequests = priorRequests.filter { it.toolName == MobileActionFunctions.UI_SCROLL }
@@ -145,10 +165,21 @@ class DeadLoopDetectionReplanner(
 /**
  * Fingerprint of a screen observation used for dead-loop detection.
  * Carries only non-sensitive metadata — never raw text or element details.
+ * [textSummary] is a stable digest of the screen text, not the text itself.
  */
 data class ScreenObservationFingerprint(
     val packageName: String?,
     val textSummary: String?,
     val elementCount: Int,
     val capturedAtMillis: Long,
-)
+) {
+    /**
+     * Whether two fingerprints describe the same surface with no progress. Compares package,
+     * text digest, and element count; deliberately ignores [capturedAtMillis] so that merely
+     * re-observing the same frozen screen counts as "same".
+     */
+    fun sameSurfaceAs(other: ScreenObservationFingerprint): Boolean =
+        packageName == other.packageName &&
+            textSummary == other.textSummary &&
+            elementCount == other.elementCount
+}

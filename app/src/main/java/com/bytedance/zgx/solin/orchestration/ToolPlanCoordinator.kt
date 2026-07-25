@@ -6,6 +6,7 @@ import com.bytedance.zgx.solin.action.ActionDraft
 import com.bytedance.zgx.solin.action.ActionPlanningRuntime
 import com.bytedance.zgx.solin.action.MobileActionFunctions
 import com.bytedance.zgx.solin.action.ModelToolOutputParseResult
+import com.bytedance.zgx.solin.device.screenObservationFromJsonStringOrNull
 import com.bytedance.zgx.solin.safety.SafetyContext
 import com.bytedance.zgx.solin.safety.SafetyOutcome
 import com.bytedance.zgx.solin.safety.SafetyPolicy
@@ -126,6 +127,7 @@ internal class ToolPlanCoordinator(
                 priorRequests = priorRequests,
                 nextActionInput = traceStore.nextActionInput(run.id),
                 completedSegmentCount = completedSegmentCount,
+                screenObservationHistory = screenObservationFingerprints(run.id),
             ),
         ) ?: return NextObservationPlan.None
         if (
@@ -171,6 +173,7 @@ internal class ToolPlanCoordinator(
                 priorRequests = priorRequests,
                 nextActionInput = traceStore.nextActionInput(run.id),
                 completedSegmentCount = completedSegmentCount,
+                screenObservationHistory = screenObservationFingerprints(run.id),
             ),
         ) ?: return null
         if (
@@ -238,6 +241,38 @@ internal class ToolPlanCoordinator(
             plannedByModel = false,
             fallbackReason = "device control failure recovery",
             skillPlan = skillPlan,
+        )
+    }
+
+    /**
+     * Builds the ordered screen-observation fingerprint history for [runId] from observed trace
+     * steps (oldest first), for [DeadLoopDetectionReplanner] Rule 2. Each fingerprint carries only
+     * non-sensitive metadata: the [textSummary] is a stable hash digest of the screen text, never
+     * the raw text. Prefers the after-observation of each step, falling back to the primary
+     * observation JSON, so post-action screens drive same-screen detection.
+     */
+    private fun screenObservationFingerprints(runId: String): List<ScreenObservationFingerprint> =
+        traceStore.steps(runId)
+            .filterIsInstance<AgentStep.ToolObserved>()
+            .mapNotNull { step -> step.result.toScreenObservationFingerprintOrNull() }
+
+    private fun ToolResult.toScreenObservationFingerprintOrNull(): ScreenObservationFingerprint? {
+        val rawJson = data["afterScreenObservationJson"]
+            ?: data["screenObservationJson"]
+            ?: return null
+        val observation = screenObservationFromJsonStringOrNull(rawJson) ?: return null
+        val textDigest = observation.elements
+            .asSequence()
+            .map { element -> element.text }
+            .filter { text -> text.isNotBlank() }
+            .joinToString("\n")
+            .hashCode()
+            .toString()
+        return ScreenObservationFingerprint(
+            packageName = observation.packageName,
+            textSummary = textDigest,
+            elementCount = observation.elements.size,
+            capturedAtMillis = observation.capturedAtMillis,
         )
     }
 
