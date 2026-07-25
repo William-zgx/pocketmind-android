@@ -301,6 +301,9 @@ private fun ScreenNode.role(): String =
     when {
         editable -> "editable"
         scrollable -> "scrollable"
+        // Icon-only affordance: clickable with no visible text but a content description
+        // (the label lives in contentDescription or must be grounded from nearby OCR).
+        clickable && text.isBlank() && contentDescription.isNotBlank() -> "icon"
         clickable -> "button"
         text.isNotBlank() || contentDescription.isNotBlank() -> "text"
         else -> "unknown"
@@ -414,4 +417,22 @@ private val SENSITIVE_TEXT_MARKERS = listOf(
     "验证码",
     "密码",
     "口令",
+)
+
+/**
+ * Trailing "affordance" tokens that ride at the end of an otherwise-informational row and denote a
+ * separate tappable action (e.g. a 展开 chevron after a section title). Used by [UiTargetResolver]
+ * to synthesize a distinct actionable sub-region so icon-heavy / composite rows remain reachable.
+ */
+internal val TRAILING_AFFORDANCE_MARKERS = listOf(
+    "展开",
+    "收起",
+    "更多",
+    "查看全部",
+    "查看更多",
+    "全部",
+    "expand",
+    "more",
+    "see all",
+    "view all",
 )
