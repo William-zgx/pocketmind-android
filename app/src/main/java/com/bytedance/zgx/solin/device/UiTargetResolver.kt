@@ -714,7 +714,50 @@ private fun ScreenObservation.toGroundingNodes(): List<GroundingNode> {
             fallbackType = UiTargetFallbackType.OcrGrounding,
         )
     }
-    return accessibilityNodes + ocrNodes
+    val trailingAffordanceNodes = accessibilityNodes.mapNotNull { grounding ->
+        grounding.node.trailingAffordanceGroundingNode()
+    }
+    return accessibilityNodes + ocrNodes + trailingAffordanceNodes
+}
+
+/**
+ * If a text row ends with a trailing affordance token (展开/更多/查看全部/…), synthesize a distinct
+ * actionable grounding node covering the right ~30% of the row so that affordance can be targeted
+ * independently of the row's informational text. Carries the OCR-grounding fallback penalty so it
+ * never outranks a real labeled control. Returns null when there is no such token or no bounds.
+ */
+private fun ScreenNode.trailingAffordanceGroundingNode(): GroundingNode? {
+    if (!clickable) return null
+    val boundsValue = bounds ?: return null
+    val trimmed = text.trim()
+    val marker = TRAILING_AFFORDANCE_MARKERS.firstOrNull { token ->
+        trimmed.endsWith(token, ignoreCase = true) && !trimmed.equals(token, ignoreCase = true)
+    } ?: return null
+    val width = boundsValue.right - boundsValue.left
+    if (width <= 0) return null
+    val affordanceLeft = boundsValue.left + (width * 7) / 10
+    val affordanceBounds = ScreenBounds(
+        left = affordanceLeft,
+        top = boundsValue.top,
+        right = boundsValue.right,
+        bottom = boundsValue.bottom,
+    )
+    return GroundingNode(
+        node = ScreenNode(
+            id = "$id::affordance",
+            text = marker,
+            contentDescription = "",
+            className = "observation.affordance",
+            bounds = affordanceBounds,
+            clickable = true,
+            editable = false,
+            scrollable = false,
+            enabled = enabled,
+        ),
+        source = UiTargetEvidenceSource.Ocr,
+        fallbackType = UiTargetFallbackType.OcrGrounding,
+        labelOverride = marker,
+    )
 }
 
 private fun ObservationElement.overlappingOcrLabel(ocrElements: List<ObservationElement>): String? {
