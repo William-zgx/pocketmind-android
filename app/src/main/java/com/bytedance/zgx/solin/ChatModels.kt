@@ -37,6 +37,26 @@ enum class MessagePrivacy {
 }
 
 /**
+ * Coarse discriminator for what a [ChatMessage] carries, so context compaction can preserve
+ * grounding-critical messages (the latest screen observation, failed tool results) instead of
+ * truncating them like ordinary chat. Defaults to [Chat]; producers that fold tool results into
+ * history tag them explicitly.
+ */
+enum class MessageKind {
+    /** Ordinary user/assistant conversation text. */
+    Chat,
+
+    /** A successful tool result folded into history. */
+    ToolResult,
+
+    /** A failed or blocked tool result — must survive compaction so the model can recover. */
+    ToolFailure,
+
+    /** A screen observation (structured screen text/JSON) — the latest one must survive. */
+    ScreenObservation,
+}
+
+/**
  * Reasoning-budget hint passed to the model provider.
  * - Local (LiteRt) runtimes ignore this field.
  * - Remote runtimes may translate it to a provider-specific param
@@ -72,6 +92,7 @@ data class ChatMessage(
     val generationStats: GenerationStats? = null,
     val id: Long = nextMessageId.incrementAndGet(),
     val privacy: MessagePrivacy = MessagePrivacy.RemoteEligible,
+    val kind: MessageKind = MessageKind.Chat,
 )
 
 data class ChatImageAttachment(

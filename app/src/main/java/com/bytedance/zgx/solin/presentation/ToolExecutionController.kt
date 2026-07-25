@@ -4,6 +4,7 @@ import com.bytedance.zgx.solin.AgentTraceRunUiSummary
 import com.bytedance.zgx.solin.AuditEventSummary
 import com.bytedance.zgx.solin.BackgroundTaskSummary
 import com.bytedance.zgx.solin.ChatMessage
+import com.bytedance.zgx.solin.MessageKind
 import com.bytedance.zgx.solin.ChatUiState
 import com.bytedance.zgx.solin.LongTermMemorySummary
 import com.bytedance.zgx.solin.MessagePrivacy
@@ -43,6 +44,7 @@ import com.bytedance.zgx.solin.tool.ToolExecutor
 import com.bytedance.zgx.solin.tool.ToolRegistry
 import com.bytedance.zgx.solin.tool.ToolRequest
 import com.bytedance.zgx.solin.tool.ToolResult
+import com.bytedance.zgx.solin.tool.ToolStatus
 import com.bytedance.zgx.solin.tool.failed
 import com.bytedance.zgx.solin.tool.isEligibleForParallelBatch
 import com.bytedance.zgx.solin.tool.isUnverifiedExternalLaunch
@@ -267,6 +269,7 @@ class ToolExecutionController(
             role = MessageRole.Assistant,
             text = assistantText,
             privacy = observationPrivacy,
+            kind = messageKindFor(result),
         )
         replaceActiveSessionMessages(
             messagesWithObservation,
@@ -287,6 +290,7 @@ class ToolExecutionController(
                 role = MessageRole.Assistant,
                 text = assistantText,
                 privacy = observationPrivacy,
+                kind = messageKindFor(result),
             )
             replaceActiveSessionMessages(
                 messagesWithObservation,
@@ -479,6 +483,7 @@ class ToolExecutionController(
             role = MessageRole.Assistant,
             text = observation.assistantMessage,
             privacy = observationPrivacy,
+            kind = messageKindFor(results),
         )
         replaceActiveSessionMessages(
             messagesWithObservation,
@@ -739,6 +744,21 @@ class ToolExecutionController(
 
     private fun ToolResult.statusSummaryForUi(): String =
         if (isUnverifiedExternalLaunch()) unverifiedExternalLaunchSummary() else summary
+
+    /**
+     * Classifies a folded tool observation so [ContextCompactor] can preserve it under budget
+     * pressure: failed/blocked results and screen observations must not be truncated like chat.
+     */
+    private fun messageKindFor(result: ToolResult): MessageKind = when {
+        result.status != ToolStatus.Succeeded -> MessageKind.ToolFailure
+        result.data.containsKey("screenObservationJson") ||
+            result.data.containsKey("afterScreenObservationJson") -> MessageKind.ScreenObservation
+        else -> MessageKind.ToolResult
+    }
+
+    /** Batch variant: a failed member makes the whole folded observation a [MessageKind.ToolFailure]. */
+    private fun messageKindFor(results: List<ToolResult>): MessageKind =
+        if (results.any { it.status != ToolStatus.Succeeded }) MessageKind.ToolFailure else MessageKind.ToolResult
 
     fun rejectAgentConfirmationForRuntimePermissionDenial(
         confirmation: PendingAgentConfirmation,
