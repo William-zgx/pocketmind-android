@@ -21,6 +21,8 @@ import com.bytedance.zgx.solin.audit.ToolAuditEvent
 import com.bytedance.zgx.solin.audit.ToolAuditEventType
 import com.bytedance.zgx.solin.audit.ToolAuditSink
 import com.bytedance.zgx.solin.device.DeviceContextSnapshot
+import com.bytedance.zgx.solin.device.screenObservationFromJsonStringOrNull
+import com.bytedance.zgx.solin.device.toElementTable
 import com.bytedance.zgx.solin.evidence.EvidenceBlobStore
 import com.bytedance.zgx.solin.evidence.EvidenceCard
 import com.bytedance.zgx.solin.evidence.NoOpEvidenceBlobStore
@@ -2035,10 +2037,16 @@ class AgentLoopRuntime(
                         "这不是当前屏幕捕获，也不是图片语义理解；只使用已提取的图片文字。"
                 }
                 val screenObservationSection = screenObservationJson?.let { observationJson ->
+                    // Render a compact numbered element table (text Set-of-Marks) instead of raw
+                    // JSON so the model picks a target by its stable [id] token. Fall back to the
+                    // raw JSON only if parsing fails, so a schema change never blanks the screen.
+                    val elementTable = screenObservationFromJsonStringOrNull(observationJson)
+                        ?.toElementTable()
+                    val rendered = elementTable ?: observationJson
                     """
 
-                    当前屏幕结构化观测 JSON（LocalOnly，融合 OCR/Accessibility）：
-                    $observationJson
+                    当前屏幕结构化观测（LocalOnly，融合 OCR/Accessibility）：
+                    $rendered
                     """.trimIndent()
                 }.orEmpty()
                 ToolObservationContinuation(
