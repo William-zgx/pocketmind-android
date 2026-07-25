@@ -56,6 +56,16 @@ jobs:
       - name: Verify
         run: scripts/verify_local.sh
 
+      - name: Verify AI behavior eval boundary map
+        run: scripts/verify_ai_behavior_eval.sh --require-boundary-map --report build/verification/ai-behavior-eval/ai-behavior-eval.properties
+
+      - name: Upload AI behavior eval evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ai-behavior-eval-evidence
+          path: build/verification/ai-behavior-eval
+
       - name: Record local verification evidence
         if: success()
         run: |

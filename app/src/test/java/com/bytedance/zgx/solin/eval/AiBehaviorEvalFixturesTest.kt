@@ -145,6 +145,63 @@ class AiBehaviorEvalFixturesTest {
         )
     }
 
+    @Test
+    fun everyFixtureRowDeserializesIntoTypedEvalCase() {
+        val categories = listOf(
+            "memory_recall",
+            "planner_false_positive",
+            "tool_sequence",
+            "ocr_noise",
+            "runtime_failure",
+            "privacy_boundary",
+            "restart_recovery",
+        )
+
+        var deserializedCount = 0
+        var routingCaseCount = 0
+        var placementCaseCount = 0
+        categories.forEach { category ->
+            loadFixtureRows("$category.jsonl").forEach { row ->
+                val id = row.getString("id")
+                // Round-trips through the same deserializer production/CI use; the
+                // AgentBehaviorEvalCase constructor enforces every field-level invariant,
+                // so a malformed fixture fails here rather than silently at gate time.
+                val case = AgentBehaviorEvalCase.fromJson(row)
+                assertEquals("fromJson must preserve id for $id", id, case.id)
+                assertEquals("fromJson must preserve input for $id", row.getString("input"), case.input)
+                assertEquals(
+                    "fromJson must preserve privacy for $id",
+                    row.getString("privacy"),
+                    case.privacy.name,
+                )
+                assertEquals(
+                    "fromJson must preserve localOnly for $id",
+                    row.getBoolean("localOnly"),
+                    case.localOnly,
+                )
+                assertEquals(
+                    "fromJson must preserve remoteEligible for $id",
+                    row.getBoolean("remoteEligible"),
+                    case.remoteEligible,
+                )
+                if (row.optString("expectedRoutingPath", "").isNotBlank()) {
+                    assertTrue("routing path must deserialize for $id", case.expectedRoutingPath != null)
+                    routingCaseCount++
+                }
+                if (row.has("expectedPlacement")) {
+                    assertTrue("placement must deserialize for $id", case.expectedPlacement != null)
+                    assertTrue("placement reason must deserialize for $id", case.expectedPlacementReason != null)
+                    placementCaseCount++
+                }
+                deserializedCount++
+            }
+        }
+
+        assertTrue("expected the eval corpus to be non-empty", deserializedCount > 0)
+        assertTrue("expected at least one routing-annotated case to exercise routing mapping", routingCaseCount > 0)
+        assertTrue("expected at least one placement-annotated case to exercise placement mapping", placementCaseCount > 0)
+    }
+
     private fun assertTraceExpectationFields(row: JSONObject) {
         val tools = row.get("expectedTools")
         assertTrue("expectedTools must be an array", tools is JSONArray)
