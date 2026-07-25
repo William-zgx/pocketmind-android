@@ -98,6 +98,17 @@ object SolinConstants {
          * this cap, guarding against infinite observe-replan cycles.
          */
         const val MAX_OBSERVATION_DECISIONS: Int = 16
+
+        /**
+         * Maximum number of bounded auto-dismiss rounds attempted before a low-risk UI action when
+         * a blocking promotional overlay/interstitial occludes the target.
+         *
+         * Each round detects a close/skip affordance (never a dangerous-action control), taps it,
+         * re-observes, and stops as soon as the overlay clears. Kept small so overlay dismissal can
+         * never dominate the run; on persistent (e.g. sticky) overlays the loop gives up and lets
+         * the real action proceed rather than looping.
+         */
+        const val AD_DISMISS_MAX_ROUNDS: Int = 2
     }
 
     /**
