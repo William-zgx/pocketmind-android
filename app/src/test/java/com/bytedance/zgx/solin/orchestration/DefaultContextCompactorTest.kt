@@ -1,6 +1,7 @@
 package com.bytedance.zgx.solin.orchestration
 
 import com.bytedance.zgx.solin.ChatMessage
+import com.bytedance.zgx.solin.MessageKind
 import com.bytedance.zgx.solin.MessageRole
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -109,6 +110,74 @@ class DefaultContextCompactorTest {
             head.any { it.role == MessageRole.Assistant && "summary" in it.text.lowercase() },
         )
         assertTrue("compactionCount must be > 0", result.compactionCount > 0)
+    }
+
+    @Test
+    fun failedToolResultInMiddleSurvivesCompactionVerbatim() = runTest {
+        val config = CompactionConfig(preserveRecentTurns = 2)
+        val compactor = DefaultContextCompactor(config)
+
+        val failure = ChatMessage(
+            role = MessageRole.Assistant,
+            text = "工具执行失败：search_entry_not_found（在当前页找不到搜索入口）。" + "d".repeat(400),
+            kind = MessageKind.ToolFailure,
+        )
+        // Failure sits in the middle (older than the preserved tail), surrounded by long chat.
+        val messages = buildList {
+            addAll(history(turnCount = 3, charsPerMsg = 500))
+            add(failure)
+            addAll(history(turnCount = 3, charsPerMsg = 500))
+        }
+        val budget = 1500
+        val threshold = (budget * config.compactionThresholdRatio).toInt()
+        assertTrue("setup must trigger compaction", charEstimator(messages) > threshold)
+
+        val result = compactor.compact(messages, budget, charEstimator)
+
+        assertTrue("compaction must have run", result.compactionCount > 0)
+        assertTrue(
+            "failed tool result must survive compaction verbatim",
+            result.messages.any { it.kind == MessageKind.ToolFailure && it.text == failure.text },
+        )
+    }
+
+    @Test
+    fun onlyLatestScreenObservationSurvivesCompaction() = runTest {
+        val config = CompactionConfig(preserveRecentTurns = 2)
+        val compactor = DefaultContextCompactor(config)
+
+        val olderScreen = ChatMessage(
+            role = MessageRole.Assistant,
+            text = "屏幕观测(旧)：" + "o".repeat(500),
+            kind = MessageKind.ScreenObservation,
+        )
+        val latestScreen = ChatMessage(
+            role = MessageRole.Assistant,
+            text = "屏幕观测(新)：" + "n".repeat(500),
+            kind = MessageKind.ScreenObservation,
+        )
+        // Both observations sit in the middle; only the latest should be kept verbatim.
+        val messages = buildList {
+            addAll(history(turnCount = 2, charsPerMsg = 500))
+            add(olderScreen)
+            addAll(history(turnCount = 2, charsPerMsg = 500))
+            add(latestScreen)
+            addAll(history(turnCount = 3, charsPerMsg = 500))
+        }
+        val budget = 1500
+        val threshold = (budget * config.compactionThresholdRatio).toInt()
+        assertTrue("setup must trigger compaction", charEstimator(messages) > threshold)
+
+        val result = compactor.compact(messages, budget, charEstimator)
+
+        assertTrue(
+            "latest screen observation must survive verbatim",
+            result.messages.any { it.kind == MessageKind.ScreenObservation && it.text == latestScreen.text },
+        )
+        assertTrue(
+            "older screen observation must NOT survive verbatim (summarized to reclaim tokens)",
+            result.messages.none { it.text == olderScreen.text },
+        )
     }
 
     @Test

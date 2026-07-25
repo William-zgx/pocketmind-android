@@ -1,6 +1,7 @@
 package com.bytedance.zgx.solin.orchestration
 
 import com.bytedance.zgx.solin.ChatMessage
+import com.bytedance.zgx.solin.MessageKind
 import com.bytedance.zgx.solin.MessageRole
 
 /**
@@ -174,10 +175,12 @@ class DefaultContextCompactor(
         var compactedCount = 0
         while (preserveTurns >= minPreserveTurns) {
             val split = splitSections(messages, preserveTurns)
-            val summary = buildHeuristicSummary(split.middle)
+            val (preservedMiddle, summarizableMiddle) = partitionGroundingCritical(split.middle)
+            val summary = buildHeuristicSummary(summarizableMiddle)
             candidate = split.prefix.withSummary(summaryMessage(summary)) +
+                preservedMiddle +
                 split.tail
-            compactedCount = split.middle.size
+            compactedCount = summarizableMiddle.size
             val tokensAfter = estimatedTokens(candidate)
             if (tokensAfter <= thresholdTokens) {
                 return CompactionResult(
@@ -299,11 +302,41 @@ class DefaultContextCompactor(
         false
 
     /**
+     * Split the summarizable middle into (grounding-critical messages kept verbatim,
+     * everything-else to be summarized), preserving original order in each list.
+     *
+     * Grounding-critical = any failed/blocked tool result (the model needs the exact failure to
+     * recover) plus the single most-recent screen observation (the model taps based on current
+     * screen text). Older screen observations are still summarized to reclaim tokens.
+     */
+    private fun partitionGroundingCritical(
+        middle: List<ChatMessage>,
+    ): Pair<List<ChatMessage>, List<ChatMessage>> {
+        if (middle.isEmpty()) return emptyList<ChatMessage>() to emptyList()
+        val latestScreenObservationId = middle
+            .lastOrNull { it.kind == MessageKind.ScreenObservation }
+            ?.id
+        val preserved = ArrayList<ChatMessage>()
+        val summarizable = ArrayList<ChatMessage>()
+        for (msg in middle) {
+            val keepVerbatim = when (msg.kind) {
+                MessageKind.ToolFailure -> true
+                MessageKind.ScreenObservation -> msg.id == latestScreenObservationId
+                else -> false
+            }
+            if (keepVerbatim) preserved.add(msg) else summarizable.add(msg)
+        }
+        return preserved to summarizable
+    }
+
+    /**
      * Heuristic Wave-2 summarizer: extract bullet points from user queries and assistant
      * (possibly tool-result) messages in the middle section.
      *
      * - User messages: first 200 chars of content.
-     * - Assistant messages: first 100 chars (these often carry tool-result summaries).
+     * - Assistant chat messages: first 100 chars.
+     * - Tool-result / screen-observation messages: first 100 chars, kept as compact bullets so a
+     *   summarized older tool result still records that it happened.
      * - Joined with "• " bullet markers, newline-separated.
      * - Truncated to [CompactionConfig.maxSummaryLengthChars] with ellipsis if needed.
      *
