@@ -20,6 +20,14 @@ data class SkillManifest(
     val lowRiskAppControlEligible: Boolean = false,
     val continuesAfterUnverifiedOpenAppLaunch: Boolean = false,
     val backgroundExecution: SkillBackgroundExecution? = null,
+    /**
+     * Optional natural-language "when to use this skill" hint surfaced to the model in the
+     * advisory `<available_skills>` catalog. Display/selection metadata only — deliberately NOT
+     * part of [authorizationContractHash]: changing it must never invalidate an existing skill's
+     * authorization, and it can never widen tools, risk, or execution. Dispatch stays deterministic
+     * and rule-first; this only helps the model phrase/route a request, never authorizes execution.
+     */
+    val whenToUse: String = "",
 )
 
 data class SkillBackgroundExecution(
