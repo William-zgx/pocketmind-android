@@ -79,6 +79,77 @@
           "bounds": { "left": 920, "top": 88, "right": 1028, "bottom": 170 }
         }
       ]
+    },
+    {
+      "id": "jd_result_feed_only_is_not_search_entry",
+      "source": "screen_observation",
+      "packageName": "com.jingdong.app.mall",
+      "targetKind": "search_entry",
+      "target": "搜索入口",
+      "expectedFailureKind": "search_entry_not_found",
+      "nodes": [
+        {
+          "id": "com.jingdong.app.mall:id/product_feed",
+          "text": "京东超市 综合 销量 价格 筛选 自营 ￥59 已售2000 好评",
+          "className": "androidx.recyclerview.widget.RecyclerView",
+          "bounds": { "left": 0, "top": 200, "right": 1080, "bottom": 1900 },
+          "clickable": true,
+          "scrollable": true
+        }
+      ]
+    },
+    {
+      "id": "amap_map_canvas_only_is_not_search_entry",
+      "source": "screen_observation",
+      "packageName": "com.autonavi.minimap",
+      "targetKind": "search_entry",
+      "target": "搜索入口",
+      "expectedFailureKind": "search_entry_not_found",
+      "nodes": [
+        {
+          "id": "com.autonavi.minimap:id/map_container",
+          "text": "地图 我的位置 路况 图层",
+          "className": "android.view.View",
+          "bounds": { "left": 0, "top": 0, "right": 1080, "bottom": 2100 },
+          "clickable": true,
+          "scrollable": false
+        }
+      ]
+    },
+    {
+      "id": "coupon_overlay_does_not_hijack_search_entry",
+      "source": "screen_observation",
+      "packageName": "com.taobao.taobao",
+      "targetKind": "search_entry",
+      "target": "搜索入口",
+      "expectedSelectedNodeId": "com.taobao.taobao:id/home_search_entry",
+      "excludedNodeIds": ["overlay-promo", "overlay-close"],
+      "nodes": [
+        {
+          "id": "com.taobao.taobao:id/home_search_entry",
+          "text": "搜索",
+          "contentDescription": "搜索",
+          "className": "android.widget.EditText",
+          "bounds": { "left": 60, "top": 96, "right": 900, "bottom": 168 },
+          "clickable": true,
+          "editable": true
+        },
+        {
+          "id": "overlay-promo",
+          "text": "限时抢购 立即购买 倒计时 专属权益 已获得红包",
+          "className": "android.widget.FrameLayout",
+          "bounds": { "left": 80, "top": 400, "right": 1000, "bottom": 1400 },
+          "clickable": true
+        },
+        {
+          "id": "overlay-close",
+          "text": "关闭",
+          "contentDescription": "关闭",
+          "className": "android.widget.ImageView",
+          "bounds": { "left": 980, "top": 360, "right": 1040, "bottom": 420 },
+          "clickable": true
+        }
+      ]
     }
   ]
 }
