@@ -2139,6 +2139,14 @@ class BuiltInSkillRuntimeTest {
                         .sortedBy { it.key }
                         .joinToString("|") { (key, value) -> "$key=$value" },
                 ).joinToString(":")
+
+                is SkillStep.BranchStep -> listOf(
+                    "branch",
+                    step.id,
+                    step.dependsOn.joinToString("|"),
+                    step.onMatchStepId,
+                    step.onElseStepId.orEmpty(),
+                ).joinToString(":")
             }
         }
 

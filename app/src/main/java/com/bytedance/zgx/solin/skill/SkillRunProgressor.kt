@@ -116,11 +116,52 @@ class SkillRunProgressor(
             .filter { step -> step.request.id in requestedRequestIds }
             .mapTo(mutableSetOf()) { step -> step.id }
         val satisfiedDependencyStepIds = requestedToolStepIds + satisfiedStepIds
-        val nextToolStep = skillPlan.steps
-            .drop(currentStepIndex + 1)
-            .filterIsInstance<SkillStep.ToolStep>()
-            .firstOrNull { step -> step.request.id !in requestedRequestIds }
-            ?: return SkillToolResultProgression.None
+
+        val privateOutputRefs = privateOutputRefsForRequestedTools(skillPlan, requestedRequestIds)
+        val outputs = initialOutputs(skillPlan).apply {
+            put(currentStep.id, outputForToolResult(result, currentStep.draft))
+        }
+
+        // Walk forward from the completed step, resolving any BranchStep against the just-completed
+        // result, until the next not-yet-requested ToolStep. Branch targets are validated
+        // forward-only, so this walk is monotonic and terminating (visit budget is a backstop).
+        val stepIndexById = skillPlan.steps.mapIndexed { index, step -> step.id to index }.toMap()
+        var cursor = currentStepIndex + 1
+        var visits = 0
+        val maxVisits = skillPlan.steps.size + 1
+        var nextToolStep: SkillStep.ToolStep? = null
+        while (cursor < skillPlan.steps.size) {
+            if (visits++ > maxVisits) {
+                return SkillToolResultProgression.Rejected("skill control-flow budget exceeded")
+            }
+            when (val step = skillPlan.steps[cursor]) {
+                is SkillStep.ToolStep -> {
+                    if (step.request.id in requestedRequestIds) {
+                        cursor += 1
+                    } else {
+                        nextToolStep = step
+                        break
+                    }
+                }
+                is SkillStep.ModelStep -> cursor += 1
+                is SkillStep.BranchStep -> {
+                    val sourceOutput = step.dependsOn.singleOrNull()?.let { outputs[it] }
+                        ?: return SkillToolResultProgression.Rejected(
+                            "branch step ${step.id} source result unavailable in cross-turn progression",
+                        )
+                    val matched = step.condition.matches(sourceOutput)
+                    val targetId = if (matched) step.onMatchStepId else step.onElseStepId
+                        ?: return SkillToolResultProgression.None
+                    val targetIndex = stepIndexById[targetId]
+                        ?: return SkillToolResultProgression.Rejected("branch targets unknown step: $targetId")
+                    if (targetIndex <= cursor) {
+                        return SkillToolResultProgression.Rejected("branch target is not forward: $targetId")
+                    }
+                    cursor = targetIndex
+                }
+            }
+        }
+        if (nextToolStep == null) return SkillToolResultProgression.None
         val unmetDependencies = nextToolStep.dependsOn.filter { dependency ->
             dependency !in satisfiedDependencyStepIds
         }
@@ -130,10 +171,6 @@ class SkillRunProgressor(
             )
         }
 
-        val privateOutputRefs = privateOutputRefsForRequestedTools(skillPlan, requestedRequestIds)
-        val outputs = initialOutputs(skillPlan).apply {
-            put(currentStep.id, outputForToolResult(result, currentStep.draft))
-        }
         return when (val binding = bindToolStep(nextToolStep, outputs, privateOutputRefs)) {
             is SkillToolStepBinding.Bound ->
                 SkillToolResultProgression.BoundTool(

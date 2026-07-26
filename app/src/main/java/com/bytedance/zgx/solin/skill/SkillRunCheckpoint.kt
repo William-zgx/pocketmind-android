@@ -225,6 +225,7 @@ private fun SkillStep.knownValueFreeOutputKeys(toolRegistry: ToolRegistry): List
             .filter { key -> key.isNotBlank() }
             .distinct()
             .sorted()
+        is SkillStep.BranchStep -> emptyList()
     }
 
 private fun SkillStep.ToolStep.unpersistablePendingBindingTargets(toolRegistry: ToolRegistry): List<String> {
