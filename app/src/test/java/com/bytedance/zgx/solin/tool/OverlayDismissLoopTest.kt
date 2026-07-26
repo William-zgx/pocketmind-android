@@ -94,6 +94,35 @@ class OverlayDismissLoopTest {
         assertEquals("dangerous_ui_action_control_detected", result.data["summary"])
     }
 
+    @Test
+    fun failsClosedWhenDismissRevealsDangerousControl() {
+        // Preflight #1 sees a benign overlay (dismissable). After the dismiss tap, the newly
+        // revealed screen carries a 立即购买 dangerous control. The post-dismiss re-preflight must
+        // catch it and block the real tap.
+        val provider = ScriptedControlProvider(
+            observeSnapshots = listOf(
+                overlaySnapshot("overlay-preflight"),   // (1) pre-dismiss preflight: benign overlay
+                overlaySnapshot("overlay-round1"),       // (2) dismiss round 1: has close affordance
+                dangerousRevealedSnapshot("revealed"),   // (3) re-observe after tap: dangerous control revealed
+                dangerousRevealedSnapshot("revealed-2"), // (4) post-dismiss re-preflight: still dangerous
+            ),
+        )
+        val executor = DeviceControlToolExecutor(provider = provider)
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "tap-4",
+                toolName = MobileActionFunctions.UI_TAP,
+                arguments = mapOf("target" to "商品"),
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals("dangerous_ui_action_control_detected", result.data["summary"])
+        // The dismiss tap happened, but the real 商品 tap must NOT (blocked by re-preflight).
+        assertEquals(listOf("关闭"), provider.tapTargets)
+    }
+
     // ── Fixtures ──────────────────────────────────────────────────────────────────────────────
 
     private fun node(
@@ -145,6 +174,16 @@ class OverlayDismissLoopTest {
     private fun clearSnapshot(id: String) = snapshot(
         id = id,
         nodes = listOf(node("content", "商品", clickable = true)),
+    )
+
+    // A screen with a dangerous control and NO overlay markers: dismiss won't loop, but the
+    // dangerous-action preflight must block a tap here.
+    private fun dangerousRevealedSnapshot(id: String) = snapshot(
+        id = id,
+        nodes = listOf(
+            node("buy", "立即购买", clickable = true),
+            node("content", "商品", clickable = true),
+        ),
     )
 
     private class ScriptedControlProvider(
