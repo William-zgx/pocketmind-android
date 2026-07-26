@@ -17,6 +17,7 @@ import com.bytedance.zgx.solin.skill.SkillRequest
 import com.bytedance.zgx.solin.skill.SkillRunCheckpoint
 import com.bytedance.zgx.solin.skill.SkillRunCheckpointPhase
 import com.bytedance.zgx.solin.skill.SkillStep
+import com.bytedance.zgx.solin.skill.StepOutcomeCondition
 import com.bytedance.zgx.solin.skill.validateStructure
 import com.bytedance.zgx.solin.tool.RiskLevel
 import com.bytedance.zgx.solin.tool.ToolRegistry
@@ -1243,6 +1244,7 @@ private fun SkillPlan.redactedForPendingPersistence(): SkillPlan =
                 )
 
                 is SkillStep.ModelStep -> step
+                is SkillStep.BranchStep -> step
             }
         },
     )
@@ -1409,6 +1411,14 @@ private fun SkillStep.toJsonObject(): JSONObject =
             .put("inputBindings", inputBindings.toJsonObject())
             .put("outputKey", outputKey)
             .put("keepsSensitiveInputLocal", keepsSensitiveInputLocal)
+
+        is SkillStep.BranchStep -> JSONObject()
+            .put("type", "branch")
+            .put("id", id)
+            .put("dependsOn", dependsOn.toJsonArray())
+            .put("condition", condition.toJsonObject())
+            .put("onMatchStepId", onMatchStepId)
+            .put("onElseStepId", onElseStepId ?: JSONObject.NULL)
     }
 
 private fun JSONArray.toSkillSteps(): List<SkillStep> =
@@ -1439,7 +1449,38 @@ private fun JSONObject.toSkillStep(): SkillStep =
             keepsSensitiveInputLocal = optBoolean("keepsSensitiveInputLocal", true),
         )
 
+        "branch" -> SkillStep.BranchStep(
+            id = getString("id"),
+            dependsOn = getJSONArray("dependsOn").toStringList(),
+            condition = getJSONObject("condition").toStepOutcomeCondition(),
+            onMatchStepId = getString("onMatchStepId"),
+            onElseStepId = if (isNull("onElseStepId")) null else getString("onElseStepId"),
+        )
+
         else -> error("Unknown skill step type: ${getString("type")}")
+    }
+
+private fun StepOutcomeCondition.toJsonObject(): JSONObject =
+    when (this) {
+        is StepOutcomeCondition.AppSearchOutcomeEquals -> JSONObject()
+            .put("kind", "app_search_outcome_equals")
+            .put("outcome", outcome)
+
+        is StepOutcomeCondition.SearchVerified -> JSONObject()
+            .put("kind", "search_verified")
+
+        is StepOutcomeCondition.ResultDataEquals -> JSONObject()
+            .put("kind", "result_data_equals")
+            .put("key", key)
+            .put("value", value)
+    }
+
+private fun JSONObject.toStepOutcomeCondition(): StepOutcomeCondition =
+    when (getString("kind")) {
+        "app_search_outcome_equals" -> StepOutcomeCondition.AppSearchOutcomeEquals(getString("outcome"))
+        "search_verified" -> StepOutcomeCondition.SearchVerified
+        "result_data_equals" -> StepOutcomeCondition.ResultDataEquals(getString("key"), getString("value"))
+        else -> error("Unknown step outcome condition kind: ${getString("kind")}")
     }
 
 private fun ToolRequest.toJsonObject(): JSONObject =

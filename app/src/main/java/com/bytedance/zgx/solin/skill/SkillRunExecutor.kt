@@ -165,8 +165,21 @@ class SkillRunExecutor(
         privateOutputRefs: MutableSet<String>,
         trace: MutableList<SkillRunTrace>,
     ): SkillRunResult {
-        plan.steps.drop(startIndex).forEachIndexed { relativeIndex, step ->
-            val stepIndex = startIndex + relativeIndex
+        val stepIndexById = plan.steps
+            .mapIndexed { index, step -> step.id to index }
+            .toMap()
+        var cursor = startIndex
+        // Branch targets are validated forward-only, so a cursor set by a branch always advances
+        // strictly forward — control flow is acyclic and cannot loop. The visit budget is a
+        // defence-in-depth backstop only.
+        var visits = 0
+        val maxVisits = plan.steps.size + 1
+        while (cursor < plan.steps.size) {
+            if (visits++ > maxVisits) {
+                return failed(plan.steps[cursor].id, "skill control-flow budget exceeded", outputs, privateOutputRefs, trace)
+            }
+            val step = plan.steps[cursor]
+            val stepIndex = cursor
             trace += SkillRunTrace.StepStarted(step.id)
             when (step) {
                 is SkillStep.ToolStep -> {
@@ -224,6 +237,7 @@ class SkillRunExecutor(
                     }
                     outputs[step.id] = progressor.outputForToolResult(result, draft)
                     privateOutputRefs += progressor.privateOutputRefsFor(step.id, request.toolName)
+                    cursor += 1
                 }
 
                 is SkillStep.ModelStep -> {
@@ -243,6 +257,33 @@ class SkillRunExecutor(
                         outputKey = step.outputKey,
                     )
                     outputs[step.id] = mapOf(step.outputKey to output)
+                    cursor += 1
+                }
+
+                is SkillStep.BranchStep -> {
+                    val sourceStepId = step.dependsOn.singleOrNull()
+                        ?: return failed(step.id, "branch step must depend on exactly one source step", outputs, privateOutputRefs, trace)
+                    val sourceOutput = outputs[sourceStepId]
+                        ?: return failed(step.id, "branch source step has no result: $sourceStepId", outputs, privateOutputRefs, trace)
+                    val matched = step.condition.matches(sourceOutput)
+                    val targetId = if (matched) step.onMatchStepId else step.onElseStepId
+                    trace += SkillRunTrace.BranchTaken(step.id, matched, targetId)
+                    if (targetId == null) {
+                        // Else-with-no-target: the branch terminates the run successfully.
+                        return SkillRunResult(
+                            state = SkillRunState.Succeeded,
+                            outputs = progressor.publicOutputs(outputs, privateOutputRefs),
+                            trace = trace,
+                            error = null,
+                        )
+                    }
+                    val targetIndex = stepIndexById[targetId]
+                        ?: return failed(step.id, "branch targets unknown step: $targetId", outputs, privateOutputRefs, trace)
+                    // Fail closed: never jump backward (validation guarantees forward, but re-check).
+                    if (targetIndex <= cursor) {
+                        return failed(step.id, "branch target is not forward: $targetId", outputs, privateOutputRefs, trace)
+                    }
+                    cursor = targetIndex
                 }
             }
         }
@@ -393,7 +434,27 @@ sealed class SkillRunTrace {
         val toolName: String,
         val reason: String,
     ) : SkillRunTrace()
+
+    data class BranchTaken(
+        val stepId: String,
+        val matched: Boolean,
+        val targetStepId: String?,
+    ) : SkillRunTrace()
 }
+
+/**
+ * Evaluate a branch condition against a completed source step's output map. Unknown/missing data
+ * fails the match (fail-closed): a branch never "matches" on absent evidence.
+ */
+internal fun StepOutcomeCondition.matches(sourceOutput: Map<String, String>): Boolean =
+    when (this) {
+        is StepOutcomeCondition.AppSearchOutcomeEquals ->
+            sourceOutput["uiActionOutcome"] == outcome
+        is StepOutcomeCondition.SearchVerified ->
+            sourceOutput["searchVerificationStatus"] == "verified"
+        is StepOutcomeCondition.ResultDataEquals ->
+            sourceOutput[key] == value
+    }
 
 private fun Map<String, Map<String, String>>.deepCopy(): Map<String, Map<String, String>> =
     mapValues { (_, values) -> values.toMap() }
