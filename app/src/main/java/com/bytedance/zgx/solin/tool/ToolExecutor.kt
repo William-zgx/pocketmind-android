@@ -1698,6 +1698,9 @@ class DeviceControlToolExecutor(
         expectedForegroundPackagePreflight(request, actionType = "tap", target = target)?.let { return it }
         dangerousUiActionPreflight(request, actionType = "tap", target = target)?.let { return it }
         dismissBlockingOverlaysIfPresent()
+        // Re-validate after dismissal: closing an overlay can reveal a dangerous control that the
+        // pre-dismiss preflight never saw. Fail closed before the real tap.
+        dangerousUiActionPreflight(request, actionType = "tap", target = target)?.let { return it }
         return actionResult(
             request = request,
             actionType = "tap",
@@ -1717,6 +1720,8 @@ class DeviceControlToolExecutor(
         expectedForegroundPackagePreflight(request, actionType = "type_text", target = target)?.let { return it }
         dangerousUiActionPreflight(request, actionType = "type_text", target = target)?.let { return it }
         dismissBlockingOverlaysIfPresent()
+        // Re-validate after dismissal: closing an overlay can reveal a dangerous control.
+        dangerousUiActionPreflight(request, actionType = "type_text", target = target)?.let { return it }
         return actionResult(
             request = request,
             actionType = "type_text",
@@ -1888,16 +1893,32 @@ class DeviceControlToolExecutor(
             val dismissTarget = snapshot.blockingOverlayDismissTarget() ?: return
             val label = dismissTarget.text.ifBlank { dismissTarget.contentDescription }
             if (label.isBlank()) return
-            val before = snapshot.id
+            val beforeSignature = snapshot.overlayContentSignature()
             provider.tap(target = label, timeoutMillis = DEFAULT_UI_ACTION_TIMEOUT_MILLIS)
             val after = (provider.observeCurrentScreen(
                 maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
                 maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
             ) as? ScreenStateReadResult.Available)?.snapshot
-            // Overlay cleared, or the tap had no effect (sticky) — either way stop.
-            if (after == null || !after.hasBlockingOverlay() || after.id == before) return
+            // Stop when: observation failed, the overlay cleared, or the tap had no effect (the
+            // content signature is unchanged — a sticky overlay). Uses a salt/timestamp-free
+            // signature because ScreenStateSnapshot.id embeds a random salt, so id equality would
+            // never hold and the sticky-stop branch would be dead.
+            if (after == null ||
+                !after.hasBlockingOverlay() ||
+                after.overlayContentSignature() == beforeSignature
+            ) {
+                return
+            }
         }
     }
+
+    /**
+     * Salt/timestamp-free signature of the visible screen content, used to detect an ineffective
+     * (sticky) dismiss tap. Excludes [ScreenStateSnapshot.id] (which embeds a random salt) so equal
+     * content compares equal across observations.
+     */
+    private fun ScreenStateSnapshot.overlayContentSignature(): String =
+        "${packageName.orEmpty()}|$nodeCount|$textSummary"
 
     private fun executePressBack(
         request: ToolRequest,

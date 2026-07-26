@@ -109,12 +109,13 @@ private val overlayDismissLabels = listOf(
 
 internal fun String?.isOverlayDismissLabel(): Boolean {
     val normalized = normalizedLookupKey()
-    if (normalized.isBlank() || normalized.length > 16) return false
-    return overlayDismissLabels.any { label -> normalized == label.normalizedLookupKey() } ||
-        normalized.contains("关闭".normalizedLookupKey()) ||
-        normalized.contains("close") ||
-        normalized.contains("dismiss") ||
-        normalized.contains("skip")
+    if (normalized.isBlank() || normalized.length > 8) return false
+    // Require an (almost) exact close/skip affordance, not a substring of longer content text.
+    // A real dialog close control is a short standalone label; matching substrings of long text
+    // (e.g. a product description that happens to contain 关闭/跳过) caused false-positive taps.
+    if (overlayDismissLabels.any { label -> normalized == label.normalizedLookupKey() }) return true
+    val exactAscii = setOf("close", "dismiss", "skip", "x", "×")
+    return normalized in exactAscii
 }
 
 private fun String?.hasBlockingOverlayMarker(): Boolean {
@@ -146,7 +147,7 @@ internal fun ScreenStateSnapshot.blockingOverlayDismissTarget(): ScreenNode? {
     if (hasDangerousActionControl()) return null
     return nodes.firstOrNull { node ->
         node.enabled &&
-            (node.clickable || node.bounds != null) &&
+            node.clickable &&
             node.overlayLabel().isOverlayDismissLabel()
     }
 }
