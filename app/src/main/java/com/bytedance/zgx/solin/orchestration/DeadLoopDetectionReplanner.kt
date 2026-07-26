@@ -25,10 +25,16 @@ class DeadLoopDetectionReplanner(
     override fun planNext(context: AgentObservationReplanContext): AgentObservationReplan? {
         val priorRequests = context.priorRequests
 
-        // ── Rule 1: Repeated identical actions ──────────────────────────────
-        if (priorRequests.size >= maxRepeatActions) {
-            val recent = priorRequests.takeLast(maxRepeatActions)
-            val lastRequest = priorRequests.last()
+        // ── Rule 1: Repeated identical STATE-MUTATING actions ───────────────
+        // Only tap/type/submit/scroll count. Repeated observe/wait are NOT a dead loop — an agent
+        // legitimately re-observes or waits while a screen loads; detecting a frozen screen across
+        // such calls is Rule 2's job (screen-fingerprint comparison), which correctly distinguishes
+        // an advancing screen from a stuck one. Treating observe/wait as "same action" here would
+        // force a spurious back-press mid-load.
+        val mutatingRequests = priorRequests.filter { it.toolName in STATE_MUTATING_UI_TOOLS }
+        if (mutatingRequests.size >= maxRepeatActions) {
+            val recent = mutatingRequests.takeLast(maxRepeatActions)
+            val lastRequest = mutatingRequests.last()
             val allSame = recent.all { it.toolName == lastRequest.toolName &&
                 it.sameTargetAs(lastRequest) }
 
@@ -153,6 +159,18 @@ class DeadLoopDetectionReplanner(
     }
 
     companion object {
+        /**
+         * UI tools that mutate on-screen state. Rule 1 (repeated-identical-action) only considers
+         * these; observe/wait/back are excluded so re-observing or waiting during a load is not
+         * mistaken for a dead loop (same-screen stalls are Rule 2's responsibility).
+         */
+        private val STATE_MUTATING_UI_TOOLS = setOf(
+            MobileActionFunctions.UI_TAP,
+            MobileActionFunctions.UI_TYPE_TEXT,
+            MobileActionFunctions.UI_SUBMIT_SEARCH,
+            MobileActionFunctions.UI_SCROLL,
+        )
+
         private val OPPOSITE_SCROLL_DIRECTIONS = mapOf(
             "down" to "up",
             "up" to "down",
