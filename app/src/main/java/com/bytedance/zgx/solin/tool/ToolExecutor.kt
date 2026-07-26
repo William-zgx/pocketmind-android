@@ -3,6 +3,7 @@ package com.bytedance.zgx.solin.tool
 import android.provider.Settings
 import com.bytedance.zgx.solin.MessagePrivacy
 import com.bytedance.zgx.solin.SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL
+import com.bytedance.zgx.solin.SolinConstants
 import com.bytedance.zgx.solin.action.MobileActionFunctions
 import com.bytedance.zgx.solin.action.NormalizedTarget
 import com.bytedance.zgx.solin.action.ScreenshotPerception
@@ -44,6 +45,8 @@ import com.bytedance.zgx.solin.device.UiActionReadResult
 import com.bytedance.zgx.solin.device.UiActionStatus
 import com.bytedance.zgx.solin.device.UiOcrGroundingHint
 import com.bytedance.zgx.solin.device.UiScrollDirection
+import com.bytedance.zgx.solin.device.blockingOverlayDismissTarget
+import com.bytedance.zgx.solin.device.hasBlockingOverlay
 import com.bytedance.zgx.solin.device.hasDangerousActionControl
 import com.bytedance.zgx.solin.device.hasOcrDangerousActionText
 import com.bytedance.zgx.solin.device.hasSearchSubmitContext
@@ -1694,6 +1697,10 @@ class DeviceControlToolExecutor(
         val target = request.arguments["target"].orEmpty()
         expectedForegroundPackagePreflight(request, actionType = "tap", target = target)?.let { return it }
         dangerousUiActionPreflight(request, actionType = "tap", target = target)?.let { return it }
+        dismissBlockingOverlaysIfPresent()
+        // Re-validate after dismissal: closing an overlay can reveal a dangerous control that the
+        // pre-dismiss preflight never saw. Fail closed before the real tap.
+        dangerousUiActionPreflight(request, actionType = "tap", target = target)?.let { return it }
         return actionResult(
             request = request,
             actionType = "tap",
@@ -1711,6 +1718,9 @@ class DeviceControlToolExecutor(
     ): ToolResult {
         val target = request.arguments["target"].orEmpty()
         expectedForegroundPackagePreflight(request, actionType = "type_text", target = target)?.let { return it }
+        dangerousUiActionPreflight(request, actionType = "type_text", target = target)?.let { return it }
+        dismissBlockingOverlaysIfPresent()
+        // Re-validate after dismissal: closing an overlay can reveal a dangerous control.
         dangerousUiActionPreflight(request, actionType = "type_text", target = target)?.let { return it }
         return actionResult(
             request = request,
@@ -1857,6 +1867,58 @@ class DeviceControlToolExecutor(
             ).withAppSearchProgressEvidence(),
         )
     }
+
+    /**
+     * Before a low-risk UI action, if a blocking promotional overlay/interstitial occludes the
+     * screen, attempt a bounded ([SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS]) closed-loop
+     * dismissal: observe → tap a close/skip affordance → re-observe → stop when the overlay clears.
+     *
+     * Uses [preflightProvider] (the raw, non-OCR-grounding provider) exactly like
+     * [dangerousUiActionPreflight], so the dismiss loop never disturbs the pending OCR-grounding
+     * cache on the wrapping provider (which would drop a queued grounding hint before the real tap).
+     *
+     * Trust boundary: [ScreenStateSnapshot.blockingOverlayDismissTarget] is fail-closed — it never
+     * returns a target on a screen carrying a dangerous-action control (支付/授权/删除/…), so this
+     * loop can never auto-tap a payment/authorize/delete surface. On a persistent (sticky) overlay
+     * the loop gives up after one ineffective tap rather than looping, and the real action proceeds.
+     * All observation stays on the existing LocalOnly accessibility channel — no new pixel path.
+     */
+    private fun dismissBlockingOverlaysIfPresent() {
+        val provider = preflightProvider ?: return
+        repeat(SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS) {
+            val snapshot = (provider.observeCurrentScreen(
+                maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
+                maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
+            ) as? ScreenStateReadResult.Available)?.snapshot ?: return
+            val dismissTarget = snapshot.blockingOverlayDismissTarget() ?: return
+            val label = dismissTarget.text.ifBlank { dismissTarget.contentDescription }
+            if (label.isBlank()) return
+            val beforeSignature = snapshot.overlayContentSignature()
+            provider.tap(target = label, timeoutMillis = DEFAULT_UI_ACTION_TIMEOUT_MILLIS)
+            val after = (provider.observeCurrentScreen(
+                maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
+                maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
+            ) as? ScreenStateReadResult.Available)?.snapshot
+            // Stop when: observation failed, the overlay cleared, or the tap had no effect (the
+            // content signature is unchanged — a sticky overlay). Uses a salt/timestamp-free
+            // signature because ScreenStateSnapshot.id embeds a random salt, so id equality would
+            // never hold and the sticky-stop branch would be dead.
+            if (after == null ||
+                !after.hasBlockingOverlay() ||
+                after.overlayContentSignature() == beforeSignature
+            ) {
+                return
+            }
+        }
+    }
+
+    /**
+     * Salt/timestamp-free signature of the visible screen content, used to detect an ineffective
+     * (sticky) dismiss tap. Excludes [ScreenStateSnapshot.id] (which embeds a random salt) so equal
+     * content compares equal across observations.
+     */
+    private fun ScreenStateSnapshot.overlayContentSignature(): String =
+        "${packageName.orEmpty()}|$nodeCount|$textSummary"
 
     private fun executePressBack(
         request: ToolRequest,

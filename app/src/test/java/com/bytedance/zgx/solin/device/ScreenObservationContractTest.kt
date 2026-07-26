@@ -213,6 +213,100 @@ class ScreenObservationContractTest {
         assertEquals(MessagePrivacy.LocalOnly, observation.elements[1].privacyLevel)
     }
 
+    @Test
+    fun elementTableRendersAddressableRowsAndDedups() {
+        val observation = ScreenStateSnapshot(
+            id = "screen-table",
+            packageName = "com.example",
+            capturedAtMillis = 1L,
+            nodes = listOf(
+                node(
+                    id = "search-entry",
+                    text = "搜索",
+                    bounds = ScreenBounds(left = 10, top = 20, right = 300, bottom = 60),
+                    clickable = true,
+                ),
+                node(
+                    id = "dup-a",
+                    text = "商品",
+                    bounds = ScreenBounds(left = 0, top = 100, right = 200, bottom = 140),
+                ),
+                // Same text+role+bounds as dup-a → collapses to a single row.
+                node(
+                    id = "dup-b",
+                    text = "商品",
+                    bounds = ScreenBounds(left = 0, top = 100, right = 200, bottom = 140),
+                ),
+            ),
+            textSummary = "搜索\n商品",
+            truncated = false,
+        ).toScreenObservation()
+
+        val table = observation.toElementTable()
+
+        // Addressable id token + role + text + flag are present for the search entry.
+        assertTrue("row must expose the element id token", table.contains("[search-entry]"))
+        assertTrue("row must render the text", table.contains("\"搜索\""))
+        assertTrue("clickable flag must render", table.contains("clickable"))
+        // Dedup: only one of the identical 商品 rows survives.
+        assertEquals(
+            "duplicate text+bounds rows must collapse to one",
+            1,
+            table.lines().count { it.contains("\"商品\"") },
+        )
+    }
+
+    @Test
+    fun elementTableBlanksSensitiveTextButKeepsRow() {
+        val observation = ScreenStateSnapshot(
+            id = "screen-sensitive",
+            packageName = "com.example",
+            capturedAtMillis = 1L,
+            nodes = listOf(
+                node(
+                    id = "password-field",
+                    text = "hunter2",
+                    contentDescription = "密码",
+                    bounds = ScreenBounds(left = 0, top = 0, right = 100, bottom = 40),
+                    editable = true,
+                ),
+            ),
+            textSummary = "",
+            truncated = false,
+        ).toScreenObservation()
+
+        val table = observation.toElementTable()
+
+        assertTrue("sensitive field row must still exist", table.contains("[password-field]"))
+        assertTrue("sensitive value must be masked", table.contains("<敏感>"))
+        assertFalse("raw secret must never appear", table.contains("hunter2"))
+    }
+
+    @Test
+    fun elementTableEnforcesRowCap() {
+        val nodes = (0 until 10).map { index ->
+            node(
+                id = "n$index",
+                text = "item$index",
+                bounds = ScreenBounds(left = 0, top = index * 10, right = 100, bottom = index * 10 + 8),
+            )
+        }
+        val observation = ScreenStateSnapshot(
+            id = "screen-cap",
+            packageName = "com.example",
+            capturedAtMillis = 1L,
+            nodes = nodes,
+            textSummary = "",
+            truncated = false,
+        ).toScreenObservation()
+
+        val table = observation.toElementTable(maxRows = 3)
+
+        val renderedRows = table.lines().count { it.trimStart().startsWith("[n") }
+        assertEquals("row cap must be honored", 3, renderedRows)
+        assertTrue("omission must be noted", table.contains("已省略"))
+    }
+
     private fun node(
         id: String,
         text: String = "",

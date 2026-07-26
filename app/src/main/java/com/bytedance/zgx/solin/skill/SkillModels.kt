@@ -20,6 +20,14 @@ data class SkillManifest(
     val lowRiskAppControlEligible: Boolean = false,
     val continuesAfterUnverifiedOpenAppLaunch: Boolean = false,
     val backgroundExecution: SkillBackgroundExecution? = null,
+    /**
+     * Optional natural-language "when to use this skill" hint surfaced to the model in the
+     * advisory `<available_skills>` catalog. Display/selection metadata only — deliberately NOT
+     * part of [authorizationContractHash]: changing it must never invalidate an existing skill's
+     * authorization, and it can never widen tools, risk, or execution. Dispatch stays deterministic
+     * and rule-first; this only helps the model phrase/route a request, never authorizes execution.
+     */
+    val whenToUse: String = "",
 )
 
 data class SkillBackgroundExecution(
@@ -148,6 +156,42 @@ sealed class SkillStep {
         val outputKey: String,
         val keepsSensitiveInputLocal: Boolean = true,
     ) : SkillStep()
+
+    /**
+     * Conditional control-flow step. After the source step ([dependsOn].last) completes, its result
+     * is evaluated against [condition]; execution jumps to [onMatchStepId] on a match, otherwise to
+     * [onElseStepId] (or completes the run when [onElseStepId] is null).
+     *
+     * Fail-closed / termination guarantees enforced by [validateStructure]:
+     * - Branch targets must be *forward* steps (strictly later than this branch), so control flow is
+     *   a DAG with no cycles — a branch can skip fallback steps on success or fall into them on
+     *   failure, but can never loop. This keeps the index-based confirmation-restore path valid
+     *   (branches are never a tool-confirmation boundary).
+     * - A branch has exactly one incoming source step ([dependsOn] has a single entry).
+     */
+    data class BranchStep(
+        override val id: String,
+        override val dependsOn: List<String>,
+        val condition: StepOutcomeCondition,
+        val onMatchStepId: String,
+        val onElseStepId: String? = null,
+    ) : SkillStep()
+}
+
+/**
+ * A predicate over a completed tool step's result, used by [SkillStep.BranchStep] to choose the next
+ * step. Kept intentionally small and declarative so branch decisions are deterministic, auditable,
+ * and injection-resistant (no free-form model expression).
+ */
+sealed class StepOutcomeCondition {
+    /** Matches when the source step's app-search outcome equals [outcome] (advanced/no_change/…). */
+    data class AppSearchOutcomeEquals(val outcome: String) : StepOutcomeCondition()
+
+    /** Matches when the source step verified a search result (searchVerificationStatus == verified). */
+    data object SearchVerified : StepOutcomeCondition()
+
+    /** Matches when a specific result-data key equals [value]. */
+    data class ResultDataEquals(val key: String, val value: String) : StepOutcomeCondition()
 }
 
 data class SkillPlanValidation(
@@ -174,6 +218,12 @@ fun SkillPlan.validateStructure(
     if (steps.isEmpty()) {
         errors += "skill plan must contain at least one step"
     }
+
+    // Index every step id up front so BranchStep targets (which are forward references) can be
+    // validated for existence and forward-only direction.
+    val stepIndexById: Map<String, Int> = steps
+        .mapIndexedNotNull { index, step -> step.id.takeIf { it.isNotBlank() }?.let { it to index } }
+        .toMap()
 
     steps.forEachIndexed { index, step ->
         val priorStepIds = seenStepIds.toSet()
@@ -272,6 +322,29 @@ fun SkillPlan.validateStructure(
                     errors = errors,
                 )
                 outputKeysByStepId[step.id] = setOf(step.outputKey)
+            }
+
+            is SkillStep.BranchStep -> {
+                if (step.dependsOn.size != 1) {
+                    errors += "branch step ${step.id} must depend on exactly one source step"
+                }
+                // Branch targets are forward references: must exist and be strictly later than the
+                // branch itself, guaranteeing acyclic (terminating) control flow.
+                val targets = listOfNotNull(step.onMatchStepId, step.onElseStepId)
+                targets.forEach { targetId ->
+                    val targetIndex = stepIndexById[targetId]
+                    when {
+                        targetIndex == null ->
+                            errors += "branch step ${step.id} targets unknown step: $targetId"
+                        targetIndex <= index ->
+                            errors += "branch step ${step.id} must target a later step (forward-only): $targetId"
+                    }
+                }
+                if (step.onMatchStepId == step.id || step.onElseStepId == step.id) {
+                    errors += "branch step ${step.id} must not target itself"
+                }
+                // A branch produces no bindable output.
+                outputKeysByStepId[step.id] = emptySet()
             }
         }
     }

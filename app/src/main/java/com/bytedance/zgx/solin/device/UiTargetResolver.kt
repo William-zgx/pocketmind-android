@@ -2,6 +2,9 @@ package com.bytedance.zgx.solin.device
 
 import java.util.Locale
 
+/** Node-id suffix marking a synthesized trailing-affordance sub-region (id "<parentId>::affordance"). */
+private const val AFFORDANCE_NODE_ID_SUFFIX = "::affordance"
+
 object AppInteractionProfiles {
     val profiles: List<AppInteractionProfile> = listOf(
         AppInteractionProfile(
@@ -308,9 +311,31 @@ object UiTargetResolver {
     ): List<UiTargetEvidenceCandidate> {
         val nodes = observation.toGroundingNodes()
         val metrics = SnapshotBoundsMetrics.from(nodes.map { node -> node.node })
-        return nodes
+        val scored = nodes
             .mapNotNull { node -> scoreNode(node, kind, target, profile, metrics, includeDiagnostics) }
-            .sortedByDescending { candidate -> candidate.score.finalScore }
+        // A synthesized trailing-affordance candidate (id "<parent>::affordance", fallbackType
+        // OcrGrounding) must never outrank an UNRELATED real accessibility control that is itself
+        // selectable for this kind — otherwise an exact text match on a right-30% sub-region could
+        // win over a genuine labeled control elsewhere (wrong tap). It MAY still outrank its own
+        // parent row (competing with the parent is the affordance's purpose — the sub-region is a
+        // more precise target than the whole row). So: demote each synthesized affordance below any
+        // selectable real (None) candidate other than its own parent; score breaks ties.
+        val selectableRealIds = scored
+            .filter { it.fallbackType == UiTargetFallbackType.None && it.isSelectable(kind) }
+            .mapNotNull { it.nodeId }
+            .toSet()
+        fun isDemotedAffordance(candidate: UiTargetEvidenceCandidate): Boolean {
+            val nodeId = candidate.nodeId ?: return false
+            if (candidate.fallbackType == UiTargetFallbackType.None) return false
+            if (!nodeId.endsWith(AFFORDANCE_NODE_ID_SUFFIX)) return false
+            val parentId = nodeId.removeSuffix(AFFORDANCE_NODE_ID_SUFFIX)
+            return selectableRealIds.any { realId -> realId != parentId }
+        }
+        return scored.sortedWith(
+            compareByDescending<UiTargetEvidenceCandidate> { candidate ->
+                if (isDemotedAffordance(candidate)) 0 else 1
+            }.thenByDescending { candidate -> candidate.score.finalScore },
+        )
     }
 
     private fun scoreNode(
@@ -714,7 +739,50 @@ private fun ScreenObservation.toGroundingNodes(): List<GroundingNode> {
             fallbackType = UiTargetFallbackType.OcrGrounding,
         )
     }
-    return accessibilityNodes + ocrNodes
+    val trailingAffordanceNodes = accessibilityNodes.mapNotNull { grounding ->
+        grounding.node.trailingAffordanceGroundingNode()
+    }
+    return accessibilityNodes + ocrNodes + trailingAffordanceNodes
+}
+
+/**
+ * If a text row ends with a trailing affordance token (展开/更多/查看全部/…), synthesize a distinct
+ * actionable grounding node covering the right ~30% of the row so that affordance can be targeted
+ * independently of the row's informational text. Carries the OCR-grounding fallback penalty so it
+ * never outranks a real labeled control. Returns null when there is no such token or no bounds.
+ */
+private fun ScreenNode.trailingAffordanceGroundingNode(): GroundingNode? {
+    if (!clickable) return null
+    val boundsValue = bounds ?: return null
+    val trimmed = text.trim()
+    val marker = TRAILING_AFFORDANCE_MARKERS.firstOrNull { token ->
+        trimmed.endsWith(token, ignoreCase = true) && !trimmed.equals(token, ignoreCase = true)
+    } ?: return null
+    val width = boundsValue.right - boundsValue.left
+    if (width <= 0) return null
+    val affordanceLeft = boundsValue.left + (width * 7) / 10
+    val affordanceBounds = ScreenBounds(
+        left = affordanceLeft,
+        top = boundsValue.top,
+        right = boundsValue.right,
+        bottom = boundsValue.bottom,
+    )
+    return GroundingNode(
+        node = ScreenNode(
+            id = "$id$AFFORDANCE_NODE_ID_SUFFIX",
+            text = marker,
+            contentDescription = "",
+            className = "observation.affordance",
+            bounds = affordanceBounds,
+            clickable = true,
+            editable = false,
+            scrollable = false,
+            enabled = enabled,
+        ),
+        source = UiTargetEvidenceSource.Ocr,
+        fallbackType = UiTargetFallbackType.OcrGrounding,
+        labelOverride = marker,
+    )
 }
 
 private fun ObservationElement.overlappingOcrLabel(ocrElements: List<ObservationElement>): String? {

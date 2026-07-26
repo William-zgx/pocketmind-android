@@ -80,6 +80,80 @@ data class AgentBehaviorEvalCase(
             require(allowedFailureModes.isNotEmpty()) { "Fail-closed eval cases must declare allowed failure modes" }
         }
     }
+
+    companion object {
+        /**
+         * Deserializes one JSONL fixture row (see the `ai_behavior_eval` test resources)
+         * into a typed [AgentBehaviorEvalCase]. This mirrors the wire schema validated by
+         * `AiBehaviorEvalFixturesTest` and the string↔enum mappings used across the eval tests:
+         *
+         * - `expectedConfirmation`/`expectedRiskLevel` use snake_case slugs.
+         * - `privacy` uses the [MessagePrivacy] enum name (`LocalOnly`/`RemoteEligible`).
+         * - `expectedRoutingPath` uses snake_case; routing/placement fields are optional.
+         * - `expectedPlacement`/`expectedPlacementReason` use the enum `name` (as written by the
+         *   actual-trace generator), and must appear together.
+         *
+         * All field-level invariants are enforced by the [AgentBehaviorEvalCase] constructor, so an
+         * invalid row fails fast rather than producing a malformed case.
+         */
+        fun fromJson(row: JSONObject): AgentBehaviorEvalCase {
+            val placement = row.optString("expectedPlacement").takeIf { it.isNotBlank() }
+                ?.let(RunPlacement::valueOf)
+            val placementReason = row.optString("expectedPlacementReason").takeIf { it.isNotBlank() }
+                ?.let(PlacementReasonCode::valueOf)
+            return AgentBehaviorEvalCase(
+                id = row.getString("id"),
+                input = row.getString("input"),
+                expectedTools = row.optStringList("expectedTools"),
+                expectedConfirmation = confirmationFromSlug(row.getString("expectedConfirmation")),
+                expectedRiskLevel = riskLevelFromSlug(row.getString("expectedRiskLevel")),
+                privacy = MessagePrivacy.valueOf(row.getString("privacy")),
+                localOnly = row.getBoolean("localOnly"),
+                remoteEligible = row.getBoolean("remoteEligible"),
+                allowedFailureModes = row.optStringList("allowedFailureModes"),
+                expectedRoutingPath = row.optString("expectedRoutingPath").takeIf { it.isNotBlank() }
+                    ?.let(::routingPathFromSlug),
+                expectedRoutingToolName = row.optString("expectedRoutingToolName").takeIf { it.isNotBlank() },
+                expectedRoutingSkillId = row.optString("expectedRoutingSkillId").takeIf { it.isNotBlank() },
+                expectedRoutingRejectionReason = row.optString("expectedRoutingRejectionReason")
+                    .takeIf { it.isNotBlank() },
+                expectedPlacement = placement,
+                expectedPlacementReason = placementReason,
+            )
+        }
+
+        private fun confirmationFromSlug(slug: String): AgentEvalConfirmationExpectation = when (slug) {
+            "none" -> AgentEvalConfirmationExpectation.None
+            "tool_confirmation" -> AgentEvalConfirmationExpectation.ToolConfirmation
+            "remote_send_confirmation" -> AgentEvalConfirmationExpectation.RemoteSendConfirmation
+            "second_confirmation" -> AgentEvalConfirmationExpectation.SecondConfirmation
+            "fail_closed" -> AgentEvalConfirmationExpectation.FailClosed
+            else -> throw IllegalArgumentException("Unknown expectedConfirmation slug: $slug")
+        }
+
+        private fun riskLevelFromSlug(slug: String): AgentEvalRiskLevel = when (slug) {
+            "public_evidence" -> AgentEvalRiskLevel.PublicEvidence
+            "low" -> AgentEvalRiskLevel.Low
+            "medium" -> AgentEvalRiskLevel.Medium
+            "high" -> AgentEvalRiskLevel.High
+            "sensitive" -> AgentEvalRiskLevel.Sensitive
+            else -> throw IllegalArgumentException("Unknown expectedRiskLevel slug: $slug")
+        }
+
+        private fun routingPathFromSlug(slug: String): IntentRoutingPath = when (slug) {
+            "skill_first" -> IntentRoutingPath.SkillFirst
+            "action_planner" -> IntentRoutingPath.ActionPlanner
+            "remote_tool_planning" -> IntentRoutingPath.RemoteToolPlanning
+            "model_tool_call" -> IntentRoutingPath.ModelToolCall
+            "no_action" -> IntentRoutingPath.NoAction
+            else -> throw IllegalArgumentException("Unknown expectedRoutingPath slug: $slug")
+        }
+
+        private fun JSONObject.optStringList(key: String): List<String> {
+            val array = optJSONArray(key) ?: return emptyList()
+            return (0 until array.length()).map { index -> array.getString(index) }
+        }
+    }
 }
 
 data class AgentBehaviorActualTrace(

@@ -12,6 +12,121 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 class UiTargetResolverTest {
     @Test
+    fun synthesizesTrailingAffordanceNodeForCompositeRow() {
+        // A composite row "成分 展开": the 展开 chevron is a separate tappable affordance riding at
+        // the end of an informational row. B3 should synthesize a distinct actionable sub-region.
+        val snapshot = snapshot(
+            nodes = listOf(
+                node(
+                    id = "section-row",
+                    text = "成分 展开",
+                    bounds = ScreenBounds(0, 200, 1000, 260),
+                    clickable = true,
+                ),
+            ),
+        )
+        val observation = snapshot.toScreenObservation()
+
+        val evidence = UiTargetResolver.explain(
+            observation = observation,
+            kind = UiTargetKind.ResultItem,
+            target = "展开",
+        )
+
+        val affordance = evidence.rankedCandidates.firstOrNull { it.nodeId == "section-row::affordance" }
+        requireNotNull(affordance) { "expected a synthesized trailing-affordance candidate" }
+        assertEquals("展开", affordance.label)
+        assertEquals(UiTargetEvidenceSource.Ocr, affordance.source)
+        assertEquals(UiTargetFallbackType.OcrGrounding, affordance.fallbackType)
+        // The affordance sub-region must sit on the right side of the parent row, not span it.
+        assertTrue(
+            "affordance bounds must be a right-side sub-region",
+            (affordance.bounds?.left ?: 0) > 200,
+        )
+        assertEquals("section-row::affordance", evidence.selectedNodeId)
+    }
+
+    @Test
+    fun trailingAffordanceDoesNotOutrankRealLabeledControl() {
+        // When a genuine labeled control matches the target, the synthesized affordance (which
+        // carries the OCR-grounding fallback penalty) must not outrank it.
+        val snapshot = snapshot(
+            nodes = listOf(
+                node(
+                    id = "real-expand-button",
+                    text = "展开",
+                    bounds = ScreenBounds(700, 200, 1000, 260),
+                    clickable = true,
+                ),
+                node(
+                    id = "section-row",
+                    text = "成分 展开",
+                    bounds = ScreenBounds(0, 300, 1000, 360),
+                    clickable = true,
+                ),
+            ),
+        )
+        val observation = snapshot.toScreenObservation()
+
+        val evidence = UiTargetResolver.explain(
+            observation = observation,
+            kind = UiTargetKind.ResultItem,
+            target = "展开",
+        )
+
+        assertEquals("real-expand-button", evidence.selectedNodeId)
+        val real = evidence.rankedCandidates.single { it.nodeId == "real-expand-button" }
+        val affordance = evidence.rankedCandidates.firstOrNull { it.nodeId == "section-row::affordance" }
+        if (affordance != null) {
+            assertTrue(
+                "real labeled control must outrank the synthesized affordance",
+                real.score.finalScore > affordance.score.finalScore,
+            )
+        }
+    }
+
+    @Test
+    fun synthesizedAffordanceNeverOutranksSelectableRealControlWithPartialMatch() {
+        // Real compound-labeled control "更多推荐" (partial match to target 更多) vs a synthesized
+        // affordance "更多" split off "今日热点 更多" (exact match). The exact-match affordance has a
+        // higher raw score, but a selectable real control must still win (no wrong tap on the
+        // right-30% sub-region of an unrelated row).
+        val snapshot = snapshot(
+            nodes = listOf(
+                node(
+                    id = "real-more-button",
+                    text = "更多推荐",
+                    bounds = ScreenBounds(700, 100, 1000, 160),
+                    clickable = true,
+                ),
+                node(
+                    id = "hot-row",
+                    text = "今日热点 更多",
+                    bounds = ScreenBounds(0, 300, 1000, 360),
+                    clickable = true,
+                ),
+            ),
+        )
+        val observation = snapshot.toScreenObservation()
+
+        val evidence = UiTargetResolver.explain(
+            observation = observation,
+            kind = UiTargetKind.ResultItem,
+            target = "更多",
+        )
+
+        assertEquals("real-more-button", evidence.selectedNodeId)
+        val affordance = evidence.rankedCandidates.firstOrNull { it.nodeId == "hot-row::affordance" }
+        if (affordance != null) {
+            val real = evidence.rankedCandidates.single { it.nodeId == "real-more-button" }
+            // Real control is ranked ahead of the synthesized affordance regardless of raw score.
+            val realIndex = evidence.rankedCandidates.indexOfFirst { it.nodeId == "real-more-button" }
+            val affordanceIndex = evidence.rankedCandidates.indexOfFirst { it.nodeId == "hot-row::affordance" }
+            assertTrue("real control must be ranked before the synthesized affordance", realIndex < affordanceIndex)
+        }
+    }
+
+    @Test
     fun kindForTargetPrefersSpecificSearchIntents() {
         assertEquals(UiTargetKind.SubmitSearch, UiTargetResolver.kindForTarget("提交搜索"))
         assertEquals(UiTargetKind.SearchEntry, UiTargetResolver.kindForTarget("搜索输入框"))

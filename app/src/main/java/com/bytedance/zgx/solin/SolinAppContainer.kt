@@ -63,8 +63,10 @@ import com.bytedance.zgx.solin.memory.LegacyMemoryStorageRetirement
 import com.bytedance.zgx.solin.multimodal.AndroidCurrentScreenshotOcrProvider
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrProvider
 import com.bytedance.zgx.solin.orchestration.AgentHooks
+import com.bytedance.zgx.solin.orchestration.AvailableSkillsContributor
 import com.bytedance.zgx.solin.orchestration.AssistantOrchestrator
 import com.bytedance.zgx.solin.orchestration.CompositeAgentObservationReplanner
+import com.bytedance.zgx.solin.orchestration.DeadLoopDetectionReplanner
 import com.bytedance.zgx.solin.orchestration.DefaultContextCompactor
 import com.bytedance.zgx.solin.orchestration.DefaultSolinEventBus
 import com.bytedance.zgx.solin.orchestration.DefaultToolProgressPublisher
@@ -265,7 +267,11 @@ class SolinAppContainer(
         eventBus = DefaultSolinEventBus()
         telemetrySink = InMemoryTelemetrySink()
         agentHooks = NoOpAgentHooks
-        systemContextContributors = emptyList()
+        systemContextContributors = listOf(
+            AvailableSkillsContributor(
+                manifestsProvider = { moduleRegistry.skillSources.flatMap { source -> source.manifests() } },
+            ),
+        )
         systemPromptBuilder = SystemPromptBuilder(
             contributors = systemContextContributors,
             includeDeviceControlSurvivalRules = true,
@@ -336,6 +342,7 @@ class SolinAppContainer(
                 ),
             ),
             observationReplanner = CompositeAgentObservationReplanner(
+                DeadLoopDetectionReplanner(),
                 ModelObservationReplanner(
                     actionPlanningRuntime = observationActionPlanningRuntime,
                     actionModelPathProvider = modelRepository::verifiedObservationActionModelPath,

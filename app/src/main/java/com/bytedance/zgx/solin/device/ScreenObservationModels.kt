@@ -92,6 +92,66 @@ fun ScreenObservation.toJsonObject(): JSONObject =
             elements.forEach { element -> put(element.toJsonObject()) }
         })
 
+/**
+ * Renders a compact, numbered Set-of-Marks style element table for the model prompt instead of
+ * raw observation JSON. Each row is `[id] role "text" flags @l,t-r,b`, where `id` is the element's
+ * existing addressable token (the model refers back to it verbatim; resolution reuses the current
+ * node-id match path — no resolver change).
+ *
+ * - De-duplicates rows sharing the same (text, role, bounds) so repeated OCR fragments collapse.
+ * - Skips elements with blank text AND no bounds (nothing the model can act on or reference).
+ * - Sensitive text is already blanked to "" at observation-build time; such rows are rendered as
+ *   `<敏感>` so the model knows a field exists without seeing its value.
+ * - Caps output at [maxRows] rows and notes truncation, mirroring the observation's own truncation.
+ */
+fun ScreenObservation.toElementTable(maxRows: Int = DEFAULT_ELEMENT_TABLE_ROWS): String {
+    val seen = HashSet<String>()
+    val rows = ArrayList<String>()
+    var omitted = 0
+    for (element in elements) {
+        val hasText = element.text.isNotBlank()
+        val hasSensitive = element.sensitiveFlags.isNotEmpty()
+        if (!hasText && !hasSensitive && element.bounds == null) continue
+        val dedupeKey = "${element.role}${element.text}${element.bounds?.compactString().orEmpty()}"
+        if (!seen.add(dedupeKey)) continue
+        if (rows.size >= maxRows.coerceAtLeast(0)) {
+            omitted += 1
+            continue
+        }
+        rows.add(element.toElementTableRow())
+    }
+    if (rows.isEmpty()) return "(无可用的屏幕元素)"
+    val header = "屏幕元素（LocalOnly；引用格式：使用行首方括号内的 id）:"
+    val body = rows.joinToString("\n")
+    val footer = if (omitted > 0 || truncated) "\n… 其余 $omitted 个元素已省略（屏幕过大）" else ""
+    return "$header\n$body$footer"
+}
+
+private fun ObservationElement.toElementTableRow(): String {
+    val displayText = when {
+        sensitiveFlags.isNotEmpty() -> "<敏感>"
+        text.isBlank() -> ""
+        else -> "\"${text.replace('\n', ' ').trim()}\""
+    }
+    val flags = buildList {
+        if (clickability.clickable) add("clickable")
+        if (clickability.editable) add("editable")
+        if (clickability.scrollable) add("scrollable")
+        if (!clickability.enabled) add("disabled")
+    }.joinToString(",")
+    return buildString {
+        append('[').append(id).append("] ")
+        append(role)
+        if (displayText.isNotEmpty()) append(' ').append(displayText)
+        if (flags.isNotEmpty()) append(" (").append(flags).append(')')
+        bounds?.let { append(" @").append(it.compactString()) }
+    }
+}
+
+private fun ScreenBounds.compactString(): String = "$left,$top-$right,$bottom"
+
+const val DEFAULT_ELEMENT_TABLE_ROWS = 40
+
 fun screenObservationFromJsonStringOrNull(rawJson: String): ScreenObservation? =
     runCatching {
         JSONObject(rawJson).toScreenObservationOrNull()
@@ -241,6 +301,9 @@ private fun ScreenNode.role(): String =
     when {
         editable -> "editable"
         scrollable -> "scrollable"
+        // Icon-only affordance: clickable with no visible text but a content description
+        // (the label lives in contentDescription or must be grounded from nearby OCR).
+        clickable && text.isBlank() && contentDescription.isNotBlank() -> "icon"
         clickable -> "button"
         text.isNotBlank() || contentDescription.isNotBlank() -> "text"
         else -> "unknown"
@@ -354,4 +417,22 @@ private val SENSITIVE_TEXT_MARKERS = listOf(
     "验证码",
     "密码",
     "口令",
+)
+
+/**
+ * Trailing "affordance" tokens that ride at the end of an otherwise-informational row and denote a
+ * separate tappable action (e.g. a 展开 chevron after a section title). Used by [UiTargetResolver]
+ * to synthesize a distinct actionable sub-region so icon-heavy / composite rows remain reachable.
+ */
+internal val TRAILING_AFFORDANCE_MARKERS = listOf(
+    "展开",
+    "收起",
+    "更多",
+    "查看全部",
+    "查看更多",
+    "全部",
+    "expand",
+    "more",
+    "see all",
+    "view all",
 )

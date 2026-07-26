@@ -406,7 +406,7 @@ class UiAutomatorDumpReplayTest {
     fun p4ReplayEvalFixturesCoverSearchEntryNegativeAndOcrBounds() {
         val cases = loadReplayCases("ui_dumps/p4_replay_eval/search_entry_contract.json")
 
-        assertEquals(2, cases.size)
+        assertTrue("replay corpus should keep growing, not shrink", cases.size >= 5)
         cases.forEach { replayCase ->
             val evidence = if (replayCase.ocrBlocks.isEmpty()) {
                 UiTargetResolver.explain(
@@ -444,6 +444,65 @@ class UiAutomatorDumpReplayTest {
                     evidence.rankedCandidates.none { candidate -> candidate.nodeId == excludedNodeId },
                 )
             }
+        }
+    }
+
+    @Test
+    fun p4ReplayEvalCorpusCoversProfiledAppsAndFailureModes() {
+        val cases = loadReplayCases("ui_dumps/p4_replay_eval/search_entry_contract.json")
+        val packages = cases.mapNotNull { it.snapshot.packageName }.toSet()
+
+        // Guard breadth so a scoring/penalty tweak can't quietly regress coverage of the
+        // profiled apps this offline replay corpus is meant to protect.
+        val profiledPackages = setOf(
+            "com.taobao.taobao",
+            "com.xunmeng.pinduoduo",
+            "com.jingdong.app.mall",
+            "com.autonavi.minimap",
+        )
+        profiledPackages.forEach { profiled ->
+            assertTrue(
+                "replay corpus must cover profiled app $profiled",
+                profiled in packages,
+            )
+        }
+
+        assertTrue(
+            "replay corpus must exercise the search_entry_not_found negative path",
+            cases.any { it.expectedFailureKind == UiActionFailureKind.SearchEntryNotFound },
+        )
+        assertTrue(
+            "replay corpus must exercise OCR-grounded selection",
+            cases.any { it.expectedSource == UiTargetEvidenceSource.Ocr },
+        )
+    }
+
+    @Test
+    fun p4ReplayEvalOverlayCaseDoesNotOutrankAccessibilitySearchEntry() {
+        // The coupon-overlay adversarial fixture (also replayed by the S1 overlay dismiss loop):
+        // a promotional overlay and its close button must never outrank the real search entry.
+        val overlay = loadReplayCases("ui_dumps/p4_replay_eval/search_entry_contract.json")
+            .single { it.id == "coupon_overlay_does_not_hijack_search_entry" }
+
+        val evidence = UiTargetResolver.explain(
+            snapshot = overlay.snapshot,
+            kind = overlay.kind,
+            target = overlay.target,
+        )
+
+        assertEquals("com.taobao.taobao:id/home_search_entry", evidence.selectedNodeId)
+        // The promotional overlay nodes carry no search-entry evidence, so the resolver drops them
+        // entirely (they never become ranked candidates) — a stronger guarantee than "ranked but
+        // lower". Assert exactly that: neither overlay node appears among the ranked candidates, and
+        // the real search entry is selected. (An earlier version compared scores, but that guard was
+        // unreachable because the overlay nodes score 0 and are filtered before ranking.)
+        val rankedIds = evidence.rankedCandidates.mapNotNull { it.nodeId }.toSet()
+        assertTrue("real search entry must be ranked", "com.taobao.taobao:id/home_search_entry" in rankedIds)
+        overlay.excludedNodeIds.forEach { excludedNodeId ->
+            assertTrue(
+                "overlay node $excludedNodeId must not be a ranked candidate for the search entry",
+                excludedNodeId !in rankedIds,
+            )
         }
     }
 

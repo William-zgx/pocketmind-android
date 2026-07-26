@@ -12,3 +12,5 @@ app/build/
 *.litertlm
 *.hprof
 models/
+
+.trae/

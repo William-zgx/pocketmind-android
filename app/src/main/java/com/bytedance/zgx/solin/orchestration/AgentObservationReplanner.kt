@@ -177,6 +177,13 @@ data class AgentObservationReplanContext(
     val priorRequests: List<ToolRequest>,
     val nextActionInput: String? = null,
     val completedSegmentCount: Int = priorRequests.size,
+    /**
+     * Ordered fingerprints of the screen observations seen so far this run (oldest first).
+     * Populated by [ToolPlanCoordinator] from the trace store's observed steps. Enables
+     * [DeadLoopDetectionReplanner] Rule 2 (same-screen-no-progress) without giving replanners
+     * raw screen text — each fingerprint carries only non-sensitive metadata.
+     */
+    val screenObservationHistory: List<ScreenObservationFingerprint> = emptyList(),
 )
 
 data class AgentObservationReplan(

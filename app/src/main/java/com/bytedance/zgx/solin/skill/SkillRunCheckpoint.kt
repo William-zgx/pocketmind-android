@@ -61,12 +61,19 @@ data class SkillRunCheckpoint(
         if (outputKeysByStep.keys != completedStepIdSet) {
             return "skill checkpoint output frontier changed"
         }
+        // BranchStep produces no output; its output-key entry is legitimately empty, so the
+        // empty-keys guard below must not reject it (the build path records branch ids with empty
+        // keys — see toValueFreeCheckpoint). Without this a plan whose BranchStep precedes a
+        // confirmation-gated ToolStep could never be restored, killing the run.
+        val branchStepIds = plan.steps
+            .filterIsInstance<SkillStep.BranchStep>()
+            .mapTo(mutableSetOf()) { step -> step.id }
         val expectedOutputKeysByStep = plan.steps
             .take(pendingStepIndex)
             .associate { step -> step.id to step.knownValueFreeOutputKeys(toolRegistry) }
         outputKeysByStep.forEach { (stepId, keys) ->
             if (stepId !in completedStepIdSet) return "skill checkpoint output keys reference incomplete step"
-            if (keys.isEmpty()) return "skill checkpoint output keys are missing"
+            if (keys.isEmpty() && stepId !in branchStepIds) return "skill checkpoint output keys are missing"
             if (keys.any { key -> key.isNotSafeCheckpointToken() }) {
                 return "skill checkpoint output key is unsafe"
             }
@@ -225,6 +232,7 @@ private fun SkillStep.knownValueFreeOutputKeys(toolRegistry: ToolRegistry): List
             .filter { key -> key.isNotBlank() }
             .distinct()
             .sorted()
+        is SkillStep.BranchStep -> emptyList()
     }
 
 private fun SkillStep.ToolStep.unpersistablePendingBindingTargets(toolRegistry: ToolRegistry): List<String> {
