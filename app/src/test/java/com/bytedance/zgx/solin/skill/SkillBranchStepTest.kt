@@ -6,6 +6,7 @@ import com.bytedance.zgx.solin.tool.ToolResult
 import com.bytedance.zgx.solin.tool.ToolStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -167,6 +168,26 @@ class SkillBranchStepTest {
 
         assertFalse(validation.isValid)
         assertTrue(validation.errors.any { it.contains("unknown step") })
+    }
+
+    @Test
+    fun checkpointRoundTripsWhenBranchPrecedesPendingConfirmation() {
+        // Regression: a value-free checkpoint whose completed prefix includes a BranchStep must
+        // validate. The build path records the branch id with empty output keys; the validate path
+        // must not reject that (else the run is killed on process-death restore).
+        val plan = searchWithFallbackPlan() // steps: search -> branch -> fallback_search -> done
+        val doneStep = plan.steps.first { it is SkillStep.ToolStep && it.id == "done" } as SkillStep.ToolStep
+
+        val checkpoint = requireNotNull(
+            plan.valueFreeCheckpointForPendingTool(
+                runId = "run-branch-checkpoint",
+                pendingRequest = doneStep.request,
+                toolRegistry = registry,
+            ),
+        )
+
+        assertNull("checkpoint with a completed BranchStep must validate", checkpoint.validationErrorFor(plan, registry))
+        assertTrue("branch id must be in the completed prefix", checkpoint.completedStepIds.contains("branch_on_verified"))
     }
 
     private fun SkillRunExecutor.executedStepIds(recording: RecordingToolExecutor): List<String> =
