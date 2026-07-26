@@ -491,17 +491,18 @@ class UiAutomatorDumpReplayTest {
         )
 
         assertEquals("com.taobao.taobao:id/home_search_entry", evidence.selectedNodeId)
-        val searchEntryScore = evidence.rankedCandidates
-            .single { it.nodeId == "com.taobao.taobao:id/home_search_entry" }
-            .score.finalScore
+        // The promotional overlay nodes carry no search-entry evidence, so the resolver drops them
+        // entirely (they never become ranked candidates) — a stronger guarantee than "ranked but
+        // lower". Assert exactly that: neither overlay node appears among the ranked candidates, and
+        // the real search entry is selected. (An earlier version compared scores, but that guard was
+        // unreachable because the overlay nodes score 0 and are filtered before ranking.)
+        val rankedIds = evidence.rankedCandidates.mapNotNull { it.nodeId }.toSet()
+        assertTrue("real search entry must be ranked", "com.taobao.taobao:id/home_search_entry" in rankedIds)
         overlay.excludedNodeIds.forEach { excludedNodeId ->
-            val overlayCandidate = evidence.rankedCandidates.firstOrNull { it.nodeId == excludedNodeId }
-            if (overlayCandidate != null) {
-                assertTrue(
-                    "overlay node $excludedNodeId must not outrank the real search entry",
-                    overlayCandidate.score.finalScore < searchEntryScore,
-                )
-            }
+            assertTrue(
+                "overlay node $excludedNodeId must not be a ranked candidate for the search entry",
+                excludedNodeId !in rankedIds,
+            )
         }
     }
 
