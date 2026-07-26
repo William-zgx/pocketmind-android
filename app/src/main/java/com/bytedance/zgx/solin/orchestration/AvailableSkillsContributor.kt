@@ -36,8 +36,13 @@ class AvailableSkillsContributor(
         return EvidenceCard(
             id = "available-skills",
             sourceType = sourceType,
-            privacy = MessagePrivacy.LocalOnly,
-            requiresLocalModel = true,
+            // The catalog is a static list of built-in capability names/titles — not private user
+            // data — so it is RemoteEligible. This also lets it survive ContextAssembler's
+            // `!requiresLocalModel` contributor filter (a LocalOnly card would be dropped there and
+            // never reach any model). It carries no user content, so exposing it to a remote model
+            // does not cross the privacy boundary.
+            privacy = MessagePrivacy.RemoteEligible,
+            requiresLocalModel = false,
             text = text,
             quality = EvidenceQuality(EvidenceQualityLevel.High),
             tokenEstimate = estimateLocalRuntimeTokens(text),
