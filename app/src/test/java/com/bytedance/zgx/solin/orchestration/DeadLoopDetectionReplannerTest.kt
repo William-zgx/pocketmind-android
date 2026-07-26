@@ -70,6 +70,38 @@ class DeadLoopDetectionReplannerTest {
         assertNull("Rule 2 must not force another back press when already at back", replan)
     }
 
+    @Test
+    fun rule1DoesNotFireOnRepeatedObserveOrWait() {
+        // Repeated observe/wait must NOT be treated as a dead loop by Rule 1 — an agent legitimately
+        // re-observes / waits while a screen loads (same-screen stalls are Rule 2's job). Provide
+        // progressing fingerprints so Rule 2 also stays silent, isolating Rule 1.
+        listOf(MobileActionFunctions.OBSERVE_CURRENT_SCREEN, MobileActionFunctions.UI_WAIT).forEach { tool ->
+            val priorRequests = List(4) { index ->
+                ToolRequest(id = "$tool-$index", toolName = tool, arguments = emptyMap())
+            }
+            val progressing = List(3) { frozenFingerprint(elementCount = 8 + it, capturedAtMillis = it.toLong()) }
+            val context = AgentObservationReplanContext(
+                run = AgentRun(
+                    id = "run-observe-wait",
+                    input = "等待屏幕加载",
+                    state = AgentRunState.Observing,
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 1L,
+                ),
+                previousRequest = priorRequests.last(),
+                observedResult = ToolResult(
+                    requestId = priorRequests.last().id,
+                    status = ToolStatus.Succeeded,
+                    summary = "observed",
+                ),
+                priorRequests = priorRequests,
+                screenObservationHistory = progressing,
+            )
+
+            assertNull("Rule 1 must not fire on repeated $tool", replanner.planNext(context))
+        }
+    }
+
     private fun frozenFingerprint(
         elementCount: Int = 8,
         capturedAtMillis: Long = 0L,
