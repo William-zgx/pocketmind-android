@@ -181,6 +181,34 @@ class DefaultContextCompactorTest {
     }
 
     @Test
+    fun aggressiveTruncationFallbackStillPreservesFailedToolResult() = runTest {
+        val config = CompactionConfig(preserveRecentTurns = 2)
+        val compactor = DefaultContextCompactor(config)
+
+        val failure = ChatMessage(
+            role = MessageRole.Assistant,
+            text = "工具执行失败：dangerous_action（检测到支付控件）。",
+            kind = MessageKind.ToolFailure,
+        )
+        // A failure in the middle, then MANY large chat turns so even after summarizing we are
+        // still over budget and the aggressive-truncation fallback runs. The failure must survive.
+        val messages = buildList {
+            add(failure)
+            addAll(history(turnCount = 20, charsPerMsg = 500))
+        }
+        // Budget so tight that the summarize loop cannot fit -> fallback truncation path executes.
+        val budget = 200
+
+        val result = compactor.compact(messages, budget, charEstimator)
+
+        assertEquals(CompactionTrigger.OverBudget, result.triggerReason)
+        assertTrue(
+            "failed tool result must survive even the aggressive-truncation fallback",
+            result.messages.any { it.kind == MessageKind.ToolFailure && it.text == failure.text },
+        )
+    }
+
+    @Test
     fun compactionReducesTokenCountWhenOverBudget() = runTest {
         val compactor = DefaultContextCompactor(
             CompactionConfig(preserveRecentTurns = 2, compactionThresholdRatio = 0.5)
