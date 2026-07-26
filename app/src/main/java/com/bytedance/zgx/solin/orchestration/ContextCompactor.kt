@@ -194,22 +194,54 @@ class DefaultContextCompactor(
             preserveTurns -= 2
         }
 
-        // Still over with min tail preserved: aggressive truncation — drop oldest non-prefix
-        // messages one at a time until we fit.
+        // Still over with min tail preserved: aggressive truncation — drop oldest messages one at
+        // a time until we fit. Grounding-critical messages (failed tool results + the latest screen
+        // observation) are dropped LAST so the preservation guarantee holds as long as possible: we
+        // remove the oldest summarizable message each round, and only start dropping preserved ones
+        // once nothing summarizable remains.
         val split = splitSections(messages, minPreserveTurns)
+        val (preservedMiddleSet, _) = partitionGroundingCritical(split.middle)
+        val preservedIds = preservedMiddleSet.mapTo(HashSet()) { it.id }
         val middleAndTail = ArrayList<ChatMessage>(split.middle.size + split.tail.size)
         middleAndTail.addAll(split.middle)
         middleAndTail.addAll(split.tail)
         var droppedCount = 0
-        while (middleAndTail.size > split.tail.size) {
-            middleAndTail.removeAt(0)
+
+        // Drop the oldest summarizable (non-grounding-critical) message before the protected tail
+        // suffix. Returns false when nothing summarizable is left in range (so the caller stops
+        // rather than sacrificing a preserved message).
+        fun dropOneSummarizable(protectedFloor: Int): Boolean {
+            val limit = middleAndTail.size - protectedFloor
+            if (limit <= 0) return false
+            val summarizableIndex = (0 until limit).firstOrNull { i -> middleAndTail[i].id !in preservedIds }
+                ?: return false
+            middleAndTail.removeAt(summarizableIndex)
             droppedCount += 1
+            return true
+        }
+
+        // Drop one message, preferring the oldest summarizable one but falling back to the oldest
+        // overall (including preserved) so the tail-trim round always converges.
+        fun dropOnePreferSummarizable(protectedFloor: Int) {
+            val limit = middleAndTail.size - protectedFloor
+            if (limit <= 0) return
+            val summarizableIndex = (0 until limit).firstOrNull { i -> middleAndTail[i].id !in preservedIds }
+            middleAndTail.removeAt(summarizableIndex ?: 0)
+            droppedCount += 1
+        }
+
+        // Round 1: keep the recent tail intact; drop summarizable middle messages only. If the
+        // only remaining droppable messages are grounding-critical, stop here (do not sacrifice a
+        // preserved failure/screen observation just to shrink the middle) and let the tail-trim
+        // round below decide.
+        while (middleAndTail.size > split.tail.size) {
+            if (!dropOneSummarizable(protectedFloor = split.tail.size)) break
             val current = split.prefix + middleAndTail
             val tokensAfter = estimatedTokens(current)
             if (tokensAfter <= tokenBudget) {
                 return CompactionResult(
                     messages = current,
-                    compactionCount = split.middle.size + droppedCount,
+                    compactionCount = droppedCount,
                     tokensBefore = tokensBefore,
                     tokensAfter = tokensAfter,
                     triggerReason = CompactionTrigger.OverBudget,
@@ -217,10 +249,10 @@ class DefaultContextCompactor(
             }
         }
 
-        // Even the tail alone won't fit: trim from the head of the tail until under budget.
+        // Tail-trim round: drop from the front, still preferring summarizable, but now allow
+        // dropping a preserved message as a last resort so we can always converge to one message.
         while (middleAndTail.size > 1) {
-            middleAndTail.removeAt(0)
-            droppedCount += 1
+            dropOnePreferSummarizable(protectedFloor = 1)
             val current = split.prefix + middleAndTail
             val tokensAfter = estimatedTokens(current)
             if (tokensAfter <= tokenBudget) {
