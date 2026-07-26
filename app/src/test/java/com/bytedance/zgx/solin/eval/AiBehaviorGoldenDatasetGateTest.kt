@@ -75,6 +75,27 @@ class AiBehaviorGoldenDatasetGateTest {
         )
     }
 
+    @Test
+    fun riskLevelDriftInActualTraceIsRejected() {
+        // Drift ONLY the risk level, holding privacy/localOnly/remoteEligible equal to expected.
+        // This isolates riskMatches within the safetyBoundaryMatches conjunction — it fails iff
+        // riskMatches is actually part of that conjunction, so it kills a "drop riskMatches"
+        // regression that the field-copying positive test cannot detect.
+        val case = loadAllCases().first()
+        val otherRisk = AgentEvalRiskLevel.entries.first { it != case.expectedRiskLevel }
+        val drifted = idealTraceFor(case).copy(actualRiskLevel = otherRisk)
+
+        val diff = case.diffAgainst(drifted)
+
+        assertTrue("risk drift must break riskMatches", !diff.riskMatches)
+        assertTrue("risk drift must break the safety boundary", !diff.safetyBoundaryMatches)
+        assertEquals(
+            "risk drift must be a Mismatch",
+            AgentBehaviorTraceDiffStatus.Mismatch,
+            diff.status,
+        )
+    }
+
     /**
      * An actual trace that faithfully reproduces the case's expected safety-relevant fields. This is
      * the "the runtime did exactly what the contract asked" baseline; real actual traces are produced
