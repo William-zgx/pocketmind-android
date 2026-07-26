@@ -1122,8 +1122,8 @@ Tests:
 - `ModelRepositoryTest`
 - `ModelRepositoryPathTest`
 - `SessionRepositoryTest`
-- `PreferenceSettingsStoreTest`
-- `EncryptedSecretStoreTest`
+- `BundledModelInstallerTest`
+- `InferencePreferenceCodecTest`
 
 ## Undo
 
