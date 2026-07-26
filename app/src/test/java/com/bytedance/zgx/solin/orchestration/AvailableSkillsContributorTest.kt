@@ -51,7 +51,8 @@ class AvailableSkillsContributorTest {
         val card = contributor.contribute("帮我搜索", run)
 
         requireNotNull(card)
-        assertEquals(MessagePrivacy.LocalOnly, card.privacy)
+        assertEquals(MessagePrivacy.RemoteEligible, card.privacy)
+        assertFalse("catalog card must not require local-model synthesis", card.requiresLocalModel)
         assertTrue("must list the skill id", card.text.contains("info.lookup"))
         assertTrue("must list the title", card.text.contains("信息查找"))
         assertTrue("must list the whenToUse hint", card.text.contains("当用户需要外部信息时使用"))
