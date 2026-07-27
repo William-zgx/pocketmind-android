@@ -22,14 +22,15 @@ import org.junit.Test
 class OverlayDismissLoopTest {
     @Test
     fun dismissesBlockingOverlayBeforeTapThenStopsWhenCleared() {
-        // Observe order for a tap: (1) dangerousUiActionPreflight, (2) dismiss-loop round-1 observe,
-        // (3) dismiss-loop re-observe after the close tap → cleared → stop; then the real tap runs.
+        // Keep a fresh dismiss-loop observation immediately before the automatic close tap, reuse
+        // the close tap's after-snapshot for loop progress, then keep the final dangerous preflight.
         val provider = ScriptedControlProvider(
             observeSnapshots = listOf(
-                overlaySnapshot("overlay-preflight"), // (1) preflight: overlay, no dangerous control
-                overlaySnapshot("overlay-round1"),    // (2) dismiss round 1: has close affordance
-                clearSnapshot("clear-1"),             // (3) re-observe after tap → cleared, stop
+                overlaySnapshot("overlay-preflight"),
+                overlaySnapshot("overlay-dismiss-check"),
+                clearSnapshot("clear-post-preflight"),
             ),
+            dismissAfterSnapshots = listOf(clearSnapshot("clear-from-tap")),
         )
         val executor = DeviceControlToolExecutor(provider = provider)
 
@@ -44,16 +45,22 @@ class OverlayDismissLoopTest {
         assertEquals(ToolStatus.Succeeded, result.status)
         // Exactly one dismiss tap (on the close affordance) then the real tap on 商品.
         assertEquals(listOf("关闭", "商品"), provider.tapTargets)
+        assertEquals("preflight + dismiss check + final preflight", 3, provider.observeCount)
     }
 
     @Test
     fun boundedToMaxRoundsOnStickyOverlay() {
         // Overlay never clears (sticky): the loop must stop after AD_DISMISS_MAX_ROUNDS and still
         // let the real action run — never an unbounded loop.
-        val stickyObserves = List(SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS * 2 + 2) {
+        val stickyObserves = List(SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS + 2) {
             overlaySnapshot("sticky-$it")
         }
-        val provider = ScriptedControlProvider(observeSnapshots = stickyObserves)
+        val provider = ScriptedControlProvider(
+            observeSnapshots = stickyObserves,
+            dismissAfterSnapshots = List(SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS) {
+                overlaySnapshot("sticky-after-$it")
+            },
+        )
         val executor = DeviceControlToolExecutor(provider = provider)
 
         executor.execute(
@@ -101,11 +108,11 @@ class OverlayDismissLoopTest {
         // catch it and block the real tap.
         val provider = ScriptedControlProvider(
             observeSnapshots = listOf(
-                overlaySnapshot("overlay-preflight"),   // (1) pre-dismiss preflight: benign overlay
-                overlaySnapshot("overlay-round1"),       // (2) dismiss round 1: has close affordance
-                dangerousRevealedSnapshot("revealed"),   // (3) re-observe after tap: dangerous control revealed
-                dangerousRevealedSnapshot("revealed-2"), // (4) post-dismiss re-preflight: still dangerous
+                overlaySnapshot("overlay-preflight"),
+                overlaySnapshot("overlay-dismiss-check"),
+                dangerousRevealedSnapshot("revealed-post-preflight"),
             ),
+            dismissAfterSnapshots = listOf(dangerousRevealedSnapshot("revealed-from-tap")),
         )
         val executor = DeviceControlToolExecutor(provider = provider)
 
@@ -121,6 +128,7 @@ class OverlayDismissLoopTest {
         assertEquals("dangerous_ui_action_control_detected", result.data["summary"])
         // The dismiss tap happened, but the real 商品 tap must NOT (blocked by re-preflight).
         assertEquals(listOf("关闭"), provider.tapTargets)
+        assertEquals("post-tap snapshot is reused inside the loop", 3, provider.observeCount)
     }
 
     // ── Fixtures ──────────────────────────────────────────────────────────────────────────────
@@ -188,11 +196,16 @@ class OverlayDismissLoopTest {
 
     private class ScriptedControlProvider(
         private val observeSnapshots: List<ScreenStateSnapshot>,
+        private val dismissAfterSnapshots: List<ScreenStateSnapshot?> = emptyList(),
     ) : CurrentScreenControlProvider {
         private var observeIndex = 0
+        private var dismissIndex = 0
+        var observeCount = 0
+            private set
         val tapTargets = mutableListOf<String>()
 
         override fun observeCurrentScreen(maxTextChars: Int, maxNodes: Int): ScreenStateReadResult {
+            observeCount += 1
             val snapshot = observeSnapshots.getOrElse(observeIndex) { observeSnapshots.last() }
             if (observeIndex < observeSnapshots.lastIndex) observeIndex += 1
             return ScreenStateReadResult.Available(snapshot)
@@ -200,7 +213,12 @@ class OverlayDismissLoopTest {
 
         override fun tap(target: String, timeoutMillis: Long): UiActionReadResult {
             tapTargets += target
-            return succeeded()
+            val after = if (target == "关闭") {
+                dismissAfterSnapshots.getOrNull(dismissIndex++)
+            } else {
+                null
+            }
+            return succeeded(after = after)
         }
 
         override fun typeText(
@@ -222,11 +240,11 @@ class OverlayDismissLoopTest {
         override fun tapByNormalizedCoords(normalizedX: Int, normalizedY: Int, timeoutMillis: Long): UiActionReadResult =
             succeeded()
 
-        private fun succeeded(): UiActionReadResult = UiActionReadResult.Available(
+        private fun succeeded(after: ScreenStateSnapshot? = null): UiActionReadResult = UiActionReadResult.Available(
             UiActionExecutionResult(
                 status = UiActionStatus.Succeeded,
                 before = null,
-                after = null,
+                after = after,
                 summary = "ok",
                 retryable = false,
             ),

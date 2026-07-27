@@ -1871,7 +1871,8 @@ class DeviceControlToolExecutor(
     /**
      * Before a low-risk UI action, if a blocking promotional overlay/interstitial occludes the
      * screen, attempt a bounded ([SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS]) closed-loop
-     * dismissal: observe → tap a close/skip affordance → re-observe → stop when the overlay clears.
+     * dismissal: observe → tap a close/skip affordance → reuse the action's after-snapshot (falling
+     * back to re-observe when unavailable) → stop when the overlay clears.
      *
      * Uses [preflightProvider] (the raw, non-OCR-grounding provider) exactly like
      * [dangerousUiActionPreflight], so the dismiss loop never disturbs the pending OCR-grounding
@@ -1885,20 +1886,21 @@ class DeviceControlToolExecutor(
      */
     private fun dismissBlockingOverlaysIfPresent() {
         val provider = preflightProvider ?: return
+        var snapshot = (provider.observeCurrentScreen(
+            maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
+            maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
+        ) as? ScreenStateReadResult.Available)?.snapshot ?: return
         repeat(SolinConstants.AgentLoop.AD_DISMISS_MAX_ROUNDS) {
-            val snapshot = (provider.observeCurrentScreen(
-                maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
-                maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
-            ) as? ScreenStateReadResult.Available)?.snapshot ?: return
             val dismissTarget = snapshot.blockingOverlayDismissTarget() ?: return
             val label = dismissTarget.text.ifBlank { dismissTarget.contentDescription }
             if (label.isBlank()) return
             val beforeSignature = snapshot.overlayContentSignature()
-            provider.tap(target = label, timeoutMillis = DEFAULT_UI_ACTION_TIMEOUT_MILLIS)
-            val after = (provider.observeCurrentScreen(
-                maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
-                maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
-            ) as? ScreenStateReadResult.Available)?.snapshot
+            val tapResult = provider.tap(target = label, timeoutMillis = DEFAULT_UI_ACTION_TIMEOUT_MILLIS)
+            val after = (tapResult as? UiActionReadResult.Available)?.result?.after
+                ?: (provider.observeCurrentScreen(
+                    maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
+                    maxNodes = DEFAULT_MAX_SCREEN_STATE_NODES,
+                ) as? ScreenStateReadResult.Available)?.snapshot
             // Stop when: observation failed, the overlay cleared, or the tap had no effect (the
             // content signature is unchanged — a sticky overlay). Uses a salt/timestamp-free
             // signature because ScreenStateSnapshot.id embeds a random salt, so id equality would
@@ -1909,6 +1911,7 @@ class DeviceControlToolExecutor(
             ) {
                 return
             }
+            snapshot = after
         }
     }
 
