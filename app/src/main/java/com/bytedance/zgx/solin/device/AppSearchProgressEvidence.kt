@@ -34,7 +34,19 @@ object AppSearchProgressEvidence {
     private const val STAGE_BLOCKED = "blocked"
     private const val STAGE_UNKNOWN = "unknown"
 
-    fun fromData(data: Map<String, String>): AppSearchProgressSignal {
+    fun fromData(data: Map<String, String>): AppSearchProgressSignal =
+        fromData(data, ::screenObservationFromJsonStringOrNull)
+
+    /**
+     * Cache-aware entry point that reuses an already-computed typed [ScreenObservation] parse
+     * (via [observationParse]) instead of re-parsing observation JSON. The public [fromData]
+     * delegates here with the default non-throwing parser, so callers that do not share a parse
+     * cache see unchanged behavior. Only the stage classification consults observation JSON.
+     */
+    internal fun fromData(
+        data: Map<String, String>,
+        observationParse: (String) -> ScreenObservation?,
+    ): AppSearchProgressSignal {
         val failureKind = data["failureKind"].orEmpty()
         val searchVerificationStatus = data["searchVerificationStatus"].orEmpty()
         val diffSummary = data["screenObservationDiffSummary"].orEmpty()
@@ -54,7 +66,7 @@ object AppSearchProgressEvidence {
                 OUTCOME_ADVANCED
             else -> OUTCOME_UNKNOWN
         }
-        val stage = data.progressStage(actionType, status, toolName, outcome)
+        val stage = data.progressStage(actionType, status, toolName, outcome, observationParse)
         return AppSearchProgressSignal(
             uiActionOutcome = outcome,
             uiActionOutcomeReason = data.outcomeReason(outcome, actionType, status, diffSummary),
@@ -67,6 +79,7 @@ object AppSearchProgressEvidence {
         status: String,
         toolName: String,
         outcome: String,
+        observationParse: (String) -> ScreenObservation?,
     ): String =
         when {
             outcome == OUTCOME_VERIFIED -> STAGE_VERIFIED
@@ -74,11 +87,12 @@ object AppSearchProgressEvidence {
             toolName == "open_app_by_name" && status.isSucceededStatus() -> STAGE_OPENED
             actionType == "submit_search" && status.isSucceededStatus() -> STAGE_SUBMITTED
             actionType == "type_text" && status.isSucceededStatus() -> STAGE_QUERY_TYPED
-            actionType == "tap" && status.isSucceededStatus() && currentObservation()?.hasEditableTarget() == true ->
+            actionType == "tap" && status.isSucceededStatus() &&
+                currentObservation(observationParse)?.hasEditableTarget() == true ->
                 STAGE_INPUT_READY
             actionType == "tap" && status.isSucceededStatus() -> STAGE_ENTRY_TAPPED
-            currentObservation()?.hasEditableTarget() == true -> STAGE_INPUT_READY
-            currentObservation()?.hasSearchEntryTarget() == true -> STAGE_OBSERVED_ENTRY
+            currentObservation(observationParse)?.hasEditableTarget() == true -> STAGE_INPUT_READY
+            currentObservation(observationParse)?.hasSearchEntryTarget() == true -> STAGE_OBSERVED_ENTRY
             else -> STAGE_UNKNOWN
         }
 
@@ -111,15 +125,20 @@ object AppSearchProgressEvidence {
         return expected != actual
     }
 
-    private fun Map<String, String>.currentObservation(): ScreenObservation? =
-        dataObservation("afterScreenObservationJson")
-            ?: dataObservation("screenObservationJson")
-            ?: dataObservation("beforeScreenObservationJson")
+    private fun Map<String, String>.currentObservation(
+        observationParse: (String) -> ScreenObservation?,
+    ): ScreenObservation? =
+        dataObservation("afterScreenObservationJson", observationParse)
+            ?: dataObservation("screenObservationJson", observationParse)
+            ?: dataObservation("beforeScreenObservationJson", observationParse)
 
-    private fun Map<String, String>.dataObservation(key: String): ScreenObservation? =
+    private fun Map<String, String>.dataObservation(
+        key: String,
+        observationParse: (String) -> ScreenObservation?,
+    ): ScreenObservation? =
         this[key]
             ?.takeIf { it.isNotBlank() }
-            ?.let { screenObservationFromJsonStringOrNull(it) }
+            ?.let { observationParse(it) }
 
     private fun ScreenObservation.hasEditableTarget(): Boolean =
         UiTargetResolver.explain(this, UiTargetKind.EditableField)
