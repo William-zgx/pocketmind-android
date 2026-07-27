@@ -588,12 +588,6 @@ private fun ToolResult.hasReadOnlyLocalScreenTextEvidence(): Boolean =
     data["ocrText"]?.isNotBlank() == true ||
         data["screenText"]?.isNotBlank() == true
 
-private fun ToolResult.hasCurrentTargetEvidence(normalizedTarget: String): Boolean =
-    data["screenObservationJson"].observationHasTargetEvidence(normalizedTarget) ||
-        data["afterScreenObservationJson"].observationHasTargetEvidence(normalizedTarget) ||
-        executableStandaloneOcrBlocksJson().ocrBlocksHaveTargetEvidence(normalizedTarget) ||
-        data["screenObservationDiffSummary"].diffSummaryHasTargetEvidence(normalizedTarget)
-
 private fun ToolResult.hasCurrentTargetEvidence(
     normalizedTarget: String,
     toolName: String,
@@ -702,11 +696,6 @@ private fun String.diffSummaryEvidenceLabels(): List<String> =
         }
         .distinct()
 
-private fun String?.observationHasTargetEvidence(normalizedTarget: String): Boolean =
-    withObservationElements { elements ->
-        elements.hasTargetEvidence(normalizedTarget)
-    }
-
 private fun String?.observationHasTargetEvidence(
     normalizedTarget: String,
     toolName: String,
@@ -783,15 +772,6 @@ private fun String?.ocrBlocksHaveTargetlessTypingEvidence(
 private fun List<String>.hasOcrSearchSubmitEvidence(): Boolean =
     any { text -> text.hasStrongSearchContextText() } &&
         any { text -> text.hasStandaloneSearchSubmitText() }
-
-private fun JSONArray.hasTargetEvidence(normalizedTarget: String): Boolean {
-    val elements = objects()
-    if (elements.any { element -> element.isTargetIdEvidence(normalizedTarget) }) return true
-    if (elements.any { element -> element.isAccessibilityTextTargetEvidence(normalizedTarget) }) return true
-    return elements
-        .filter { element -> element.optString("source") == "ocr" }
-        .count { element -> element.optString("text").matchesOcrTargetText(normalizedTarget) } == 1
-}
 
 private fun JSONArray.hasTargetEvidence(normalizedTarget: String, toolName: String): Boolean {
     val elements = objects()
