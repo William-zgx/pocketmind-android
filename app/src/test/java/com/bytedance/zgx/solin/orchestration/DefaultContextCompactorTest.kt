@@ -307,4 +307,104 @@ class DefaultContextCompactorTest {
         )
         assertTrue("tokensAfter must be <= threshold", result.tokensAfter <= (budget * config.compactionThresholdRatio).toInt())
     }
+
+    // ── P4: incremental token accounting ────────────────────────────────────────────────────────
+
+    /**
+     * Additive estimator that counts how many times it is invoked on a *whole-list* (size > 1)
+     * argument. The incremental accounting path should call the estimator on single-message lists
+     * (to seed per-message costs) but must NOT re-scan the whole list once per drop in the fallback.
+     */
+    private class CountingAdditiveEstimator : (List<ChatMessage>) -> Int {
+        var wholeListCalls = 0
+            private set
+
+        override fun invoke(msgs: List<ChatMessage>): Int {
+            if (msgs.size > 1) wholeListCalls += 1
+            return msgs.sumOf { m -> (m.text.length / 4) + 1 }
+        }
+    }
+
+    @Test
+    fun incrementalAccountingMatchesWholeListAccountingUnderAggressiveFallback() = runTest {
+        // Same tight-budget fallback scenario as the preservation test, but assert the exact
+        // tokensAfter/compactionCount an additive estimator must yield. The running-total path is
+        // only correct if it agrees with a from-scratch sum over the surviving messages.
+        val config = CompactionConfig(preserveRecentTurns = 2, maxSummaryLengthChars = 50)
+        val compactor = DefaultContextCompactor(config)
+        val failure = ChatMessage(
+            role = MessageRole.Assistant,
+            text = "工具执行失败：dangerous_action。",
+            kind = MessageKind.ToolFailure,
+        )
+        val messages = buildList {
+            add(failure)
+            addAll(history(turnCount = 25, charsPerMsg = 400))
+        }
+        val budget = 150
+
+        val result = compactor.compact(messages, budget, charEstimator)
+
+        assertEquals(CompactionTrigger.OverBudget, result.triggerReason)
+        // tokensAfter must equal an independent whole-list estimate of the surviving messages.
+        assertEquals(
+            "incremental running total must match a from-scratch estimate of the survivors",
+            charEstimator(result.messages),
+            result.tokensAfter,
+        )
+        // compactionCount must equal how many messages were actually removed.
+        assertEquals(messages.size - result.messages.size, result.compactionCount)
+        assertTrue(
+            "failed tool result must survive",
+            result.messages.any { it.kind == MessageKind.ToolFailure && it.text == failure.text },
+        )
+    }
+
+    @Test
+    fun incrementalAccountingAvoidsPerDropWholeListRescans() = runTest {
+        // With an additive estimator, the fallback must not call the whole-list estimator once per
+        // drop. A long history forcing many drops would incur dozens of whole-list scans under the
+        // old code; the incremental path bounds whole-list calls to a small constant.
+        val config = CompactionConfig(preserveRecentTurns = 2, maxSummaryLengthChars = 50)
+        val compactor = DefaultContextCompactor(config)
+        val messages = history(turnCount = 40, charsPerMsg = 300)
+        val estimator = CountingAdditiveEstimator()
+
+        val result = compactor.compact(messages, tokenBudget = 120, estimator)
+
+        assertEquals(CompactionTrigger.OverBudget, result.triggerReason)
+        assertTrue("compaction must have dropped many messages", result.compactionCount > 10)
+        // Seeding costs uses single-message calls; the summarize loop uses a bounded number of
+        // whole-list calls. The per-drop fallback must add none. Allow generous slack for the
+        // summarize-window iterations while still catching an O(drops) regression.
+        assertTrue(
+            "whole-list estimator calls (${estimator.wholeListCalls}) must stay well below the drop count (${result.compactionCount})",
+            estimator.wholeListCalls < result.compactionCount,
+        )
+    }
+
+    @Test
+    fun nonAdditiveEstimatorFallsBackToExactWholeListAccounting() = runTest {
+        // A deliberately non-additive estimator: it adds a fixed framing surcharge that does not
+        // decompose per message (sum of per-message costs != whole-list cost). The compactor must
+        // detect this and fall back to exact whole-list re-estimation so tokensAfter stays truthful.
+        val config = CompactionConfig(preserveRecentTurns = 2, maxSummaryLengthChars = 50)
+        val compactor = DefaultContextCompactor(config)
+        val framingSurcharge = 500
+        val nonAdditive: (List<ChatMessage>) -> Int = { msgs ->
+            if (msgs.isEmpty()) 0 else msgs.sumOf { m -> (m.text.length / 4) + 1 } + framingSurcharge
+        }
+        val messages = history(turnCount = 30, charsPerMsg = 300)
+        val budget = 900
+
+        val result = compactor.compact(messages, budget, nonAdditive)
+
+        // tokensAfter must equal the non-additive estimator applied to the survivors (framing
+        // surcharge included), proving the running-total shortcut was NOT used.
+        assertEquals(
+            "non-additive estimator result must match an exact whole-list estimate of survivors",
+            nonAdditive(result.messages),
+            result.tokensAfter,
+        )
+    }
 }

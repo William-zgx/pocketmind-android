@@ -207,6 +207,25 @@ class DefaultContextCompactor(
         middleAndTail.addAll(split.tail)
         var droppedCount = 0
 
+        // Incremental token accounting. Re-estimating the whole list after every single drop makes
+        // the fallback O(drops × history size). When the estimator is additive — i.e. the cost of a
+        // list equals the sum of its per-message costs (true for every production estimator: remote
+        // is sum(est(text)) + n·4, LiteRT is sum(est(text) + overhead)) — we can keep a running total
+        // and subtract the dropped message's cost instead. Costs are tracked by list index parallel
+        // to [middleAndTail], never by ChatMessage.id, so duplicate ids cannot corrupt accounting.
+        val prefixCost = if (split.prefix.isEmpty()) 0 else estimatedTokens(split.prefix)
+        val costs = ArrayList<Int>(middleAndTail.size)
+        middleAndTail.forEach { costs.add(estimatedTokens(listOf(it))) }
+        var runningTotal = prefixCost + costs.sum()
+        // Probe additivity against the already-computed whole-list estimate. If they disagree the
+        // estimator is non-additive (sequence framing, cross-message tokenization); fall back to
+        // exact whole-list re-estimation so behavior is preserved bit-for-bit.
+        val additive = runningTotal == tokensBefore
+        runningTotal = tokensBefore
+
+        fun tokensAfterCurrent(): Int =
+            if (additive) runningTotal else estimatedTokens(split.prefix + middleAndTail)
+
         // Drop the oldest summarizable (non-grounding-critical) message before the protected tail
         // suffix. Returns false when nothing summarizable is left in range (so the caller stops
         // rather than sacrificing a preserved message).
@@ -216,6 +235,7 @@ class DefaultContextCompactor(
             val summarizableIndex = (0 until limit).firstOrNull { i -> middleAndTail[i].id !in preservedIds }
                 ?: return false
             middleAndTail.removeAt(summarizableIndex)
+            runningTotal -= costs.removeAt(summarizableIndex)
             droppedCount += 1
             return true
         }
@@ -226,7 +246,9 @@ class DefaultContextCompactor(
             val limit = middleAndTail.size - protectedFloor
             if (limit <= 0) return
             val summarizableIndex = (0 until limit).firstOrNull { i -> middleAndTail[i].id !in preservedIds }
-            middleAndTail.removeAt(summarizableIndex ?: 0)
+            val removeIndex = summarizableIndex ?: 0
+            middleAndTail.removeAt(removeIndex)
+            runningTotal -= costs.removeAt(removeIndex)
             droppedCount += 1
         }
 
@@ -236,11 +258,10 @@ class DefaultContextCompactor(
         // round below decide.
         while (middleAndTail.size > split.tail.size) {
             if (!dropOneSummarizable(protectedFloor = split.tail.size)) break
-            val current = split.prefix + middleAndTail
-            val tokensAfter = estimatedTokens(current)
+            val tokensAfter = tokensAfterCurrent()
             if (tokensAfter <= tokenBudget) {
                 return CompactionResult(
-                    messages = current,
+                    messages = split.prefix + middleAndTail,
                     compactionCount = droppedCount,
                     tokensBefore = tokensBefore,
                     tokensAfter = tokensAfter,
@@ -253,9 +274,9 @@ class DefaultContextCompactor(
         // dropping a preserved message as a last resort so we can always converge to one message.
         while (middleAndTail.size > 1) {
             dropOnePreferSummarizable(protectedFloor = 1)
-            val current = split.prefix + middleAndTail
-            val tokensAfter = estimatedTokens(current)
+            val tokensAfter = tokensAfterCurrent()
             if (tokensAfter <= tokenBudget) {
+                val current = split.prefix + middleAndTail
                 return CompactionResult(
                     messages = current,
                     compactionCount = messages.size - current.size,
@@ -272,7 +293,7 @@ class DefaultContextCompactor(
             messages = finalMessages,
             compactionCount = messages.size - finalMessages.size,
             tokensBefore = tokensBefore,
-            tokensAfter = estimatedTokens(finalMessages),
+            tokensAfter = tokensAfterCurrent(),
             triggerReason = CompactionTrigger.OverBudget,
         )
     }
