@@ -12,12 +12,16 @@ import com.bytedance.zgx.solin.credentials.Credential
 import com.bytedance.zgx.solin.credentials.CredentialResolver
 import com.bytedance.zgx.solin.tool.ToolRequest
 import com.bytedance.zgx.solin.tool.ToolSpec
+import com.bytedance.zgx.solin.logging.SolinLogTags.TAG_REMOTE
+import com.bytedance.zgx.solin.logging.solinW
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -29,6 +33,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
@@ -75,8 +80,70 @@ class OkHttpRemoteChatRuntime(
         .build(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val credentialResolver: CredentialResolver = ApiKeyCredentialResolver,
+    private val retryPolicy: RemoteRetryPolicy = RemoteRetryPolicy(),
 ) : RemoteChatRuntime {
     private val activeCalls = ConcurrentHashMap.newKeySet<Call>()
+
+    /**
+     * Runs one remote attempt, retrying transient provider failures per [retryPolicy].
+     *
+     * Provider endpoints are not always stable (transient 5xx, rate limits, dropped mobile
+     * sockets); without this a single hiccup fails the whole agent run. Safety rules enforced here:
+     *
+     * - A fresh [Call] is created per attempt (OkHttp calls are single-use) and registered in
+     *   [activeCalls] so [stop] and `awaitClose` can still cancel the in-flight attempt.
+     * - `hasEmittedOutput` flips to true as soon as the attempt emits anything downstream, after
+     *   which the policy always gives up — streamed text is never duplicated by a replay.
+     * - Cancellation and permanent failures (bad credentials, malformed request) never retry.
+     *
+     * @param attemptBlock performs one attempt. It must call [markEmitted] before the first
+     *   downstream emission. Throws on failure; a thrown [RemoteHttpStatusFailure] carries the
+     *   status/Retry-After needed for classification.
+     */
+    private suspend fun runWithRetry(
+        request: Request,
+        /** Holds the call for the attempt currently in flight so the caller can cancel just it. */
+        currentCall: AtomicReference<Call?> = AtomicReference(null),
+        attemptBlock: suspend (call: Call, markEmitted: () -> Unit) -> Unit,
+    ) {
+        var attempt = 1
+        var hasEmittedOutput = false
+        while (true) {
+            val call = callFactory.newCall(request)
+            activeCalls.add(call)
+            currentCall.set(call)
+            try {
+                attemptBlock(call) { hasEmittedOutput = true }
+                return
+            } catch (throwable: Throwable) {
+                val failureClass = when (throwable) {
+                    is RemoteHttpStatusFailure ->
+                        if (call.isCanceled()) {
+                            RemoteFailureClass.Cancelled
+                        } else {
+                            RemoteRetryPolicy.classifyHttpStatus(throwable.statusCode)
+                        }
+
+                    else -> RemoteRetryPolicy.classifyThrowable(throwable, callCancelled = call.isCanceled())
+                }
+                val decision = retryPolicy.decide(
+                    failureClass = failureClass,
+                    attempt = attempt,
+                    hasEmittedOutput = hasEmittedOutput,
+                    retryAfterMillis = (throwable as? RemoteHttpStatusFailure)?.retryAfterMillis,
+                )
+                if (decision !is RemoteRetryDecision.Retry) throw throwable
+                solinW(
+                    TAG_REMOTE,
+                    "remote attempt $attempt failed (${failureClass.name}); retrying in ${decision.delayMillis}ms",
+                )
+                delay(decision.delayMillis)
+                attempt = decision.attempt
+            } finally {
+                activeCalls.remove(call)
+            }
+        }
+    }
 
     override fun send(
         prompt: String,
@@ -107,61 +174,47 @@ class OkHttpRemoteChatRuntime(
                 }
             }
             .build()
-        val call = callFactory.newCall(request)
-        activeCalls.add(call)
+        val currentCall = AtomicReference<Call?>(null)
         val worker = launch(ioDispatcher) {
             try {
-                call.execute().use { response ->
-                    if (!response.isSuccessful) {
-                        val failureMarker = if (
-                            imageAttachments.isEmpty() &&
-                            response.code != 401 &&
-                            response.code != 403
-                        ) {
-                            runCatching {
-                                response.body.source().use { source ->
-                                    val buffer = Buffer()
-                                    source.read(buffer, SolinConstants.Network.ERROR_BODY_SNIPPET_BYTES)
-                                    safeRemoteFailureMarker(buffer.readUtf8())
+                runWithRetry(request, currentCall) { call, markEmitted ->
+                    call.execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw response.toStatusFailure(imageAttachments)
+                        }
+                        val body = response.body
+                        if (response.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
+                            body.charStream().buffered().use { reader ->
+                                while (isActive) {
+                                    val line = reader.readLine() ?: break
+                                    if (!line.startsWith("data:")) continue
+                                    val payload = line.removePrefix("data:").trim()
+                                    if (payload == "[DONE]") break
+                                    val chunk = parseChatCompletionChunkText(payload)
+                                    if (chunk.isNotEmpty()) {
+                                        markEmitted()
+                                        send(chunk)
+                                    }
                                 }
-                            }.getOrNull().orEmpty()
-                        } else {
-                            ""
-                        }
-                        response.body.close()
-                        error(remoteFailureMessage(response.code, imageAttachments, failureMarker))
-                    }
-                    val body = response.body
-                    if (response.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
-                        body.charStream().buffered().use { reader ->
-                            while (isActive) {
-                                val line = reader.readLine() ?: break
-                                if (!line.startsWith("data:")) continue
-                                val payload = line.removePrefix("data:").trim()
-                                if (payload == "[DONE]") break
-                                val chunk = parseChatCompletionChunkText(payload)
-                                if (chunk.isNotEmpty()) send(chunk)
                             }
+                        } else {
+                            markEmitted()
+                            send(parseChatCompletionText(body.string()))
                         }
-                    } else {
-                        send(parseChatCompletionText(body.string()))
                     }
                 }
                 close()
             } catch (throwable: Throwable) {
-                if (call.isCanceled()) {
+                if (currentCall.get()?.isCanceled() == true) {
                     close(CancellationException("远程生成已取消", throwable))
                 } else {
                     close(throwable)
                 }
-            } finally {
-                activeCalls.remove(call)
             }
         }
         awaitClose {
-            call.cancel()
+            currentCall.get()?.cancel()
             worker.cancel()
-            activeCalls.remove(call)
         }
     }
 
@@ -202,62 +255,53 @@ class OkHttpRemoteChatRuntime(
                 }
             }
             .build()
-        val call = callFactory.newCall(request)
-        activeCalls.add(call)
+        val currentCall = AtomicReference<Call?>(null)
         val worker = launch(ioDispatcher) {
             try {
-                call.execute().use { response ->
-                    if (!response.isSuccessful) {
-                        val failureMarker = if (
-                            imageAttachments.isEmpty() &&
-                            response.code != 401 &&
-                            response.code != 403
-                        ) {
-                            runCatching {
-                                response.body.source().use { source ->
-                                    val buffer = Buffer()
-                                    source.read(buffer, SolinConstants.Network.ERROR_BODY_SNIPPET_BYTES)
-                                    safeRemoteFailureMarker(buffer.readUtf8())
-                                }
-                            }.getOrNull().orEmpty()
-                        } else {
-                            ""
+                runWithRetry(request, currentCall) { call, markEmitted ->
+                    call.execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw response.toStatusFailure(imageAttachments)
                         }
-                        response.body.close()
-                        error(remoteFailureMessage(response.code, imageAttachments, failureMarker))
-                    }
-                    val body = response.body
-                    if (response.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
-                        val accumulator = RemoteToolCallAccumulator()
-                        body.charStream().buffered().use { reader ->
-                            while (isActive) {
-                                val line = reader.readLine() ?: break
-                                if (!line.startsWith("data:")) continue
-                                val payload = line.removePrefix("data:").trim()
-                                if (payload == "[DONE]") break
-                                accumulator.absorb(payload).forEach { event -> send(event) }
+                        val body = response.body
+                        if (response.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
+                            val accumulator = RemoteToolCallAccumulator()
+                            body.charStream().buffered().use { reader ->
+                                while (isActive) {
+                                    val line = reader.readLine() ?: break
+                                    if (!line.startsWith("data:")) continue
+                                    val payload = line.removePrefix("data:").trim()
+                                    if (payload == "[DONE]") break
+                                    accumulator.absorb(payload).forEach { event ->
+                                        markEmitted()
+                                        send(event)
+                                    }
+                                }
+                            }
+                            accumulator.finish().forEach { event ->
+                                markEmitted()
+                                send(event)
+                            }
+                        } else {
+                            parseChatCompletionEvents(body.string()).forEach { event ->
+                                markEmitted()
+                                send(event)
                             }
                         }
-                        accumulator.finish().forEach { event -> send(event) }
-                    } else {
-                        parseChatCompletionEvents(body.string()).forEach { event -> send(event) }
                     }
                 }
                 close()
             } catch (throwable: Throwable) {
-                if (call.isCanceled()) {
+                if (currentCall.get()?.isCanceled() == true) {
                     close(CancellationException("远程生成已取消", throwable))
                 } else {
                     close(throwable)
                 }
-            } finally {
-                activeCalls.remove(call)
             }
         }
         awaitClose {
-            call.cancel()
+            currentCall.get()?.cancel()
             worker.cancel()
-            activeCalls.remove(call)
         }
     }
 
@@ -324,6 +368,37 @@ private fun userMessageJson(prompt: String, imageAttachments: List<ChatImageAtta
         )
     }
     return message.put("content", content)
+}
+
+/**
+ * Convert a non-successful response into a [RemoteHttpStatusFailure], reading a bounded diagnostic
+ * snippet and the `Retry-After` hint before closing the body.
+ *
+ * Centralises what both chat paths previously duplicated, and preserves the existing user-facing
+ * message so error surfacing is unchanged; the status code and retry hint are additionally carried
+ * so the retry policy can classify the failure without re-reading a closed body.
+ */
+private fun Response.toStatusFailure(
+    imageAttachments: List<ChatImageAttachment>,
+): RemoteHttpStatusFailure {
+    val failureMarker = if (imageAttachments.isEmpty() && code != 401 && code != 403) {
+        runCatching {
+            body.source().use { source ->
+                val buffer = Buffer()
+                source.read(buffer, SolinConstants.Network.ERROR_BODY_SNIPPET_BYTES)
+                safeRemoteFailureMarker(buffer.readUtf8())
+            }
+        }.getOrNull().orEmpty()
+    } else {
+        ""
+    }
+    val retryAfterMillis = RemoteRetryPolicy.parseRetryAfterMillis(header("Retry-After"))
+    body.close()
+    return RemoteHttpStatusFailure(
+        statusCode = code,
+        retryAfterMillis = retryAfterMillis,
+        message = remoteFailureMessage(code, imageAttachments, failureMarker),
+    )
 }
 
 private fun remoteFailureMessage(

@@ -64,6 +64,32 @@ object SolinConstants {
          * reason single-line and log-safe.
          */
         const val ERROR_BODY_SNIPPET_CHARS: Int = 512
+
+        /**
+         * Maximum number of attempts (initial + retries) for a remote chat generation.
+         *
+         * Used by [com.bytedance.zgx.solin.runtime.RemoteRetryPolicy]. Provider endpoints are not
+         * always stable — transient 5xx, rate limits and dropped mobile sockets are common — so a
+         * small bounded retry turns a hard run failure into a recoverable hiccup. Kept low so a
+         * genuinely down provider still fails fast instead of stalling the user.
+         */
+        const val REMOTE_RETRY_MAX_ATTEMPTS: Int = 3
+
+        /**
+         * Base delay in milliseconds for remote retry exponential backoff.
+         *
+         * Used by [com.bytedance.zgx.solin.runtime.RemoteRetryPolicy]. Attempt N waits roughly
+         * `base * 2^(N-1)` with jitter, unless the provider supplied a `Retry-After` hint.
+         */
+        const val REMOTE_RETRY_BASE_DELAY_MILLIS: Long = 500L
+
+        /**
+         * Upper bound in milliseconds for a single remote retry wait.
+         *
+         * Used by [com.bytedance.zgx.solin.runtime.RemoteRetryPolicy]. Also clamps a provider
+         * `Retry-After` value so an erroneous or hostile header cannot stall the app.
+         */
+        const val REMOTE_RETRY_MAX_DELAY_MILLIS: Long = 4_000L
     }
 
     /**
