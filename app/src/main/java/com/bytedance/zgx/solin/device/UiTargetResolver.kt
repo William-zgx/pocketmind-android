@@ -290,6 +290,7 @@ object UiTargetResolver {
         includeDiagnostics: Boolean,
     ): List<UiTargetEvidenceCandidate> {
         val metrics = SnapshotBoundsMetrics.from(snapshot.nodes)
+        val normalizedTarget = target.normalizedLookupKey()
         return snapshot.nodes
             .map { node ->
                 GroundingNode(
@@ -298,7 +299,7 @@ object UiTargetResolver {
                     fallbackType = UiTargetFallbackType.None,
                 )
             }
-            .mapNotNull { node -> scoreNode(node, kind, target, profile, metrics, includeDiagnostics) }
+            .mapNotNull { node -> scoreNode(node, kind, normalizedTarget, profile, metrics, includeDiagnostics) }
             .sortedByDescending { candidate -> candidate.score.finalScore }
     }
 
@@ -311,8 +312,9 @@ object UiTargetResolver {
     ): List<UiTargetEvidenceCandidate> {
         val nodes = observation.toGroundingNodes()
         val metrics = SnapshotBoundsMetrics.from(nodes.map { node -> node.node })
+        val normalizedTarget = target.normalizedLookupKey()
         val scored = nodes
-            .mapNotNull { node -> scoreNode(node, kind, target, profile, metrics, includeDiagnostics) }
+            .mapNotNull { node -> scoreNode(node, kind, normalizedTarget, profile, metrics, includeDiagnostics) }
         // A synthesized trailing-affordance candidate (id "<parent>::affordance", fallbackType
         // OcrGrounding) must never outrank an UNRELATED real accessibility control that is itself
         // selectable for this kind — otherwise an exact text match on a right-30% sub-region could
@@ -341,7 +343,7 @@ object UiTargetResolver {
     private fun scoreNode(
         groundingNode: GroundingNode,
         kind: UiTargetKind,
-        target: String?,
+        normalizedTarget: String,
         profile: AppInteractionProfile?,
         metrics: SnapshotBoundsMetrics,
         includeDiagnostics: Boolean,
@@ -351,7 +353,6 @@ object UiTargetResolver {
         val label = groundingNode.labelOverride ?: node.visibleLabel()
         val normalizedLabel = label.normalizedLookupKey()
         if (kind == UiTargetKind.SubmitSearch && looksNonTextSearchControl(normalizedLabel)) return null
-        val normalizedTarget = target.normalizedLookupKey()
         val profileHints = when (kind) {
             UiTargetKind.SearchEntry -> profile?.searchEntryHints.orEmpty()
             UiTargetKind.SubmitSearch -> profile?.submitHints.orEmpty()
