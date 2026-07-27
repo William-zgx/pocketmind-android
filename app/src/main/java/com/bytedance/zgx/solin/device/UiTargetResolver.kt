@@ -1023,7 +1023,17 @@ private fun ScreenStateSnapshot.searchVerificationSignature(): String =
         },
     ).joinToString("||")
 
+/**
+ * Separator characters stripped by [normalizedLookupKey].
+ *
+ * Hoisted to a file-level val because [normalizedLookupKey] is called on the per-node, per-candidate
+ * scoring path (100+ call sites across the repository); compiling this pattern on every call was
+ * pure waste. The pattern itself is unchanged.
+ */
+private val NORMALIZED_LOOKUP_SEPARATOR_REGEX =
+    Regex("""[\s\p{Punct}，。！？、：；（）【】《》“”‘’·]+""")
+
 internal fun String?.normalizedLookupKey(): String =
     orEmpty()
         .lowercase(Locale.ROOT)
-        .replace(Regex("""[\s\p{Punct}，。！？、：；（）【】《》“”‘’·]+"""), "")
+        .replace(NORMALIZED_LOOKUP_SEPARATOR_REGEX, "")

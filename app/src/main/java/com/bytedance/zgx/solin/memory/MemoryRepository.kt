@@ -885,10 +885,10 @@ private fun normalizedPreferenceText(text: String): String =
         .removePrefix("user preference:")
         .trim()
         .lowercase(Locale.ROOT)
-        .replace(Regex("""\s+"""), " ")
+        .replace(WHITESPACE_RUN_REGEX, " ")
 
 private fun normalizedMemoryText(text: String): String =
-    text.trim().replace(Regex("""\s+"""), " ").lowercase(Locale.ROOT)
+    text.trim().replace(WHITESPACE_RUN_REGEX, " ").lowercase(Locale.ROOT)
 
 private fun userFactKeyFrom(text: String): String? {
     val normalized = normalizedUserFactText(text)
@@ -918,14 +918,14 @@ private fun normalizedUserFactText(text: String): String =
         .removePrefix("用户事实：")
         .removePrefix("user fact:")
         .lowercase(Locale.ROOT)
-        .replace(Regex("""\s+"""), " ")
+        .replace(WHITESPACE_RUN_REGEX, " ")
 
 internal const val TASK_STATE_MEMORY_RECORD_PREFIX = "task-state-background:"
 
 internal fun taskStateMemoryRecordId(taskId: String): String {
     val normalized = taskId
         .trim()
-        .replace(Regex("""[^A-Za-z0-9_.:-]+"""), "-")
+        .replace(UNSAFE_ID_CHARS_REGEX, "-")
         .trim('-')
         .take(64)
         .takeIf { it.isNotBlank() }
@@ -1233,6 +1233,20 @@ private fun zvecMemoryVectorId(recordId: String, modelId: String): String =
         key = "$recordId|$modelId",
     )
 
+/**
+ * Whitespace-collapsing pattern shared by the memory normalizers.
+ *
+ * Hoisted to file level because these normalizers run per memory record on index rebuild and per
+ * query; compiling an identical pattern on every call was pure allocation waste. Patterns unchanged.
+ */
+private val WHITESPACE_RUN_REGEX = Regex("""\s+""")
+
+/** Token separator used by [tokenize]; hoisted for the same reason as [WHITESPACE_RUN_REGEX]. */
+private val TOKEN_SEPARATOR_REGEX = Regex("""[^\p{L}\p{N}]+""")
+
+/** Unsafe-id sanitizer pattern; hoisted for the same reason. */
+private val UNSAFE_ID_CHARS_REGEX = Regex("""[^A-Za-z0-9_.:-]+""")
+
 private const val ZVEC_MEMORY_DOMAIN = "memory"
 private const val ZVEC_MEMORY_EMBEDDING_TYPE = "MemoryEmbedding"
 private const val ZVEC_MEMORY_VECTOR_ID_PREFIX = "memory-vector"
@@ -1522,7 +1536,7 @@ private fun FloatArray.normalizedVector(expectedDimension: Int): FloatArray {
 
 private fun semanticSourceHash(text: String): String {
     val digest = MessageDigest.getInstance("SHA-256")
-    val normalized = text.trim().replace(Regex("""\s+"""), " ")
+    val normalized = text.trim().replace(WHITESPACE_RUN_REGEX, " ")
     digest.update(normalized.toByteArray(Charsets.UTF_8))
     return digest.digest().joinToString(separator = "") { byte ->
         "%02x".format(byte.toInt() and 0xff)
@@ -1556,7 +1570,7 @@ private fun preferenceSearchAliases(text: String): Set<String> {
         .removePrefix("用户偏好：")
         .trim()
         .lowercase(Locale.ROOT)
-        .replace(Regex("""\s+"""), " ")
+        .replace(WHITESPACE_RUN_REGEX, " ")
     if (normalized.isBlank() || !normalized.containsAny(RESPONSE_PREFERENCE_TERMS)) {
         return emptySet()
     }
@@ -1599,7 +1613,7 @@ private fun MemoryEntry.shouldSuppressTaskStateHitFor(normalizedQuery: String): 
 private fun tokenize(text: String): List<String> {
     val normalized = text.lowercase()
     val latinTokens = normalized
-        .split(Regex("""[^\p{L}\p{N}]+"""))
+        .split(TOKEN_SEPARATOR_REGEX)
         .map { it.trim() }
         .filter { it.length >= 2 && it !in LATIN_STOP_WORDS }
     val cjkChars = normalized
