@@ -29,6 +29,7 @@ import com.bytedance.zgx.solin.device.UiActionExecutionResult
 import com.bytedance.zgx.solin.device.UiActionFailureKind
 import com.bytedance.zgx.solin.device.UiActionStatus
 import com.bytedance.zgx.solin.device.UiScrollDirection
+import com.bytedance.zgx.solin.device.UiSystemKey
 import com.bytedance.zgx.solin.device.UiTargetKind
 import com.bytedance.zgx.solin.device.UiTargetResolver
 import com.bytedance.zgx.solin.memory.MemoryRepository
@@ -155,6 +156,38 @@ class DeviceControlEvalReceiver : BroadcastReceiver() {
                         COMMAND_BACK -> provider.pressBack(
                             timeoutMillis = intent.timeoutMillis(),
                         ).toLines(command)
+
+                        COMMAND_SWIPE -> provider.swipe(
+                            startXNorm = intent.getIntExtra(EXTRA_START_X_NORM, 500),
+                            startYNorm = intent.getIntExtra(EXTRA_START_Y_NORM, 800),
+                            endXNorm = intent.getIntExtra(EXTRA_END_X_NORM, 500),
+                            endYNorm = intent.getIntExtra(EXTRA_END_Y_NORM, 200),
+                            durationMillis = intent.getLongExtra(EXTRA_DURATION_MILLIS, 300L),
+                            timeoutMillis = intent.timeoutMillis(),
+                        ).toLines(command)
+
+                        COMMAND_LONG_PRESS -> provider.longPress(
+                            xNorm = intent.getIntExtra(EXTRA_X_NORM, 500),
+                            yNorm = intent.getIntExtra(EXTRA_Y_NORM, 500),
+                            holdMillis = intent.getLongExtra(EXTRA_HOLD_MILLIS, 600L),
+                            timeoutMillis = intent.timeoutMillis(),
+                        ).toLines(command)
+
+                        COMMAND_PRESS_KEY -> {
+                            val key = UiSystemKey.fromSchemaValue(intent.getStringExtra(EXTRA_KEY))
+                            if (key == null) {
+                                listOf(
+                                    "command=${command.cleanValue()}",
+                                    "resultType=failed",
+                                    "reason=unsupported_key",
+                                )
+                            } else {
+                                provider.pressKey(
+                                    key = key,
+                                    timeoutMillis = intent.timeoutMillis(),
+                                ).toLines(command)
+                            }
+                        }
 
                         COMMAND_WAIT -> provider.waitForScreen(
                             timeoutMillis = intent.timeoutMillis(),
@@ -997,6 +1030,15 @@ class DeviceControlEvalReceiver : BroadcastReceiver() {
         const val EXTRA_EXPECTED_APP_NAME = "expectedAppName"
         const val EXTRA_APP_NAME = "appName"
         const val EXTRA_MAX_STEPS = "maxSteps"
+        const val EXTRA_START_X_NORM = "startXNorm"
+        const val EXTRA_START_Y_NORM = "startYNorm"
+        const val EXTRA_END_X_NORM = "endXNorm"
+        const val EXTRA_END_Y_NORM = "endYNorm"
+        const val EXTRA_DURATION_MILLIS = "durationMillis"
+        const val EXTRA_X_NORM = "xNorm"
+        const val EXTRA_Y_NORM = "yNorm"
+        const val EXTRA_HOLD_MILLIS = "holdMillis"
+        const val EXTRA_KEY = "key"
         const val ACTION_DEVICE_CONTROL_EVAL = "com.bytedance.zgx.solin.debug.DEVICE_CONTROL_EVAL"
         const val COMMAND_START_CONTROL_SESSION = "start_control_session"
         const val COMMAND_STOP_CONTROL_SESSION = "stop_control_session"
@@ -1006,6 +1048,9 @@ class DeviceControlEvalReceiver : BroadcastReceiver() {
         const val COMMAND_TYPE_TEXT = "type_text"
         const val COMMAND_SUBMIT_SEARCH = "submit_search"
         const val COMMAND_SCROLL = "scroll"
+        const val COMMAND_SWIPE = "swipe"
+        const val COMMAND_LONG_PRESS = "long_press"
+        const val COMMAND_PRESS_KEY = "press_key"
         const val COMMAND_BACK = "back"
         const val COMMAND_WAIT = "wait"
         const val COMMAND_MODEL_DRIVEN_APP_SEARCH = "model_driven_app_search"
