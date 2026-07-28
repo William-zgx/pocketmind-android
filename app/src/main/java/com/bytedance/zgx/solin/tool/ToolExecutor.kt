@@ -45,6 +45,9 @@ import com.bytedance.zgx.solin.device.UiActionReadResult
 import com.bytedance.zgx.solin.device.UiActionStatus
 import com.bytedance.zgx.solin.device.UiOcrGroundingHint
 import com.bytedance.zgx.solin.device.UiScrollDirection
+import com.bytedance.zgx.solin.device.UiSystemKey
+import com.bytedance.zgx.solin.device.DEFAULT_UI_GESTURE_DURATION_MILLIS
+import com.bytedance.zgx.solin.device.DEFAULT_UI_LONG_PRESS_HOLD_MILLIS
 import com.bytedance.zgx.solin.device.blockingOverlayDismissTarget
 import com.bytedance.zgx.solin.device.hasBlockingOverlay
 import com.bytedance.zgx.solin.device.hasDangerousActionControl
@@ -1627,6 +1630,9 @@ class DeviceControlToolExecutor(
             MobileActionFunctions.UI_TYPE_TEXT -> executeTypeText(request, controlProvider)
             MobileActionFunctions.UI_SUBMIT_SEARCH -> executeSubmitSearch(request, controlProvider)
             MobileActionFunctions.UI_SCROLL -> executeScroll(request, controlProvider)
+            MobileActionFunctions.UI_SWIPE -> executeSwipe(request, controlProvider)
+            MobileActionFunctions.UI_LONG_PRESS -> executeLongPress(request, controlProvider)
+            MobileActionFunctions.UI_PRESS_KEY -> executePressKey(request, controlProvider)
             MobileActionFunctions.UI_PRESS_BACK -> executePressBack(request, controlProvider)
             MobileActionFunctions.UI_WAIT -> executeWait(request, controlProvider)
             else -> request.failed(
@@ -1775,6 +1781,100 @@ class DeviceControlToolExecutor(
                 timeoutMillis = request.timeoutMillis(),
             ).withExpectedForegroundPackageVerification(request),
             extraData = mapOf("direction" to direction.schemaValue),
+        )
+    }
+
+    private fun executeSwipe(
+        request: ToolRequest,
+        provider: CurrentScreenControlProvider,
+    ): ToolResult {
+        val startX = request.arguments["startXNorm"]?.trim()?.toIntOrNull()
+        val startY = request.arguments["startYNorm"]?.trim()?.toIntOrNull()
+        val endX = request.arguments["endXNorm"]?.trim()?.toIntOrNull()
+        val endY = request.arguments["endYNorm"]?.trim()?.toIntOrNull()
+        if (startX == null || startY == null || endX == null || endY == null ||
+            startX !in 0..1000 || startY !in 0..1000 || endX !in 0..1000 || endY !in 0..1000
+        ) {
+            return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "滑动坐标必须为 0-1000 的归一化整数：startXNorm/startYNorm/endXNorm/endYNorm",
+                retryable = false,
+                data = request.deviceControlBaseData(),
+            )
+        }
+        val durationMillis = request.arguments["durationMillis"]?.trim()?.toLongOrNull()
+            ?: DEFAULT_UI_GESTURE_DURATION_MILLIS
+        // No named target: the dangerous-action preflight guards against the whole current screen.
+        expectedForegroundPackagePreflight(request, actionType = "swipe", target = "")?.let { return it }
+        dangerousUiActionPreflight(request, actionType = "swipe", target = "")?.let { return it }
+        return actionResult(
+            request = request,
+            actionType = "swipe",
+            target = "",
+            result = provider.swipe(
+                startXNorm = startX,
+                startYNorm = startY,
+                endXNorm = endX,
+                endYNorm = endY,
+                durationMillis = durationMillis,
+                timeoutMillis = request.timeoutMillis(),
+            ).withExpectedForegroundPackageVerification(request),
+        )
+    }
+
+    private fun executeLongPress(
+        request: ToolRequest,
+        provider: CurrentScreenControlProvider,
+    ): ToolResult {
+        val xNorm = request.arguments["xNorm"]?.trim()?.toIntOrNull()
+        val yNorm = request.arguments["yNorm"]?.trim()?.toIntOrNull()
+        if (xNorm == null || yNorm == null || xNorm !in 0..1000 || yNorm !in 0..1000) {
+            return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "长按坐标必须为 0-1000 的归一化整数：xNorm/yNorm",
+                retryable = false,
+                data = request.deviceControlBaseData(),
+            )
+        }
+        val holdMillis = request.arguments["holdMillis"]?.trim()?.toLongOrNull()
+            ?: DEFAULT_UI_LONG_PRESS_HOLD_MILLIS
+        expectedForegroundPackagePreflight(request, actionType = "long_press", target = "")?.let { return it }
+        dangerousUiActionPreflight(request, actionType = "long_press", target = "")?.let { return it }
+        return actionResult(
+            request = request,
+            actionType = "long_press",
+            target = "",
+            result = provider.longPress(
+                xNorm = xNorm,
+                yNorm = yNorm,
+                holdMillis = holdMillis,
+                timeoutMillis = request.timeoutMillis(),
+            ).withExpectedForegroundPackageVerification(request),
+        )
+    }
+
+    private fun executePressKey(
+        request: ToolRequest,
+        provider: CurrentScreenControlProvider,
+    ): ToolResult {
+        val key = UiSystemKey.fromSchemaValue(request.arguments["key"])
+            ?: return request.failed(
+                code = ToolErrorCode.InvalidRequest,
+                summary = "不支持的系统按键：${request.arguments["key"]}（仅支持 home/recents/enter/delete）",
+                retryable = false,
+                data = request.deviceControlBaseData(),
+            )
+        expectedForegroundPackagePreflight(request, actionType = "press_key", target = key.schemaValue)?.let { return it }
+        dangerousUiActionPreflight(request, actionType = "press_key", target = key.schemaValue)?.let { return it }
+        return actionResult(
+            request = request,
+            actionType = "press_key",
+            target = key.schemaValue,
+            result = provider.pressKey(
+                key = key,
+                timeoutMillis = request.timeoutMillis(),
+            ).withExpectedForegroundPackageVerification(request),
+            extraData = mapOf("key" to key.schemaValue),
         )
     }
 

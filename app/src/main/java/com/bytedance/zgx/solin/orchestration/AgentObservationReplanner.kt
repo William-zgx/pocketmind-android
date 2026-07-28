@@ -54,6 +54,9 @@ internal val MODEL_OBSERVATION_REPLAN_ACTION_TOOL_NAMES = setOf(
     MobileActionFunctions.UI_TYPE_TEXT,
     MobileActionFunctions.UI_SUBMIT_SEARCH,
     MobileActionFunctions.UI_SCROLL,
+    MobileActionFunctions.UI_SWIPE,
+    MobileActionFunctions.UI_LONG_PRESS,
+    MobileActionFunctions.UI_PRESS_KEY,
     MobileActionFunctions.UI_WAIT,
     MobileActionFunctions.UI_PRESS_BACK,
 )
@@ -482,7 +485,10 @@ private fun String.isAutonomousUiControlAction(): Boolean =
     this == MobileActionFunctions.UI_TAP ||
         this == MobileActionFunctions.UI_TYPE_TEXT ||
         this == MobileActionFunctions.UI_SUBMIT_SEARCH ||
-        this == MobileActionFunctions.UI_SCROLL
+        this == MobileActionFunctions.UI_SCROLL ||
+        this == MobileActionFunctions.UI_SWIPE ||
+        this == MobileActionFunctions.UI_LONG_PRESS ||
+        this == MobileActionFunctions.UI_PRESS_KEY
 
 private fun ToolResult.hasDangerousUiActionEvidence(parseCache: ObservationJsonParseCache): Boolean =
     data["screenObservationJson"].observationHasDangerousActionEvidence(parseCache) ||

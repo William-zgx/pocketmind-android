@@ -191,6 +191,9 @@ object MobileActionFunctions {
     const val UI_TYPE_TEXT = "ui_type_text"
     const val UI_SUBMIT_SEARCH = "ui_submit_search"
     const val UI_SCROLL = "ui_scroll"
+    const val UI_SWIPE = "ui_swipe"
+    const val UI_LONG_PRESS = "ui_long_press"
+    const val UI_PRESS_KEY = "ui_press_key"
     const val UI_PRESS_BACK = "ui_press_back"
     const val UI_WAIT = "ui_wait"
     const val CANCEL_REMINDER = "cancel_reminder"
@@ -224,6 +227,9 @@ object MobileActionFunctions {
         UI_TYPE_TEXT,
         UI_SUBMIT_SEARCH,
         UI_SCROLL,
+        UI_SWIPE,
+        UI_LONG_PRESS,
+        UI_PRESS_KEY,
         UI_PRESS_BACK,
         UI_WAIT,
         OPEN_FLASHLIGHT_SETTINGS,
