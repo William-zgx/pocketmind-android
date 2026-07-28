@@ -994,15 +994,62 @@ internal object AppNavigationActionParser {
                     requiresConfirmation = true,
                 )
             }
-            else -> ActionDraft(
-                functionName = MobileActionFunctions.OPEN_APP_BY_NAME,
-                title = "打开应用",
-                summary = "将按本机应用名打开：${appNameFromInput(input).orEmpty()}",
-                parameters = mapOf("appName" to appNameFromInput(input).orEmpty()),
-                requiresConfirmation = true,
-            )
+            else -> {
+                val appName = appNameFromInput(input).orEmpty()
+                val followUp = followUpIntentFromInput(input, appName)
+                ActionDraft(
+                    functionName = MobileActionFunctions.OPEN_APP_BY_NAME,
+                    title = "打开应用",
+                    summary = if (followUp != null) {
+                        "将打开 $appName 应用并${followUpSummary(followUp)}"
+                    } else {
+                        "将按本机应用名打开：$appName"
+                    },
+                    parameters = buildMap {
+                        put("appName", appName)
+                        if (followUp != null) put("followUpIntent", followUp)
+                    },
+                    requiresConfirmation = true,
+                )
+            }
         }
     }
+
+    /**
+     * Extract an in-app follow-up intent from "open <app> <follow-up>" style input, e.g.
+     * "打开小红书搜索跑鞋" -> "搜索跑鞋", "open X and search for shoes" -> "search for shoes".
+     *
+     * Returns null unless a clear follow-up verb (search/find/... in zh/en) appears after the app
+     * token — so a bare "打开小红书" keeps the old open-then-stop behavior. The follow-up text stays
+     * LocalOnly and is only used to steer the local action-planning model inside the opened app; it
+     * is NOT an Intent/URI/extra (injection resistance unchanged).
+     */
+    private fun followUpIntentFromInput(input: String, appName: String): String? {
+        if (appName.isBlank()) return null
+        val followUpVerb = Regex(
+            """(搜索|搜一搜|查找|查询|找一?下|打开|进入|点击|看看|浏览|search|find|look\s+up|open|go\s+to|tap|browse)""",
+            RegexOption.IGNORE_CASE,
+        )
+        // Take the text after the app name; if the app name isn't literally present (fuzzy alias),
+        // fall back to the text after the launch verb.
+        val afterApp = input.substringAfter(appName, missingDelimiterValue = "")
+            .ifBlank {
+                input.replace(chineseLaunchPattern, " ")
+                    .replace(englishLaunchPattern, " ")
+            }
+        val trimmed = afterApp
+            .trim(' ', '，', ',', '。', '.', ':', '：', '的')
+            .removePrefix("并").removePrefix("再").removePrefix("然后")
+            .removePrefix("and").removePrefix("then")
+            .trim()
+            .trimEnd('。', '.', '！', '!')
+        if (trimmed.isBlank() || trimmed.length < 2 || trimmed.length > 200) return null
+        if (!followUpVerb.containsMatchIn(trimmed)) return null
+        return trimmed
+    }
+
+    private fun followUpSummary(followUp: String): String =
+        "执行：$followUp"
 
     private fun targetTool(input: String): String? {
         if (input.looksLikeAppNavigationNonAction() || uriSchemePattern.containsMatchIn(input)) return null

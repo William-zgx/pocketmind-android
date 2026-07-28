@@ -1452,6 +1452,12 @@ private val openAppByNameSchemaJson = """
           "minLength": 1,
           "maxLength": 80,
           "description": "用户可见的应用名，例如淘宝、拼多多、Chrome 或系统桌面显示的 App label；不能是 URI、Intent action、Activity 名或任意 extras。"
+        },
+        "followUpIntent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "可选。打开该应用后要在应用内完成的本地意图文本（如“搜索跑鞋”），仅用于在本机引导本地动作规划模型；不是 URI、Intent action、Activity 名或 extras。"
         }
       },
       "additionalProperties": false
@@ -2398,7 +2404,7 @@ private val builtInToolSpecs: List<ToolSpec> = listOf(
         permissions = setOf(ToolPermission.StartsExternalActivity),
         riskLevel = RiskLevel.MediumDraftOrNavigation,
         confirmationPolicy = ConfirmationPolicy.Required,
-        pendingArgumentAllowlist = setOf("appName"),
+        pendingArgumentAllowlist = setOf("appName", "followUpIntent"),
         tags = lowRiskDeviceControlSessionTags + ToolCapabilityTag.OpenAppLaunch,
     ),
     ToolSpec(
