@@ -570,12 +570,27 @@ internal class ToolObservationCoordinator(
             searchResultVerified = searchResultVerified,
             nextToolPlan = nextToolPlan,
         )
+        // Post-launch in-app continuation: when open_app succeeded carrying a followUpIntent and a
+        // local action model exists, continue INSIDE the just-opened app (auto observe → replan)
+        // instead of parking at AwaitingExternalOutcome. Only overrides a Complete decision (open_app
+        // produces no further plan on its own); every downstream UI action still passes
+        // dangerousUiActionPreflight + expectedForegroundPackagePreflight + the 5-step checkpoint.
+        val postLaunchContinuation = if (decision == AgentObservationDecision.Complete && !shouldFinish) {
+            (toolPlanCoordinator.planPostLaunchInAppContinuation(observingRun, request, safeResult)
+                as? NextObservationPlan.Planned)
+                ?.let { planned ->
+                    AgentObservationDecision.PlanNextTool(plan = planned.plan, reason = observedResult.summary)
+                }
+        } else {
+            null
+        }
         val effectiveDecision = when {
             shouldFinish -> AgentObservationDecision.Complete
             shouldTakeOver -> {
                 runCatching { host.parkForTakeOver(runId, takeOverPrompt, safeResult) }
                 AgentObservationDecision.Complete
             }
+            postLaunchContinuation != null -> postLaunchContinuation
             else -> decision
         }
         when (effectiveDecision) {

@@ -1022,7 +1022,7 @@ class ToolRegistryTest {
     @Test
     fun pendingArgumentAllowlistsAreDeclaredByToolPolicy() {
         val expectedAllowlists = mapOf(
-            MobileActionFunctions.OPEN_APP_BY_NAME to setOf("appName"),
+            MobileActionFunctions.OPEN_APP_BY_NAME to setOf("appName", "followUpIntent"),
             MobileActionFunctions.OPEN_APP_INTENT to setOf("packageName"),
             MobileActionFunctions.OPEN_APP_DEEP_TARGET to setOf("targetId", "packageName"),
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY to setOf("start", "end"),

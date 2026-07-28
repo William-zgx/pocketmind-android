@@ -31,6 +31,8 @@ import com.bytedance.zgx.solin.tool.rejected
 
 internal const val DEVICE_CONTROL_FAILURE_RECOVERY_REASON = "Device control failure recovery checkpoint."
 
+internal const val POST_LAUNCH_IN_APP_CONTINUATION_REASON = "Post-launch in-app continuation checkpoint."
+
 /**
  * Result of observation → next-tool planning.
  * Hoisted from [AgentLoopRuntime] so the coordinator and runtime share one type.
@@ -240,6 +242,57 @@ internal class ToolPlanCoordinator(
             draft = draft,
             plannedByModel = false,
             fallbackReason = "device control failure recovery",
+            skillPlan = skillPlan,
+        )
+    }
+
+    /**
+     * After a confirmed open-app launch that carried a `followUpIntent`, synthesize an
+     * `observe_current_screen` step so the run can autonomously continue INSIDE the just-opened
+     * app (observe → local-model replan → tap/type/submit/scroll) instead of parking at
+     * AwaitingExternalOutcome. Returns null (caller keeps the old open-then-stop behavior) unless:
+     *  - the launch request carried a non-blank `followUpIntent`, AND
+     *  - a local mobile-action planning model is installed.
+     *
+     * The synthesized observe is LocalOnly. The subsequent replan uses `run.input` (which already
+     * contains the follow-up intent) to plan the first in-app action, and every downstream UI action
+     * still passes dangerousUiActionPreflight + expectedForegroundPackagePreflight + counts toward
+     * the 5-step checkpoint budget. The expected foreground package (resolved from the launch) is
+     * threaded onto the observe so the continuation fails closed if the target app isn't foreground.
+     */
+    fun planPostLaunchInAppContinuation(
+        run: AgentRun,
+        request: ToolRequest,
+        result: ToolResult,
+    ): NextObservationPlan? {
+        if (!result.isUnverifiedExternalLaunch()) return null
+        val followUpIntent = request.arguments["followUpIntent"]?.takeIf { it.isNotBlank() } ?: return null
+        if (!host.hasMobileActionPlanningModel(host.installedCapabilityProfiles(run.id))) return null
+        val expectedPackage = result.data["packageName"]?.takeIf { it.isNotBlank() }
+            ?: result.data["targetPackageName"]?.takeIf { it.isNotBlank() }
+        val arguments = buildMap {
+            put("maxTextChars", "2000")
+            put("maxNodes", "50")
+            if (expectedPackage != null) put("expectedPackageName", expectedPackage)
+        }
+        val draft = ActionDraft(
+            functionName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+            title = "观察已打开的应用",
+            summary = "已打开应用，将观察当前屏幕以便在应用内继续执行：$followUpIntent；不读取截图像素或发送远程。",
+            parameters = arguments,
+        )
+        val observeRequest = ToolRequest(
+            toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+            arguments = arguments,
+            reason = POST_LAUNCH_IN_APP_CONTINUATION_REASON,
+        )
+        val skillPlan = skillRuntime.plan(run.input, draft, observeRequest)
+        return buildNextToolPlan(
+            runId = run.id,
+            request = observeRequest,
+            draft = draft,
+            plannedByModel = false,
+            fallbackReason = "post-launch in-app continuation",
             skillPlan = skillPlan,
         )
     }

@@ -754,7 +754,14 @@ class ActionExecutor(
         return when (val result = startInjectedExternalActivity(starter, launch)) {
             ExternalActivityStartResult.Started -> request.succeeded(
                 summary = successSummaryFor(request),
-                data = externalActivityData(request, metadata, COMPLETION_STATE_EXTERNAL_ACTIVITY_OPENED),
+                data = externalActivityData(
+                    request,
+                    metadata,
+                    COMPLETION_STATE_EXTERNAL_ACTIVITY_OPENED,
+                    extra = launch.packageName?.takeIf { it.isNotBlank() }
+                        ?.let { mapOf("packageName" to it) }
+                        .orEmpty(),
+                ),
             )
 
             ExternalActivityStartResult.ActivityNotFound -> noActivityFoundResult(request, metadata)
