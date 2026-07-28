@@ -12,6 +12,14 @@ const val DEFAULT_UI_ACTION_TIMEOUT_MILLIS = 1_000L
 const val MIN_UI_ACTION_TIMEOUT_MILLIS = 100L
 const val MAX_UI_ACTION_TIMEOUT_MILLIS = 10_000L
 const val MAX_UI_TYPE_TEXT_CHARS = 2_000
+const val DEFAULT_UI_GESTURE_DURATION_MILLIS = 300L
+const val MIN_UI_GESTURE_DURATION_MILLIS = 20L
+const val MAX_UI_GESTURE_DURATION_MILLIS = 3_000L
+const val DEFAULT_UI_LONG_PRESS_HOLD_MILLIS = 600L
+const val MIN_UI_LONG_PRESS_HOLD_MILLIS = 300L
+const val MAX_UI_LONG_PRESS_HOLD_MILLIS = 3_000L
+const val MIN_NORMALIZED_COORD = 0
+const val MAX_NORMALIZED_COORD = 1_000
 
 interface CurrentScreenControlProvider {
     fun observeCurrentScreen(
@@ -65,6 +73,58 @@ interface CurrentScreenControlProvider {
         target: String? = null,
         timeoutMillis: Long = DEFAULT_UI_ACTION_TIMEOUT_MILLIS,
     ): UiActionReadResult
+
+    /**
+     * Swipe between two normalized 0-1000 points over [durationMillis].
+     *
+     * Resolution-agnostic like [tapByNormalizedCoords]: (500, 500) is screen center. Used for
+     * carousels, map drags, pull-to-refresh, and side-swipe surfaces that have no scrollable
+     * accessibility container for [scroll] to target. Default impl delegates to nothing so test
+     * fakes remain source-compatible; the production provider overrides it.
+     */
+    fun swipe(
+        startXNorm: Int,
+        startYNorm: Int,
+        endXNorm: Int,
+        endYNorm: Int,
+        durationMillis: Long = DEFAULT_UI_GESTURE_DURATION_MILLIS,
+        timeoutMillis: Long = DEFAULT_UI_ACTION_TIMEOUT_MILLIS,
+    ): UiActionReadResult =
+        UiActionReadResult.Failed(
+            reason = "swipe not supported by this provider",
+            retryable = false,
+            failureKind = UiActionFailureKind.Unknown,
+        )
+
+    /**
+     * Long-press at a normalized 0-1000 point, holding for [holdMillis]. Default impl is a no-op
+     * failure so test fakes stay source-compatible.
+     */
+    fun longPress(
+        xNorm: Int,
+        yNorm: Int,
+        holdMillis: Long = DEFAULT_UI_LONG_PRESS_HOLD_MILLIS,
+        timeoutMillis: Long = DEFAULT_UI_ACTION_TIMEOUT_MILLIS,
+    ): UiActionReadResult =
+        UiActionReadResult.Failed(
+            reason = "long press not supported by this provider",
+            retryable = false,
+            failureKind = UiActionFailureKind.Unknown,
+        )
+
+    /**
+     * Press a whitelisted system key ([UiSystemKey]). Never accepts an arbitrary keycode — the
+     * enum is the injection-resistant boundary. Default impl is a no-op failure for test fakes.
+     */
+    fun pressKey(
+        key: UiSystemKey,
+        timeoutMillis: Long = DEFAULT_UI_ACTION_TIMEOUT_MILLIS,
+    ): UiActionReadResult =
+        UiActionReadResult.Failed(
+            reason = "press key not supported by this provider",
+            retryable = false,
+            failureKind = UiActionFailureKind.Unknown,
+        )
 
     fun pressBack(timeoutMillis: Long = DEFAULT_UI_ACTION_TIMEOUT_MILLIS): UiActionReadResult
 
@@ -280,6 +340,23 @@ enum class UiScrollDirection(val schemaValue: String) {
     }
 }
 
+/**
+ * Whitelisted system keys the agent may press. This closed enum — not a raw keycode — is the
+ * injection-resistant boundary: the model can never request an arbitrary key event.
+ */
+enum class UiSystemKey(val schemaValue: String) {
+    Home("home"),
+    Recents("recents"),
+    Enter("enter"),
+    Delete("delete"),
+    ;
+
+    companion object {
+        fun fromSchemaValue(value: String?): UiSystemKey? =
+            entries.firstOrNull { key -> key.schemaValue == value?.lowercase() }
+    }
+}
+
 class AndroidCurrentScreenControlProvider : CurrentScreenControlProvider {
     override fun observeCurrentScreen(maxTextChars: Int, maxNodes: Int): ScreenStateReadResult =
         SolinAccessibilityService.observeCurrentScreen(
@@ -350,6 +427,42 @@ class AndroidCurrentScreenControlProvider : CurrentScreenControlProvider {
         SolinAccessibilityService.performScroll(
             direction = direction,
             target = target?.trim()?.takeIf { it.isNotBlank() },
+            timeoutMillis = timeoutMillis.coerceIn(MIN_UI_ACTION_TIMEOUT_MILLIS, MAX_UI_ACTION_TIMEOUT_MILLIS),
+        )
+
+    override fun swipe(
+        startXNorm: Int,
+        startYNorm: Int,
+        endXNorm: Int,
+        endYNorm: Int,
+        durationMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult =
+        SolinAccessibilityService.performSwipe(
+            startXNorm = startXNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            startYNorm = startYNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            endXNorm = endXNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            endYNorm = endYNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            durationMillis = durationMillis.coerceIn(MIN_UI_GESTURE_DURATION_MILLIS, MAX_UI_GESTURE_DURATION_MILLIS),
+            timeoutMillis = timeoutMillis.coerceIn(MIN_UI_ACTION_TIMEOUT_MILLIS, MAX_UI_ACTION_TIMEOUT_MILLIS),
+        )
+
+    override fun longPress(
+        xNorm: Int,
+        yNorm: Int,
+        holdMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult =
+        SolinAccessibilityService.performLongPress(
+            xNorm = xNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            yNorm = yNorm.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+            holdMillis = holdMillis.coerceIn(MIN_UI_LONG_PRESS_HOLD_MILLIS, MAX_UI_LONG_PRESS_HOLD_MILLIS),
+            timeoutMillis = timeoutMillis.coerceIn(MIN_UI_ACTION_TIMEOUT_MILLIS, MAX_UI_ACTION_TIMEOUT_MILLIS),
+        )
+
+    override fun pressKey(key: UiSystemKey, timeoutMillis: Long): UiActionReadResult =
+        SolinAccessibilityService.performPressKey(
+            key = key,
             timeoutMillis = timeoutMillis.coerceIn(MIN_UI_ACTION_TIMEOUT_MILLIS, MAX_UI_ACTION_TIMEOUT_MILLIS),
         )
 

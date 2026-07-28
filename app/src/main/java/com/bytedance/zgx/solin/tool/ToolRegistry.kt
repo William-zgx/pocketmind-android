@@ -116,6 +116,9 @@ class ToolRegistry private constructor(
             MobileActionFunctions.UI_TAP,
             MobileActionFunctions.UI_TYPE_TEXT,
             MobileActionFunctions.UI_SCROLL,
+            MobileActionFunctions.UI_SWIPE,
+            MobileActionFunctions.UI_LONG_PRESS,
+            MobileActionFunctions.UI_PRESS_KEY,
             MobileActionFunctions.UI_SUBMIT_SEARCH,
             MobileActionFunctions.UI_PRESS_BACK,
             MobileActionFunctions.UI_WAIT,
@@ -1192,6 +1195,98 @@ private val uiBackOrWaitSchemaJson = """
           "type": "integer",
           "minimum": 100,
           "maximum": 10000
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
+private val uiSwipeSchemaJson = """
+    {
+      "type": "object",
+      "required": ["startXNorm", "startYNorm", "endXNorm", "endYNorm"],
+      "properties": {
+        "startXNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "startYNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "endXNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "endYNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "durationMillis": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 3000,
+          "description": "Swipe duration in ms; longer is slower/more deliberate."
+        },
+        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
+        "expectedPackageName": {
+          "type": "string",
+          "description": "Optional foreground package that must still be active before executing this UI action.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "targetPackageName": {
+          "type": "string",
+          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
+private val uiLongPressSchemaJson = """
+    {
+      "type": "object",
+      "required": ["xNorm", "yNorm"],
+      "properties": {
+        "xNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "yNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "holdMillis": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 3000,
+          "description": "Long-press hold duration in ms."
+        },
+        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
+        "expectedPackageName": {
+          "type": "string",
+          "description": "Optional foreground package that must still be active before executing this UI action.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "targetPackageName": {
+          "type": "string",
+          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    }
+""".trimIndent()
+
+private val uiPressKeySchemaJson = """
+    {
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": ["home", "recents", "enter", "delete"],
+          "description": "Whitelisted system key. No arbitrary keycodes are accepted."
+        },
+        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
+        "expectedPackageName": {
+          "type": "string",
+          "description": "Optional foreground package that must still be active before executing this UI action.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "targetPackageName": {
+          "type": "string",
+          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "additionalProperties": false
@@ -2767,6 +2862,87 @@ private val builtInToolSpecs: List<ToolSpec> = listOf(
         redactedResultSummary = "已等待并重新观察当前屏幕",
         resultContinuationPolicy = ToolResultContinuationPolicy.LocalEvidence,
         tags = lowRiskSequentialContinuationTags,
+    ),
+    ToolSpec(
+        name = MobileActionFunctions.UI_SWIPE,
+        title = "滑动当前屏幕",
+        description = "在用户确认后通过 Accessibility 手势在归一化 0-1000 坐标间滑动（轮播、地图拖动、下拉刷新、侧滑等）；每次动作后重新观察屏幕并返回本地验证摘要。",
+        inputSchemaJson = uiSwipeSchemaJson,
+        outputSchemaJson = uiActionOutputSchemaJson,
+        capability = ToolCapability.DeviceControl,
+        permissions = setOf(
+            ToolPermission.ReadsDeviceContext,
+            ToolPermission.ReadsAccessibilityText,
+            ToolPermission.PerformsAccessibilityGesture,
+        ),
+        riskLevel = RiskLevel.MediumDraftOrNavigation,
+        confirmationPolicy = ConfirmationPolicy.Required,
+        pendingArgumentAllowlist = setOf(
+            "startXNorm",
+            "startYNorm",
+            "endXNorm",
+            "endYNorm",
+            "durationMillis",
+            "timeoutMillis",
+            "expectedPackageName",
+            "targetPackageName",
+        ),
+        privateOutputKeys = uiActionPrivateOutputKeys,
+        redactedResultSummary = "已执行屏幕滑动动作",
+        resultContinuationPolicy = ToolResultContinuationPolicy.LocalEvidence,
+        tags = checkpointedLowRiskSequentialContinuationTags,
+    ),
+    ToolSpec(
+        name = MobileActionFunctions.UI_LONG_PRESS,
+        title = "长按当前屏幕",
+        description = "在用户确认后通过 Accessibility 手势在归一化 0-1000 坐标处长按（选中、拖拽入口、快捷菜单等）；每次动作后重新观察屏幕并返回本地验证摘要。",
+        inputSchemaJson = uiLongPressSchemaJson,
+        outputSchemaJson = uiActionOutputSchemaJson,
+        capability = ToolCapability.DeviceControl,
+        permissions = setOf(
+            ToolPermission.ReadsDeviceContext,
+            ToolPermission.ReadsAccessibilityText,
+            ToolPermission.PerformsAccessibilityGesture,
+        ),
+        riskLevel = RiskLevel.MediumDraftOrNavigation,
+        confirmationPolicy = ConfirmationPolicy.Required,
+        pendingArgumentAllowlist = setOf(
+            "xNorm",
+            "yNorm",
+            "holdMillis",
+            "timeoutMillis",
+            "expectedPackageName",
+            "targetPackageName",
+        ),
+        privateOutputKeys = uiActionPrivateOutputKeys,
+        redactedResultSummary = "已执行屏幕长按动作",
+        resultContinuationPolicy = ToolResultContinuationPolicy.LocalEvidence,
+        tags = checkpointedLowRiskSequentialContinuationTags,
+    ),
+    ToolSpec(
+        name = MobileActionFunctions.UI_PRESS_KEY,
+        title = "执行系统按键",
+        description = "在用户确认后通过 Accessibility 执行白名单系统按键（home 回主屏 / recents 最近任务 / enter 回车确认 / delete 删除末字符）；不接受任意 keycode；每次动作后重新观察屏幕并返回本地验证摘要。",
+        inputSchemaJson = uiPressKeySchemaJson,
+        outputSchemaJson = uiActionOutputSchemaJson,
+        capability = ToolCapability.DeviceControl,
+        permissions = setOf(
+            ToolPermission.ReadsDeviceContext,
+            ToolPermission.ReadsAccessibilityText,
+            ToolPermission.PerformsAccessibilityGesture,
+        ),
+        riskLevel = RiskLevel.MediumDraftOrNavigation,
+        confirmationPolicy = ConfirmationPolicy.Required,
+        pendingArgumentAllowlist = setOf(
+            "key",
+            "timeoutMillis",
+            "expectedPackageName",
+            "targetPackageName",
+        ),
+        privateOutputKeys = uiActionPrivateOutputKeys,
+        redactedResultSummary = "已执行系统按键动作",
+        resultContinuationPolicy = ToolResultContinuationPolicy.LocalEvidence,
+        tags = checkpointedLowRiskSequentialContinuationTags,
     ),
     ToolSpec(
         name = MobileActionFunctions.CANCEL_REMINDER,
