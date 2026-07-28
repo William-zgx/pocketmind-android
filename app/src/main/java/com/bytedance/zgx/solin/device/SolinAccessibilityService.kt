@@ -525,6 +525,175 @@ class SolinAccessibilityService : AccessibilityService() {
             }
         }
 
+    private fun swipeByNormalizedCoords(
+        startXNorm: Int,
+        startYNorm: Int,
+        endXNorm: Int,
+        endYNorm: Int,
+        durationMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult =
+        executeUiAction(timeoutMillis = timeoutMillis) {
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
+            val startX = (startXNorm.coerceIn(0, 1000) * screenWidth) / 1000
+            val startY = (startYNorm.coerceIn(0, 1000) * screenHeight) / 1000
+            val endX = (endXNorm.coerceIn(0, 1000) * screenWidth) / 1000
+            val endY = (endYNorm.coerceIn(0, 1000) * screenHeight) / 1000
+            val performed = dispatchSwipeGesture(startX, startY, endX, endY, durationMillis)
+            if (performed) {
+                UiPrimitiveResult.succeeded(
+                    "已滑动：($startXNorm, $startYNorm) → ($endXNorm, $endYNorm)",
+                )
+            } else {
+                UiPrimitiveResult.failed(
+                    reason = "滑动手势未被系统接受",
+                    failureKind = UiActionFailureKind.Unknown,
+                )
+            }
+        }
+
+    private fun longPressByNormalizedCoords(
+        xNorm: Int,
+        yNorm: Int,
+        holdMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult =
+        executeUiAction(timeoutMillis = timeoutMillis) {
+            val displayMetrics = resources.displayMetrics
+            val absX = (xNorm.coerceIn(0, 1000) * displayMetrics.widthPixels) / 1000
+            val absY = (yNorm.coerceIn(0, 1000) * displayMetrics.heightPixels) / 1000
+            val performed = dispatchLongPressGesture(absX, absY, holdMillis)
+            if (performed) {
+                UiPrimitiveResult.succeeded("已长按坐标 ($xNorm, $yNorm)")
+            } else {
+                UiPrimitiveResult.failed(
+                    reason = "长按手势未被系统接受",
+                    failureKind = UiActionFailureKind.Unknown,
+                )
+            }
+        }
+
+    private fun pressSystemKey(key: UiSystemKey, timeoutMillis: Long): UiActionReadResult =
+        executeUiAction(timeoutMillis = timeoutMillis) {
+            when (key) {
+                UiSystemKey.Home -> globalActionPrimitive(GLOBAL_ACTION_HOME, "已回到主屏")
+                UiSystemKey.Recents -> globalActionPrimitive(GLOBAL_ACTION_RECENTS, "已打开最近任务")
+                UiSystemKey.Enter -> imeEnterPrimitive()
+                UiSystemKey.Delete -> deleteLastCharPrimitive()
+            }
+        }
+
+    private fun globalActionPrimitive(action: Int, successSummary: String): UiPrimitiveResult {
+        throwIfInterrupted()
+        return if (submitUiSideEffect { performGlobalAction(action) }) {
+            UiPrimitiveResult.succeeded(successSummary)
+        } else {
+            UiPrimitiveResult.failed(
+                reason = "系统按键动作未被接受",
+                failureKind = UiActionFailureKind.Unknown,
+            )
+        }
+    }
+
+    private fun imeEnterPrimitive(): UiPrimitiveResult {
+        val root = activeWindowRoot()
+            ?: return UiPrimitiveResult.failed(
+                reason = "当前屏幕没有可访问节点根节点",
+                failureKind = UiActionFailureKind.PageChanged,
+            )
+        val editableNode = root.focusedEditableOrFirst()
+            ?: return UiPrimitiveResult.failed(
+                reason = "当前没有可提交的输入框",
+                failureKind = UiActionFailureKind.EditableNotFound,
+            )
+        return if (submitUiSideEffect { editableNode.performImeSearchAction() }) {
+            UiPrimitiveResult.succeeded("已执行回车/确认")
+        } else {
+            UiPrimitiveResult.failed(
+                reason = "输入法回车动作未被接受",
+                failureKind = UiActionFailureKind.SubmitNotFound,
+            )
+        }
+    }
+
+    private fun deleteLastCharPrimitive(): UiPrimitiveResult {
+        val root = activeWindowRoot()
+            ?: return UiPrimitiveResult.failed(
+                reason = "当前屏幕没有可访问节点根节点",
+                failureKind = UiActionFailureKind.PageChanged,
+            )
+        val editableNode = root.focusedEditableOrFirst()
+            ?: return UiPrimitiveResult.failed(
+                reason = "当前没有可编辑的输入框",
+                failureKind = UiActionFailureKind.EditableNotFound,
+            )
+        val current = editableNode.text?.toString().orEmpty()
+        if (current.isEmpty()) {
+            return UiPrimitiveResult.succeeded("输入框已为空，无需删除")
+        }
+        val truncated = current.substring(0, current.length - 1)
+        return if (setTextDirectly(editableNode, truncated)) {
+            UiPrimitiveResult.succeeded("已删除末尾字符")
+        } else {
+            UiPrimitiveResult.failed(
+                reason = "删除字符动作未被接受",
+                failureKind = UiActionFailureKind.NodeNotFound,
+            )
+        }
+    }
+
+    private fun dispatchSwipeGesture(x1: Int, y1: Int, x2: Int, y2: Int, durationMillis: Long): Boolean {
+        throwIfInterrupted()
+        val path = Path().apply {
+            moveTo(x1.toFloat(), y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+        }
+        return dispatchStrokeGesture(path, durationMillis)
+    }
+
+    private fun dispatchLongPressGesture(x: Int, y: Int, holdMillis: Long): Boolean {
+        throwIfInterrupted()
+        val path = Path().apply {
+            moveTo(x.toFloat(), y.toFloat())
+        }
+        return dispatchStrokeGesture(path, holdMillis)
+    }
+
+    private fun dispatchStrokeGesture(path: Path, durationMillis: Long): Boolean {
+        val bounded = durationMillis.coerceIn(
+            MIN_UI_GESTURE_DURATION_MILLIS,
+            MAX_UI_LONG_PRESS_HOLD_MILLIS,
+        )
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, bounded))
+            .build()
+        val latch = CountDownLatch(1)
+        var completed = false
+        val accepted = submitUiSideEffect {
+            dispatchGesture(
+                gesture,
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        completed = true
+                        latch.countDown()
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        completed = false
+                        latch.countDown()
+                    }
+                },
+                null,
+            )
+        }
+        if (!accepted) return false
+        latch.await(bounded + 500L, TimeUnit.MILLISECONDS)
+        throwIfInterrupted()
+        return completed
+    }
+
     private fun activateCandidate(candidate: NodeCandidate): Boolean {
         throwIfInterrupted()
         val clickNode = candidate.node.clickableSelfOrAncestor()
@@ -909,6 +1078,63 @@ class SolinAccessibilityService : AccessibilityService() {
             showControlProgress(task, service, "正在滚动页面")
             return runDeviceControlWithTimeout(task, timeoutMillis.uiActionHardTimeout()) {
                 service.scrollTarget(direction, target, timeoutMillis)
+            }
+        }
+
+        internal fun performSwipe(
+            startXNorm: Int,
+            startYNorm: Int,
+            endXNorm: Int,
+            endYNorm: Int,
+            durationMillis: Long,
+            timeoutMillis: Long,
+        ): UiActionReadResult {
+            val task = deviceControlTasks.startTask()
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            val service = task.owner as? SolinAccessibilityService
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            showControlProgress(task, service, "正在滑动屏幕")
+            return runDeviceControlWithTimeout(task, timeoutMillis.uiActionHardTimeout()) {
+                service.swipeByNormalizedCoords(
+                    startXNorm = startXNorm,
+                    startYNorm = startYNorm,
+                    endXNorm = endXNorm,
+                    endYNorm = endYNorm,
+                    durationMillis = durationMillis,
+                    timeoutMillis = timeoutMillis,
+                )
+            }
+        }
+
+        internal fun performLongPress(
+            xNorm: Int,
+            yNorm: Int,
+            holdMillis: Long,
+            timeoutMillis: Long,
+        ): UiActionReadResult {
+            val task = deviceControlTasks.startTask()
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            val service = task.owner as? SolinAccessibilityService
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            showControlProgress(task, service, "正在长按屏幕")
+            return runDeviceControlWithTimeout(task, timeoutMillis.uiActionHardTimeout()) {
+                service.longPressByNormalizedCoords(
+                    xNorm = xNorm,
+                    yNorm = yNorm,
+                    holdMillis = holdMillis,
+                    timeoutMillis = timeoutMillis,
+                )
+            }
+        }
+
+        internal fun performPressKey(key: UiSystemKey, timeoutMillis: Long): UiActionReadResult {
+            val task = deviceControlTasks.startTask()
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            val service = task.owner as? SolinAccessibilityService
+                ?: return UiActionReadResult.PermissionDenied("未开启Solin无障碍服务")
+            showControlProgress(task, service, "正在执行系统按键")
+            return runDeviceControlWithTimeout(task, timeoutMillis.uiActionHardTimeout()) {
+                service.pressSystemKey(key, timeoutMillis)
             }
         }
 
@@ -2028,6 +2254,11 @@ private fun isNonActionableSearchBarLabel(
 private fun AccessibilityNodeInfo.performImeSearchAction(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
         performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+
+/** The focused editable node, or the first editable node if none is focused. */
+private fun AccessibilityNodeInfo.focusedEditableOrFirst(): AccessibilityNodeInfo? =
+    findNodeCandidate { candidate -> candidate.node.isEditable && candidate.node.isFocused }?.node
+        ?: findNodeCandidate { candidate -> candidate.node.isEditable }?.node
 
 private fun AccessibilityNodeInfo.scrollableSelfOrAncestor(): AccessibilityNodeInfo? {
     var current: AccessibilityNodeInfo? = this

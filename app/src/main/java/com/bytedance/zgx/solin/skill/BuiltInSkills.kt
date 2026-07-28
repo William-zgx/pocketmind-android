@@ -1724,9 +1724,9 @@ private val builtInSkillManifests = listOf(
     ),
     SkillManifest(
         id = BuiltInSkillRuntime.DEVICE_CONTROL_SKILL,
-        version = 1,
+        version = 2,
         title = "屏幕观察与确认控制",
-        description = "通过通用 Accessibility UI 工具观察当前屏幕，并在确认流程内执行点击、输入、滚动、返回或等待；不读取截图像素，不自动完成发送、删除、支付、转账或公开发布。",
+        description = "通过通用 Accessibility UI 工具观察当前屏幕，并在确认流程内执行点击、输入、滚动、滑动、长按、系统按键、返回或等待；不读取截图像素，不自动完成发送、删除、支付、转账或公开发布。",
         triggerExamples = listOf("观察当前屏幕", "observe current screen"),
         requiredTools = listOf(
             MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
@@ -1734,6 +1734,9 @@ private val builtInSkillManifests = listOf(
             MobileActionFunctions.UI_TYPE_TEXT,
             MobileActionFunctions.UI_SUBMIT_SEARCH,
             MobileActionFunctions.UI_SCROLL,
+            MobileActionFunctions.UI_SWIPE,
+            MobileActionFunctions.UI_LONG_PRESS,
+            MobileActionFunctions.UI_PRESS_KEY,
             MobileActionFunctions.UI_PRESS_BACK,
             MobileActionFunctions.UI_WAIT,
         ),

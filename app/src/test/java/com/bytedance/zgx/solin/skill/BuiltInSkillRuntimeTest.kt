@@ -1928,12 +1928,16 @@ class BuiltInSkillRuntimeTest {
         ),
         ExpectedBuiltInSkillManifest(
             id = "device_control_skill",
+            version = 2,
             requiredTools = listOf(
                 "observe_current_screen",
                 "ui_tap",
                 "ui_type_text",
                 "ui_submit_search",
                 "ui_scroll",
+                "ui_swipe",
+                "ui_long_press",
+                "ui_press_key",
                 "ui_press_back",
                 "ui_wait",
             ),
