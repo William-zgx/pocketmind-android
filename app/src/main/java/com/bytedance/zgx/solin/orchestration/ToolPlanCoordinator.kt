@@ -268,7 +268,18 @@ internal class ToolPlanCoordinator(
         if (!result.isUnverifiedExternalLaunch()) return null
         val followUpIntent = request.arguments["followUpIntent"]?.takeIf { it.isNotBlank() } ?: return null
         if (!host.hasMobileActionPlanningModel(host.installedCapabilityProfiles(run.id))) return null
-        val expectedPackage = result.data["packageName"]?.takeIf { it.isNotBlank() }
+        // Best-effort continuation: if the step budget is already exhausted, do NOT call the
+        // side-effecting buildNextToolPlan (which would append ModelPlanned/ToolRejected/Failed trace
+        // steps + audit for a plan the caller then discards via `as? Planned`, leaving phantom
+        // rejected/failed steps on a run that actually completes as open-then-stop). Bail early so the
+        // caller falls through cleanly to the normal Complete/AwaitingExternalOutcome outcome.
+        if (runBudget.toolStepBudgetExceeded(run.id)) return null
+        // open_app success results emit the package under "targetPackage" (ActionExecutor
+        // externalActivityData -> safeData). Older/injected-starter paths use "packageName" /
+        // "targetPackageName", so fall back to those. Reading the wrong key silently disables the
+        // fail-closed foreground-package binding threaded onto the continuation below.
+        val expectedPackage = result.data["targetPackage"]?.takeIf { it.isNotBlank() }
+            ?: result.data["packageName"]?.takeIf { it.isNotBlank() }
             ?: result.data["targetPackageName"]?.takeIf { it.isNotBlank() }
         val arguments = buildMap {
             put("maxTextChars", "2000")

@@ -2732,6 +2732,116 @@ class AgentObservationReplannerTest {
         assertEquals(LOCAL_EVIDENCE_TOOL, replan.request.toolName)
     }
 
+    @Test
+    fun modelReplanInheritsExpectedForegroundPackageFromContinuationObserve() {
+        // Regression (B): the post-launch continuation observe carries expectedPackageName so the
+        // executor's foreground-package preflight can fail closed. That binding must be threaded onto
+        // the model-planned UI action, or the fail-closed guarantee is a no-op on the actual tap.
+        val runtime = RecordingModelActionRuntime(
+            toolName = MobileActionFunctions.UI_TAP,
+            parameters = mapOf("target" to "继续"),
+        )
+        val replanner = ModelObservationReplanner(
+            actionPlanningRuntime = runtime,
+            actionModelPathProvider = { "/tmp/action-model.litertlm" },
+            toolRegistry = ToolRegistry(ToolProvider { localOnlyAllowedToolSpecs() }),
+        )
+        val observeRequest = ToolRequest(
+            id = "observe-after-open",
+            toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+            arguments = mapOf(
+                "maxTextChars" to "2000",
+                "maxNodes" to "50",
+                "expectedPackageName" to "com.xingin.xhs",
+            ),
+        )
+
+        val replan = replanner.planNext(
+            AgentObservationReplanContext(
+                run = AgentRun(
+                    id = "run-continue",
+                    input = "打开小红书并点击继续",
+                    state = AgentRunState.Observing,
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 1L,
+                ),
+                previousRequest = observeRequest,
+                observedResult = ToolResult(
+                    requestId = observeRequest.id,
+                    status = ToolStatus.Succeeded,
+                    summary = "已观察当前屏幕。",
+                    data = mapOf(
+                        "toolName" to observeRequest.toolName,
+                        "privacy" to "LocalOnly",
+                        "screenObservationJson" to screenObservationJson(),
+                    ),
+                ),
+                priorRequests = listOf(observeRequest),
+            ),
+        )
+
+        assertNotNull(replan)
+        assertEquals(MobileActionFunctions.UI_TAP, replan?.request?.toolName)
+        assertEquals(
+            "replanned UI action must inherit the continuation's expected foreground package",
+            "com.xingin.xhs",
+            replan?.request?.arguments?.get("expectedPackageName"),
+        )
+    }
+
+    @Test
+    fun modelReplanDoesNotOverrideModelSuppliedExpectedForegroundPackage() {
+        // The model's own expectedPackageName wins over the inherited one.
+        val runtime = RecordingModelActionRuntime(
+            toolName = MobileActionFunctions.UI_TAP,
+            parameters = mapOf("target" to "继续", "expectedPackageName" to "com.model.supplied"),
+        )
+        val replanner = ModelObservationReplanner(
+            actionPlanningRuntime = runtime,
+            actionModelPathProvider = { "/tmp/action-model.litertlm" },
+            toolRegistry = ToolRegistry(ToolProvider { localOnlyAllowedToolSpecs() }),
+        )
+        val observeRequest = ToolRequest(
+            id = "observe-after-open-2",
+            toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+            arguments = mapOf(
+                "maxTextChars" to "2000",
+                "maxNodes" to "50",
+                "expectedPackageName" to "com.xingin.xhs",
+            ),
+        )
+
+        val replan = replanner.planNext(
+            AgentObservationReplanContext(
+                run = AgentRun(
+                    id = "run-continue-2",
+                    input = "打开小红书并点击继续",
+                    state = AgentRunState.Observing,
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 1L,
+                ),
+                previousRequest = observeRequest,
+                observedResult = ToolResult(
+                    requestId = observeRequest.id,
+                    status = ToolStatus.Succeeded,
+                    summary = "已观察当前屏幕。",
+                    data = mapOf(
+                        "toolName" to observeRequest.toolName,
+                        "privacy" to "LocalOnly",
+                        "screenObservationJson" to screenObservationJson(),
+                    ),
+                ),
+                priorRequests = listOf(observeRequest),
+            ),
+        )
+
+        assertNotNull(replan)
+        assertEquals(
+            "com.model.supplied",
+            replan?.request?.arguments?.get("expectedPackageName"),
+        )
+    }
+
     private fun replannerFor(spec: ToolSpec): SequentialActionObservationReplanner =
         SequentialActionObservationReplanner(
             actionPlanningRuntime = DraftActionRuntime(spec.name),

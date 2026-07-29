@@ -60,6 +60,30 @@ internal val MODEL_OBSERVATION_REPLAN_ACTION_TOOL_NAMES = setOf(
     MobileActionFunctions.UI_WAIT,
     MobileActionFunctions.UI_PRESS_BACK,
 )
+
+/**
+ * UI actions whose executor enforces the expected-foreground-package preflight. When a replan
+ * inherits an expected package from a post-launch continuation observe, only these actions should
+ * carry it forward — observe/wait/back operate on no content and have no foreground gate.
+ */
+private val FOREGROUND_GATED_UI_ACTION_TOOL_NAMES = setOf(
+    MobileActionFunctions.UI_TAP,
+    MobileActionFunctions.UI_TYPE_TEXT,
+    MobileActionFunctions.UI_SUBMIT_SEARCH,
+    MobileActionFunctions.UI_SCROLL,
+    MobileActionFunctions.UI_SWIPE,
+    MobileActionFunctions.UI_LONG_PRESS,
+    MobileActionFunctions.UI_PRESS_KEY,
+)
+
+private fun String.isForegroundGatedUiAction(): Boolean =
+    this in FOREGROUND_GATED_UI_ACTION_TOOL_NAMES
+
+/** The expected-foreground-package this request carries, using the same keys the executor reads. */
+private fun ToolRequest.inheritableExpectedForegroundPackage(): String? =
+    arguments["expectedPackageName"]?.trim()?.takeIf { it.isNotBlank() }
+        ?: arguments["targetPackageName"]?.trim()?.takeIf { it.isNotBlank() }
+
 private val searchContextTextMarkers = listOf(
     "搜索",
     "查找",
@@ -325,11 +349,27 @@ class ModelObservationReplanner(
         if (rejectionReason != null) {
             return ModelObservationReplanAcceptance(rejectionReason = rejectionReason)
         }
+        // Propagate the expected foreground package from the triggering observe request onto the
+        // replanned UI action so the executor's foreground-package preflight actually fires. Without
+        // this the fail-closed binding threaded onto the post-launch continuation observe (see
+        // ToolPlanCoordinator.planPostLaunchInAppContinuation) would be dropped here and never reach
+        // the tap/type/scroll that follows. The model's own value, if any, wins.
+        val inheritedExpectedPackage = previousRequest.inheritableExpectedForegroundPackage()
+        val replanArguments =
+            if (inheritedExpectedPackage != null &&
+                draft.functionName.isForegroundGatedUiAction() &&
+                !draft.parameters.containsKey("expectedPackageName") &&
+                !draft.parameters.containsKey("targetPackageName")
+            ) {
+                draft.parameters + mapOf("expectedPackageName" to inheritedExpectedPackage)
+            } else {
+                draft.parameters
+            }
         return ModelObservationReplanAcceptance(
             replan = AgentObservationReplan(
                 request = ToolRequest(
                     toolName = draft.functionName,
-                    arguments = draft.parameters,
+                    arguments = replanArguments,
                     reason = MODEL_OBSERVATION_REPLAN_REQUEST_REASON,
                 ),
                 draft = draft,
