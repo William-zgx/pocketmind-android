@@ -7,6 +7,7 @@ import com.bytedance.zgx.solin.device.ScreenNode
 import com.bytedance.zgx.solin.device.ScreenStateReadResult
 import com.bytedance.zgx.solin.device.ScreenStateSnapshot
 import com.bytedance.zgx.solin.device.UiActionExecutionResult
+import com.bytedance.zgx.solin.device.UiActionFailureKind
 import com.bytedance.zgx.solin.device.UiActionReadResult
 import com.bytedance.zgx.solin.device.UiActionStatus
 import com.bytedance.zgx.solin.device.UiScrollDirection
@@ -191,6 +192,87 @@ class UiGestureActionTest {
         assertTrue(provider.pressKeyCalls.isEmpty())
     }
 
+    // ── Fail-closed when the screen cannot be read (A: dangerousUiActionPreflight fail-closed) ──────
+
+    @Test
+    fun swipeFailsClosedWhenScreenReadFails() {
+        val provider = RecordingControlProvider(
+            observe = benignSnapshot(),
+            observeResult = ScreenStateReadResult.Failed(
+                reason = "当前屏幕状态读取超时",
+                failureKind = UiActionFailureKind.Timeout,
+            ),
+        )
+        val executor = DeviceControlToolExecutor(provider = provider)
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "swipe-read-fail",
+                toolName = MobileActionFunctions.UI_SWIPE,
+                arguments = mapOf(
+                    "startXNorm" to "500",
+                    "startYNorm" to "800",
+                    "endXNorm" to "500",
+                    "endYNorm" to "200",
+                ),
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals("dangerous_ui_action_preflight_unavailable", result.data["summary"])
+        assertTrue(
+            "coordinate swipe must NOT dispatch when the screen can't be confirmed dangerous-free",
+            provider.swipeCalls.isEmpty(),
+        )
+    }
+
+    @Test
+    fun longPressFailsClosedWhenScreenReadFails() {
+        val provider = RecordingControlProvider(
+            observe = benignSnapshot(),
+            observeResult = ScreenStateReadResult.Failed(
+                reason = "当前屏幕状态读取超时",
+                failureKind = UiActionFailureKind.Timeout,
+            ),
+        )
+        val executor = DeviceControlToolExecutor(provider = provider)
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "lp-read-fail",
+                toolName = MobileActionFunctions.UI_LONG_PRESS,
+                arguments = mapOf("xNorm" to "300", "yNorm" to "400"),
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals("dangerous_ui_action_preflight_unavailable", result.data["summary"])
+        assertTrue(provider.longPressCalls.isEmpty())
+    }
+
+    @Test
+    fun pressKeyFailsClosedWhenScreenPermissionDenied() {
+        val provider = RecordingControlProvider(
+            observe = benignSnapshot(),
+            observeResult = ScreenStateReadResult.PermissionDenied("accessibility disabled"),
+        )
+        val executor = DeviceControlToolExecutor(provider = provider)
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "key-perm-denied",
+                toolName = MobileActionFunctions.UI_PRESS_KEY,
+                arguments = mapOf("key" to "enter"),
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertTrue(
+            "press_key must NOT dispatch when accessibility is unavailable",
+            provider.pressKeyCalls.isEmpty(),
+        )
+    }
+
     // ── Fixtures ──────────────────────────────────────────────────────────────────────────────────
 
     private fun node(id: String, text: String, clickable: Boolean = false): ScreenNode = ScreenNode(
@@ -229,13 +311,14 @@ class UiGestureActionTest {
 
     private class RecordingControlProvider(
         private val observe: ScreenStateSnapshot,
+        private val observeResult: ScreenStateReadResult? = null,
     ) : CurrentScreenControlProvider {
         val swipeCalls = mutableListOf<SwipeCall>()
         val longPressCalls = mutableListOf<LongPressCall>()
         val pressKeyCalls = mutableListOf<UiSystemKey>()
 
         override fun observeCurrentScreen(maxTextChars: Int, maxNodes: Int): ScreenStateReadResult =
-            ScreenStateReadResult.Available(observe)
+            observeResult ?: ScreenStateReadResult.Available(observe)
 
         override fun tap(target: String, timeoutMillis: Long): UiActionReadResult = ok()
 

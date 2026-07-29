@@ -1806,7 +1806,12 @@ class DeviceControlToolExecutor(
             ?: DEFAULT_UI_GESTURE_DURATION_MILLIS
         // No named target: the dangerous-action preflight guards against the whole current screen.
         expectedForegroundPackagePreflight(request, actionType = "swipe", target = "")?.let { return it }
-        dangerousUiActionPreflight(request, actionType = "swipe", target = "")?.let { return it }
+        dangerousUiActionPreflight(
+            request,
+            actionType = "swipe",
+            target = "",
+            failClosedOnUnavailable = true,
+        )?.let { return it }
         return actionResult(
             request = request,
             actionType = "swipe",
@@ -1839,7 +1844,12 @@ class DeviceControlToolExecutor(
         val holdMillis = request.arguments["holdMillis"]?.trim()?.toLongOrNull()
             ?: DEFAULT_UI_LONG_PRESS_HOLD_MILLIS
         expectedForegroundPackagePreflight(request, actionType = "long_press", target = "")?.let { return it }
-        dangerousUiActionPreflight(request, actionType = "long_press", target = "")?.let { return it }
+        dangerousUiActionPreflight(
+            request,
+            actionType = "long_press",
+            target = "",
+            failClosedOnUnavailable = true,
+        )?.let { return it }
         return actionResult(
             request = request,
             actionType = "long_press",
@@ -1865,7 +1875,12 @@ class DeviceControlToolExecutor(
                 data = request.deviceControlBaseData(),
             )
         expectedForegroundPackagePreflight(request, actionType = "press_key", target = key.schemaValue)?.let { return it }
-        dangerousUiActionPreflight(request, actionType = "press_key", target = key.schemaValue)?.let { return it }
+        dangerousUiActionPreflight(
+            request,
+            actionType = "press_key",
+            target = key.schemaValue,
+            failClosedOnUnavailable = true,
+        )?.let { return it }
         return actionResult(
             request = request,
             actionType = "press_key",
@@ -1934,7 +1949,14 @@ class DeviceControlToolExecutor(
         request: ToolRequest,
         actionType: String,
         target: String,
+        failClosedOnUnavailable: Boolean = false,
     ): ToolResult? {
+        // For named-target actions (tap/type/scroll/submit_search) node matching provides a second
+        // content-aware layer, so a momentarily-unreadable screen falls through to those actions'
+        // own not-found handling (fail-open here). For pure-coordinate gestures (swipe/long_press)
+        // and system-key presses there is NO named-target layer — this preflight is the sole guard
+        // between the model and a raw-pixel/system action — so those callers pass
+        // failClosedOnUnavailable=true and we BLOCK when the screen cannot be confirmed dangerous-free.
         val snapshot = when (
             val result = preflightProvider?.observeCurrentScreen(
                 maxTextChars = DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS,
@@ -1942,7 +1964,34 @@ class DeviceControlToolExecutor(
             )
         ) {
             is ScreenStateReadResult.Available -> result.snapshot
-            else -> return null
+            is ScreenStateReadResult.PermissionDenied ->
+                if (failClosedOnUnavailable) {
+                    return request.deviceControlPermissionDenied(result.reason)
+                } else {
+                    return null
+                }
+
+            is ScreenStateReadResult.Failed ->
+                if (failClosedOnUnavailable) {
+                    return request.dangerousActionPreflightUnavailable(
+                        actionType = actionType,
+                        target = target,
+                        summary = "无法读取当前屏幕以确认没有危险控件，已停止自动 UI 动作。",
+                    )
+                } else {
+                    return null
+                }
+
+            null ->
+                if (failClosedOnUnavailable) {
+                    return request.dangerousActionPreflightUnavailable(
+                        actionType = actionType,
+                        target = target,
+                        summary = "当前屏幕控制 preflight 不可用，无法确认没有危险控件，已停止自动 UI 动作。",
+                    )
+                } else {
+                    return null
+                }
         }
         if (!snapshot.hasDangerousActionControl()) return null
         return request.failed(
@@ -2167,6 +2216,33 @@ class DeviceControlToolExecutor(
                 target.takeIf { it.isNotBlank() }?.let { mapOf("target" to it) }.orEmpty() +
                 snapshot?.toBeforeObservationData().orEmpty() +
                 snapshot?.toAfterObservationData().orEmpty()
+            ).withAppSearchProgressEvidence(),
+        )
+
+    private fun ToolRequest.dangerousActionPreflightUnavailable(
+        actionType: String,
+        target: String,
+        summary: String,
+    ): ToolResult =
+        failed(
+            code = ToolErrorCode.ExecutionFailed,
+            summary = summary,
+            retryable = true,
+            data = (
+                deviceControlBaseData() +
+                mapOf(
+                    "actionType" to actionType,
+                    "status" to UiActionStatus.Failed.schemaValue(),
+                    "retryable" to true.toString(),
+                    "summary" to "dangerous_ui_action_preflight_unavailable",
+                    "failureKind" to UiActionFailureKind.DangerousAction.schemaValue,
+                    "beforeObservationId" to "",
+                    "afterObservationId" to "",
+                    "verificationSummary" to summary,
+                    "screenObservationDiffSummary" to
+                        "blocked_before_execution;reason=dangerous_action_preflight_unavailable",
+                ) +
+                target.takeIf { it.isNotBlank() }?.let { mapOf("target" to it) }.orEmpty()
             ).withAppSearchProgressEvidence(),
         )
 
