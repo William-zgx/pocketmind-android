@@ -1017,12 +1017,15 @@ internal object AppNavigationActionParser {
 
     /**
      * Extract an in-app follow-up intent from "open <app> <follow-up>" style input, e.g.
-     * "打开小红书搜索跑鞋" -> "搜索跑鞋", "open X and search for shoes" -> "search for shoes".
+     * "打开微信联系张三" -> "联系张三", "open X and message Bob" -> "message Bob".
      *
-     * Returns null unless a clear follow-up verb (search/find/... in zh/en) appears after the app
-     * token — so a bare "打开小红书" keeps the old open-then-stop behavior. The follow-up text stays
-     * LocalOnly and is only used to steer the local action-planning model inside the opened app; it
-     * is NOT an Intent/URI/extra (injection resistance unchanged).
+     * Returns null unless a clear follow-up verb (in zh/en) appears in the text AFTER the app token
+     * — so a bare "打开微信" keeps the old open-then-stop behavior. Note that inputs whose follow-up
+     * is a search ("打开小红书搜索跑鞋") are routed to the model-driven UI-search skill upstream and do
+     * NOT reach this rule-based parser (they are gated out by [looksLikeAppNavigationNonAction]); this
+     * extractor is a convenience for non-search follow-ups. The follow-up text stays LocalOnly and is
+     * only used to steer the local action-planning model inside the opened app; it is NOT an
+     * Intent/URI/extra (injection resistance unchanged).
      */
     private fun followUpIntentFromInput(input: String, appName: String): String? {
         if (appName.isBlank()) return null
@@ -1044,6 +1047,11 @@ internal object AppNavigationActionParser {
             .trim()
             .trimEnd('。', '.', '！', '!')
         if (trimmed.isBlank() || trimmed.length < 2 || trimmed.length > 200) return null
+        // Guard the greedy-appName degenerate case: appNameFromInput can return the whole phrase
+        // (e.g. "微信查找联系人"), making the fallback follow-up echo the app name verbatim. A follow-up
+        // that is the app name (or still contains it) is not a real in-app instruction — reject it so
+        // we fall back to open-then-stop instead of surfacing a garbled "打开 X 并执行：X" summary.
+        if (trimmed == appName || trimmed.contains(appName)) return null
         if (!followUpVerb.containsMatchIn(trimmed)) return null
         return trimmed
     }
