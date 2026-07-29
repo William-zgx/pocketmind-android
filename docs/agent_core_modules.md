@@ -80,6 +80,10 @@ Current status:
   `UiActionResult` values. `UiTargetResolver` ranks Accessibility nodes for
   search/edit/submit/filter/result/scroll targets; app profiles improve
   ranking, not safety policy.
+- Phone control also covers Accessibility gestures — swipe (normalized 0-1000
+  coordinates), long-press, and an allowlisted system-key set
+  (home/recents/enter/delete, never an arbitrary keycode) — all
+  Required-confirmation, LocalOnly, checkpointed low-risk continuation actions.
 - UI control tools remain unavailable to remote model planning. App-search
   observation is `LocalOnly` and can only feed the local action-planning model.
 
@@ -159,8 +163,15 @@ Current status:
   process death. Raw tool arguments, model output, private payload, and
   arbitrary sequence text are not restored.
 - External Activity launches move to `AwaitingExternalOutcome` when Solin
-  can prove only that the external UI opened. Follow-up planning waits for the
-  user to record whether the target-side outcome completed.
+  can prove only that the external UI opened. When a confirmed
+  `open_app_by_name` carries a non-blank `followUpIntent` and a local
+  mobile-action planning model is installed, Solin instead runs a bounded
+  LocalOnly in-app continuation (observe current screen → local replan → a
+  low-risk UI action) within the same 5-step checkpoint, threading the
+  expected foreground package so it fails closed to `AwaitingExternalOutcome`
+  if the model is absent or the target app is not foreground. It never sends
+  remote or reads screenshot pixels. Otherwise follow-up planning waits for
+  the user to record whether the target-side outcome completed.
 - Run-level step and observation budgets fail closed before another pending
   confirmation, retry, replan, or model continuation is saved.
 - **Concurrency safety**: All 8 internal `mutableMapOf` fields in `AgentLoopRuntime` are now `ConcurrentHashMap` for safe multi-coroutine access.

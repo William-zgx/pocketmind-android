@@ -90,9 +90,16 @@ foreground 提示和 MediaProjection consent sheet 都是系统介导流程，�
 ## 手机控制范围
 
 手机控制仅限低风险导航和搜索。支持的连续动作路径是 observe、tap、type、
-submit search、scroll、back 和 wait。Solin 会对低风险应用控制设置检查点，包括
-5-step checkpoint；发送、删除、支付、下单、发布、敏感输入和权限修改都必须走确认
-路径。
+submit search、scroll、swipe（滑动）、long-press（长按）、系统按键
+（home/recents/enter/delete）、back 和 wait。滑动、长按、系统按键均需确认并计入
+5-step checkpoint；系统按键是固定白名单，绝非任意键码。Solin 会对低风险应用控制
+设置检查点，包括 5-step checkpoint；发送、删除、支付、下单、发布、敏感输入和权限
+修改都必须走确认路径。
+
+当确认的应用启动携带后续意图（follow-up intent）时，Solin 可在同一 5-step
+checkpoint 内于已打开的应用中继续操作，前提是已安装本地移动操作模型，并受
+expectedPackageName 前台守卫约束。若模型缺失或目标应用不在前台，则 fail-closed
+回退为"仅打开不继续"，且该延续保持 LocalOnly。
 
 ## 当前状态
 

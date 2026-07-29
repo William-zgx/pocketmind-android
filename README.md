@@ -100,10 +100,19 @@ acceptance.
 ## Phone Control Scope
 
 Phone control is limited to low-risk navigation and search. The supported
-continuation path is observe, tap, type, submit search, scroll, back, and wait.
-Solin checkpoints low-risk app control, including a 5-step checkpoint, and
-keeps sending, deleting, paying, ordering, publishing, sensitive input, and
+continuation path is observe, tap, type, submit search, scroll, swipe,
+long-press, system keys (home/recents/enter/delete), back, and wait. Swipe,
+long-press, and system-key presses require confirmation and count toward the
+5-step checkpoint; system keys are a fixed whitelist, never an arbitrary
+keycode. Solin checkpoints low-risk app control, including a 5-step checkpoint,
+and keeps sending, deleting, paying, ordering, publishing, sensitive input, and
 permission changes on the confirmation path.
+
+After a confirmed app launch that carries a follow-up intent, Solin can
+continue inside the opened app under the same 5-step checkpoint, gated by a
+locally-installed mobile-action model and an expected-package foreground guard.
+It fails closed to open-then-stop if the model is absent or the target app is
+not foreground, and the continuation stays LocalOnly.
 
 ## Current Status
 

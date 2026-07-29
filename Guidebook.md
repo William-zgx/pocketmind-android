@@ -87,7 +87,7 @@ logging/        SolinLog 结构化日志门面
 - **中风险及以上必须确认**；不绕过 `SafetyPolicy`
 - **远程审计不落 raw prompt**
 - **密钥 / 模型权重 / 用户数据不进 Git**
-- 低风险手机控制限：observe / tap / type / submit search / scroll / back / wait
+- 低风险手机控制限：observe / tap / type / submit search / scroll / swipe / long-press / 系统按键(home/recents/enter/delete) / back / wait
 
 详细产品表述以 README 与 `docs/privacy_notice.md` 为准。
 

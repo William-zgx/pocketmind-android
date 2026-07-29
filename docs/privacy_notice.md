@@ -140,7 +140,9 @@ includes bounded reads for clipboard text, calendar busy/free windows, contact
 name/phone search, foreground-app estimates, notification summaries, recent
 file metadata, screenshot/image OCR excerpts, current-screen Accessibility
 snapshots, and low-risk Accessibility actions such as tap, type, submit search,
-scroll, back, and wait. These private results are `LocalOnly` and
+scroll, swipe, long-press, whitelisted system-key presses
+(home/recents/enter/delete, never an arbitrary keycode), back, and wait. These
+private results are `LocalOnly` and
 `requiresLocalModel=true`.
 
 Android runtime permissions and special-access flows are requested only after

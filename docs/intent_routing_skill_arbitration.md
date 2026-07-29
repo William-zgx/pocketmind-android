@@ -37,6 +37,7 @@ flowchart TD
 | 明确命名 App 打开 | `打开名为 WiFi 的 App` | App navigation 层 | 不能误触系统 Wi-Fi 设置。 |
 | App 内搜索 | `打开淘宝搜索耳机`、`在当前应用搜索耳机` | Static app-search skill；有已校验本地动作规划模型时走 model-driven bootstrap | V1 只做低风险搜索闭环；observation 只给本地动作规划模型，不暴露给远端；不发送、删除、支付、下单、授权或发布。 |
 | 普通 App 打开 | `打开淘宝` | App navigation 层 | 不接受任意 Intent、Activity、extras 或未白名单 deep target。 |
+| App 打开 + 应用内后续 | `打开淘宝并加购物车` | App navigation 层；确认后若装有本地动作模型则 observe→replan 应用内继续 | `open_app_by_name` 可携带 schema 受限的 LocalOnly `followUpIntent` 字符串（非 URI/Intent/Activity/extra，注入抗性不变）；应用内每步仍走 dangerousUiActionPreflight + expectedPackageName 前台守卫 + 5-step checkpoint，fail-closed。 |
 | 本地私密读取 | `总结剪贴板`、`读取当前屏幕文字` | Skill-first LocalOnly flow | 需要确认；结果不得进入远程 continuation。 |
 | 公开信息检索 | `查一下今天杭州天气`、`搜索 Rust 最新版本` | `web_search` | 只做 public evidence；个人信息或疑似 secret 查询回到确认/保护路径。 |
 
@@ -47,6 +48,9 @@ flowchart TD
   LocalOnly 读取或 App navigation Skill。
 - App 搜索：默认使用静态 Skill；当本地动作规划模型已校验时，Skill 只负责
   打开/等待/首次观察，之后每轮只允许本地模型规划一个低风险 UI tool。
+  模型可用的 UI 词汇现包含有界的 swipe（滑动）、long-press（长按）与白名单系统
+  按键（home/recents/enter/delete），均为 Medium-risk、需确认、计入 checkpoint，
+  仍在不发送/不支付/不发布的边界内。
 - Remote planning scope：只暴露 remote-safe planning specs；本地私密 evidence
   工具不进入远程工具列表。
 - `ToolRegistry`：最终确认 tool 是否存在、参数是否合法、risk/permission/tag

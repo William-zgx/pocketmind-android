@@ -267,6 +267,8 @@ scripts/run_real_app_search_eval.sh
 | 远程模型 | HTTPS 配置、API key 非明文保存、流式响应、取消恢复、错误不泄露响应体或 Authorization；敏感内容逐次确认，取消不得请求远程。 |
 | 记忆 | `记住/忘记/清空` 只走本地控制路径；远程模式不得自动携带长期记忆文本或 embedding。语义记忆必须证明不是关键词召回。 |
 | 动作与 Skill | 中高风险和外发文本动作先确认；取消不执行；低风险公开 `web_search` 可无确认；混入私密或副作用工具的批次全批拒绝。 |
+| 手势动作 | `ui_swipe`／`ui_long_press`／`ui_press_key` 先确认后执行，取消不执行，每次执行后重新观察（脱敏本地摘要）；坐标必须为 0-1000 归一化整数，越界拒绝；`press_key` 仅限 home/recents/enter/delete，其他键拒绝；屏幕读取失败/无障碍不可用时坐标手势与按键 fail-closed 不执行。 |
+| 应用内继续 | `打开<应用>并<后续意图>` → 确认启动 → 仅在装有本地动作模型时见到有界应用内继续（observe→replan→低风险动作），错误前台应用时 fail-closed，每步重新观察，到 5-step checkpoint 停止；确认纯 `打开<应用>` 仍是"仅打开不继续"。 |
 | 系统入口 | 语音输入、系统文档选择器、MediaProjection 当前屏幕 OCR 必须在设备上点真实系统入口。 |
 | 多模态 | 文本/RTF/PDF/Office 只做有界本地摘录；图片仅在已验证本地视觉或逐次确认远程视觉时读取；覆盖 8 MB 单图、最多 5 张、unsupported local/remote vision fail-closed、图片不进入文本 prompt/history/audit；音频/视频/未知二进制 metadata-only。 |
 | 后台任务 | 提醒确认后才创建；Android 13+ 通知权限拒绝不误报成功；任务完成/失败/取消后的列表状态正确。 |

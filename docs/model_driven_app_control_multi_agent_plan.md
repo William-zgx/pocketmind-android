@@ -20,8 +20,27 @@ Move app search from a fixed script sequence toward a model-observe-act loop:
 6. Stop when the search result verifier proves the requested query is visible.
 
 The model does not get permission to perform arbitrary device actions. It can
-only choose from the existing app-search tool set: open app, observe, tap, type,
-submit search, scroll, wait, and back.
+only choose from the existing app-control tool set: open app, observe, tap,
+type, submit search, scroll, swipe, long-press, press system key
+(home/recents/enter/delete), wait, and back. Swipe, long-press, and press
+system key are Medium-risk Required-confirmation actions that count toward the
+5-step checkpoint (unlike the low-risk tap/scroll continuation set); the system
+key is a closed whitelist, never an arbitrary keycode. The tool set still
+excludes sending, payment, deletion, order placement, authorization, and public
+posting.
+
+### Second entry point: post-launch in-app continuation
+
+Besides the model-driven search skill, the replan loop has a second entry
+point. After a confirmed `open_app_by_name` launch that carries a non-blank
+`followUpIntent`, and only when a local mobile-action model is installed, the
+run auto-observes and continues inside the just-opened app instead of parking
+at `AwaitingExternalOutcome` (see `planPostLaunchInAppContinuation` in
+`ToolPlanCoordinator`). Guards: LocalOnly observe, expected-foreground-package
+preflight (fail-closed), `dangerousUiActionPreflight`, and the 5-step
+checkpoint budget. The search-result stop condition (step 6 above) applies to
+search follow-ups; non-search follow-ups terminate on the normal loop /
+checkpoint budget rather than on search verification.
 
 ## Recent Infrastructure Improvements
 
