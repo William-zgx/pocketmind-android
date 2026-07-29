@@ -610,7 +610,7 @@ internal class ToolObservationCoordinator(
 
             else -> Unit
         }
-        traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
+        traceStore.appendStep(runId, AgentStep.ObservationDecided(effectiveDecision))
         // Capture observation decision reasoning for verbose trace (optimization #8).
         host.recordVerboseTrace(
             runId = runId,
