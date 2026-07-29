@@ -603,7 +603,7 @@ class SolinAccessibilityService : AccessibilityService() {
                 reason = "当前屏幕没有可访问节点根节点",
                 failureKind = UiActionFailureKind.PageChanged,
             )
-        val editableNode = root.focusedEditableOrFirst()
+        val editableNode = root.focusedSafeEditable()
             ?: return UiPrimitiveResult.failed(
                 reason = "当前没有可提交的输入框",
                 failureKind = UiActionFailureKind.EditableNotFound,
@@ -624,7 +624,7 @@ class SolinAccessibilityService : AccessibilityService() {
                 reason = "当前屏幕没有可访问节点根节点",
                 failureKind = UiActionFailureKind.PageChanged,
             )
-        val editableNode = root.focusedEditableOrFirst()
+        val editableNode = root.focusedSafeEditable()
             ?: return UiPrimitiveResult.failed(
                 reason = "当前没有可编辑的输入框",
                 failureKind = UiActionFailureKind.EditableNotFound,
@@ -2255,10 +2255,16 @@ private fun AccessibilityNodeInfo.performImeSearchAction(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
         performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
 
-/** The focused editable node, or the first editable node if none is focused. */
-private fun AccessibilityNodeInfo.focusedEditableOrFirst(): AccessibilityNodeInfo? =
-    findNodeCandidate { candidate -> candidate.node.isEditable && candidate.node.isFocused }?.node
-        ?: findNodeCandidate { candidate -> candidate.node.isEditable }?.node
+/**
+ * The currently-focused editable node, restricted to safe fields (enabled, editable, non-password).
+ *
+ * Enter/Delete deliberately require an ACTUALLY focused editable and never fall back to an arbitrary
+ * first editable on screen: pressing Enter on an unintended field can submit a form, and Delete
+ * mutates that field's text — acting on a field the user did not focus is a mis-operation. Password
+ * fields are excluded so a system-key press can never disturb credential input.
+ */
+private fun AccessibilityNodeInfo.focusedSafeEditable(): AccessibilityNodeInfo? =
+    findNodeCandidate { candidate -> candidate.node.isSafeEditableForTyping() && candidate.node.isFocused }?.node
 
 private fun AccessibilityNodeInfo.scrollableSelfOrAncestor(): AccessibilityNodeInfo? {
     var current: AccessibilityNodeInfo? = this
