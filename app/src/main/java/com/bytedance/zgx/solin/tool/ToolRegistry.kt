@@ -1975,7 +1975,10 @@ private val observeCurrentScreenOutputSchemaJson = """
         "nodesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
         "screenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
         "maxTextChars": {"type": "integer", "minimum": 1, "maximum": 4000},
-        "maxNodes": {"type": "integer", "minimum": 1, "maximum": 120}
+        "maxNodes": {"type": "integer", "minimum": 1, "maximum": 120},
+        "screenWidthPx": {"type": "integer", "minimum": 0},
+        "screenHeightPx": {"type": "integer", "minimum": 0},
+        "screenshotPerception": {"type": "string"}
       },
       "additionalProperties": false
     }
@@ -2004,7 +2007,7 @@ private val uiActionOutputSchemaJson = """
         "requiresLocalModel": {"type": "boolean"},
         "source": {"type": "string", "enum": ["$DEVICE_CONTROL_SOURCE"]},
         "metadataPolicy": {"type": "string", "enum": ["$DEVICE_CONTROL_METADATA_POLICY"]},
-        "actionType": {"type": "string", "enum": ["tap", "type_text", "submit_search", "scroll", "press_back", "wait"]},
+        "actionType": {"type": "string", "enum": ["tap", "tap_normalized", "type_text", "submit_search", "scroll", "swipe", "long_press", "press_key", "press_back", "wait"]},
         "target": {"type": "string"},
         "direction": {"type": "string", "enum": ["up", "down", "left", "right", "forward", "backward"]},
         "status": {"type": "string", "enum": ["succeeded", "failed"]},
@@ -2085,7 +2088,16 @@ private val uiActionOutputSchemaJson = """
         "afterTextSummary": {"type": "string"},
         "afterTruncated": {"type": "boolean"},
         "afterNodesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "afterScreenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"}
+        "afterScreenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
+        "key": {"type": "string", "enum": ["home", "recents", "enter", "delete"]},
+        "screenWidthPx": {"type": "integer", "minimum": 0},
+        "screenHeightPx": {"type": "integer", "minimum": 0},
+        "beforeScreenWidthPx": {"type": "integer", "minimum": 0},
+        "beforeScreenHeightPx": {"type": "integer", "minimum": 0},
+        "beforeScreenshotPerception": {"type": "string"},
+        "afterScreenWidthPx": {"type": "integer", "minimum": 0},
+        "afterScreenHeightPx": {"type": "integer", "minimum": 0},
+        "afterScreenshotPerception": {"type": "string"}
       },
       "additionalProperties": false
     }
@@ -2127,6 +2139,9 @@ private val observeCurrentScreenPrivateOutputKeys = setOf(
     "textSummary",
     "nodesJson",
     "screenObservationJson",
+    "screenWidthPx",
+    "screenHeightPx",
+    "screenshotPerception",
 )
 
 private val uiActionPrivateOutputKeys = setOf(
@@ -2157,6 +2172,14 @@ private val uiActionPrivateOutputKeys = setOf(
     "afterTruncated",
     "afterNodesJson",
     "afterScreenObservationJson",
+    "screenWidthPx",
+    "screenHeightPx",
+    "beforeScreenWidthPx",
+    "beforeScreenHeightPx",
+    "beforeScreenshotPerception",
+    "afterScreenWidthPx",
+    "afterScreenHeightPx",
+    "afterScreenshotPerception",
 )
 
 private val deviceControlSessionTags = setOf(

@@ -5,6 +5,10 @@ import com.bytedance.zgx.solin.InferenceMode
 import com.bytedance.zgx.solin.MessagePrivacy
 import com.bytedance.zgx.solin.PendingAgentConfirmation
 import com.bytedance.zgx.solin.action.ActionDraft
+import com.bytedance.zgx.solin.action.MobileActionFunctions
+import com.bytedance.zgx.solin.orchestration.AgentPlan
+import com.bytedance.zgx.solin.safety.SafetyDecision
+import com.bytedance.zgx.solin.safety.SafetyOutcome
 import com.bytedance.zgx.solin.background.PeriodicCheckPolicySummary
 import com.bytedance.zgx.solin.orchestration.ActiveRunPlacementPermit
 import com.bytedance.zgx.solin.orchestration.AgentObservationDecision
@@ -95,21 +99,102 @@ class ToolExecutionControllerTest {
         assertEquals(0, router.failModelGenerationCalls)
     }
 
+    // Regression: a low-risk app-control continuation plan that the orchestrator already authorized
+    // (safetyDecision=Allow, draft.requiresConfirmation=false via the continuation bypass) must
+    // AUTO-EXECUTE. The auto-execute branch of handleNextToolPlan previously dispatched with
+    // userConfirmed=false, so the execution-boundary re-authorizer (SafetyPolicyToolExecutionAuthorizer)
+    // statelessly re-imposed confirmation on the Required tool (ui_wait) and rejected it — killing
+    // in-app continuation on-device at its first action. handleNextToolPlan must pass userConfirmed=true
+    // for the already-authorized plan so the boundary agrees and the tool actually runs.
+    @Test
+    fun handleNextToolPlanAutoExecutesBypassAuthorizedContinuationTool() = runTest {
+        val request = ToolRequest(
+            id = "continuation-wait",
+            toolName = MobileActionFunctions.UI_WAIT,
+            arguments = mapOf("timeoutMillis" to "500"),
+            reason = "post-launch in-app continuation",
+        )
+        var executedRequestId: String? = null
+        val executor = object : ToolExecutor {
+            override fun execute(request: ToolRequest): ToolResult {
+                executedRequestId = request.id
+                return request.succeeded(
+                    summary = "waited",
+                    data = mapOf("privacy" to MessagePrivacy.LocalOnly.name),
+                )
+            }
+        }
+        val uiState = MutableStateFlow(ChatUiState(inferenceMode = InferenceMode.Local))
+        val jobs = mutableListOf<suspend () -> Unit>()
+        val controller = controller(
+            router = observationRouter(
+                continuationObservation(
+                    runId = "run-continuation",
+                    result = request.succeeded("waited"),
+                    requiresLocalModel = true,
+                ),
+            ),
+            result = request.succeeded("waited"),
+            uiState = uiState,
+            activeRunPlacement = { permit("run-continuation", RunPlacement.Local, InferenceMode.Local) },
+            continueAfterObservation = {},
+            actionExecutor = executor,
+            launchToolGenerationJob = { _, job -> jobs += job },
+        )
+
+        // Plan the orchestrator already downgraded to Allow (the low-risk continuation bypass fired
+        // after the user's initial open_app confirmation): requiresConfirmation=false + outcome=Allow.
+        val plan = AgentPlan.UseTool(
+            request = request,
+            draft = ActionDraft(
+                functionName = MobileActionFunctions.UI_WAIT,
+                title = "等待屏幕稳定",
+                summary = "等待并重新观察当前屏幕",
+                parameters = request.arguments,
+                requiresConfirmation = false,
+            ),
+            plannedByModel = false,
+            fallbackReason = "post-launch in-app continuation",
+            safetyDecision = SafetyDecision(
+                outcome = SafetyOutcome.Allow,
+                reason = "Low-risk app control continuation was allowed after the user's initial confirmation.",
+            ),
+        )
+
+        controller.handleNextToolPlan(
+            runId = "run-continuation",
+            plan = plan,
+            pendingStatusText = "待确认",
+        )
+        // The auto-execute branch schedules the tool job; run it.
+        jobs.forEach { it() }
+
+        // The Required tool must actually execute (boundary re-authorizer agreed because the
+        // controller passed userConfirmed=true for the already-authorized plan). Before the fix it
+        // was Rejected before reaching the executor.
+        assertEquals("continuation-wait", executedRequestId)
+        assertEquals(null, uiState.value.pendingConfirmation)
+    }
+
     private fun controller(
         router: ObservationRouter,
         result: ToolResult,
         uiState: MutableStateFlow<ChatUiState>,
         activeRunPlacement: (String) -> ActiveRunPlacementPermit?,
         continueAfterObservation: () -> Unit,
-    ): ToolExecutionController = ToolExecutionController(
-        assistantOrchestrator = router.router,
-        actionExecutor = object : ToolExecutor {
+        actionExecutor: ToolExecutor = object : ToolExecutor {
             override fun execute(request: ToolRequest): ToolResult = result
         },
+        launchToolGenerationJob: (String?, suspend () -> Unit) -> Unit = { _, _ ->
+            error("unexpected generation launch")
+        },
+    ): ToolExecutionController = ToolExecutionController(
+        assistantOrchestrator = router.router,
+        actionExecutor = actionExecutor,
         uiState = uiState,
         ioDispatcher = Dispatchers.Unconfined,
         isGenerationJobActive = { false },
-        launchToolGenerationJob = { _, _ -> error("unexpected generation launch") },
+        launchToolGenerationJob = launchToolGenerationJob,
         continueAfterToolObservation = { _, _, _, _, _ -> continueAfterObservation() },
         dispatchPersistenceWorkIfNeeded = { false },
         replaceActiveSessionMessages = { messages, _ ->

@@ -49,6 +49,7 @@ import com.bytedance.zgx.solin.device.UiActionReadResult
 import com.bytedance.zgx.solin.device.UiActionStatus
 import com.bytedance.zgx.solin.device.UiOcrGroundingHint
 import com.bytedance.zgx.solin.device.UiScrollDirection
+import com.bytedance.zgx.solin.device.UiSystemKey
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrContract
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrProvider
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrReadResult
@@ -241,6 +242,80 @@ class RoutingAndValidatingToolExecutorTest {
         assertTrue(result.data.getValue("beforeScreenObservationJson").contains("确认支付"))
         assertTrue(screenProvider.tapTargets.isEmpty())
         assertTrue(delegate.requests.isEmpty())
+    }
+
+    // Regression: on real devices ScreenStateSnapshot.widthPx/heightPx are non-null, so UI-action
+    // results carry screen-dimension / screenshot-perception keys and gesture actionType values
+    // (swipe/long_press/press_key) plus press_key's `key`. These were absent from the output schema
+    // (additionalProperties:false), so ValidatingToolExecutor.validateResult rejected every such
+    // Succeeded result as InvalidResult on-device while unit fakes with null dimensions passed.
+    // Guard that ui_swipe/ui_long_press/ui_press_key validate cleanly when dimensions are populated.
+    @Test
+    fun validatingExecutorAcceptsGestureResultsWithPopulatedScreenDimensions() {
+        val cleanSnapshot = staticSnapshot(
+            id = "gesture-screen",
+            textSummary = "内容列表",
+            nodes = listOf(staticNode(id = "list-item", text = "列表项", clickable = true)),
+            widthPx = 1080,
+            heightPx = 2400,
+        )
+        fun freshProvider() = StaticCurrentScreenControlProvider(
+            observeResult = ScreenStateReadResult.Available(cleanSnapshot),
+            actionResult = UiActionReadResult.Available(
+                UiActionExecutionResult(
+                    status = UiActionStatus.Succeeded,
+                    before = cleanSnapshot,
+                    after = cleanSnapshot.copy(id = "screen-gesture-after"),
+                    summary = "gesture done",
+                    retryable = false,
+                ),
+            ),
+        )
+
+        val swipe = ValidatingToolExecutor(routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = freshProvider()))
+            .execute(
+                ToolRequest(
+                    id = "swipe-dims",
+                    toolName = MobileActionFunctions.UI_SWIPE,
+                    arguments = mapOf(
+                        "startXNorm" to "500",
+                        "startYNorm" to "800",
+                        "endXNorm" to "500",
+                        "endYNorm" to "200",
+                    ),
+                    reason = "test",
+                ),
+            )
+        assertEquals(ToolStatus.Succeeded, swipe.status)
+        assertNull(swipe.error)
+        assertEquals("swipe", swipe.data["actionType"])
+        assertEquals("1080", swipe.data["screenWidthPx"])
+        assertEquals("2400", swipe.data["screenHeightPx"])
+
+        val longPress = ValidatingToolExecutor(routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = freshProvider()))
+            .execute(
+                ToolRequest(
+                    id = "longpress-dims",
+                    toolName = MobileActionFunctions.UI_LONG_PRESS,
+                    arguments = mapOf("xNorm" to "500", "yNorm" to "500"),
+                    reason = "test",
+                ),
+            )
+        assertEquals(ToolStatus.Succeeded, longPress.status)
+        assertEquals("long_press", longPress.data["actionType"])
+
+        val pressKey = ValidatingToolExecutor(routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = freshProvider()))
+            .execute(
+                ToolRequest(
+                    id = "presskey-dims",
+                    toolName = MobileActionFunctions.UI_PRESS_KEY,
+                    arguments = mapOf("key" to "home"),
+                    reason = "test",
+                ),
+            )
+        assertEquals(ToolStatus.Succeeded, pressKey.status)
+        assertEquals("press_key", pressKey.data["actionType"])
+        assertEquals("home", pressKey.data["key"])
     }
 
     @Test
@@ -3268,6 +3343,37 @@ class RoutingAndValidatingToolExecutorTest {
             tapOcrGroundingHints += null
             return actionResult
         }
+
+        val swipeCalls = mutableListOf<String>()
+        val longPressCalls = mutableListOf<String>()
+        val pressKeyCalls = mutableListOf<UiSystemKey>()
+
+        override fun swipe(
+            startXNorm: Int,
+            startYNorm: Int,
+            endXNorm: Int,
+            endYNorm: Int,
+            durationMillis: Long,
+            timeoutMillis: Long,
+        ): UiActionReadResult {
+            swipeCalls += "($startXNorm,$startYNorm)->($endXNorm,$endYNorm)"
+            return actionResult
+        }
+
+        override fun longPress(
+            xNorm: Int,
+            yNorm: Int,
+            holdMillis: Long,
+            timeoutMillis: Long,
+        ): UiActionReadResult {
+            longPressCalls += "($xNorm,$yNorm)"
+            return actionResult
+        }
+
+        override fun pressKey(key: UiSystemKey, timeoutMillis: Long): UiActionReadResult {
+            pressKeyCalls += key
+            return actionResult
+        }
     }
 
     private companion object {
@@ -3276,6 +3382,8 @@ class RoutingAndValidatingToolExecutorTest {
             packageName: String = "com.example.app",
             textSummary: String = "Continue",
             nodes: List<ScreenNode> = listOf(staticNode(id = "n0_button", text = "Continue", clickable = true)),
+            widthPx: Int? = null,
+            heightPx: Int? = null,
         ): ScreenStateSnapshot =
             ScreenStateSnapshot(
                 id = "screen-$id",
@@ -3284,6 +3392,8 @@ class RoutingAndValidatingToolExecutorTest {
                 nodes = nodes,
                 textSummary = textSummary,
                 truncated = false,
+                widthPx = widthPx,
+                heightPx = heightPx,
             )
 
         fun staticNode(

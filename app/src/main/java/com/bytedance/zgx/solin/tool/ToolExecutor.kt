@@ -531,6 +531,51 @@ private class OcrGroundingCurrentScreenControlProvider(
         )
     }
 
+    // swipe / longPress / pressKey operate on normalized coordinates or a closed system-key set and
+    // need no OCR grounding, but they MUST still be forwarded to the delegate. Without these
+    // overrides they fall through to the interface's default no-op-failure implementation, so
+    // ui_swipe / ui_long_press / ui_press_key would always fail whenever the control provider is
+    // wrapped for OCR grounding (the production path). Clear the cache like every other mutating
+    // action and delegate straight through.
+    override fun swipe(
+        startXNorm: Int,
+        startYNorm: Int,
+        endXNorm: Int,
+        endYNorm: Int,
+        durationMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult {
+        cache.clear()
+        return delegate.swipe(
+            startXNorm = startXNorm,
+            startYNorm = startYNorm,
+            endXNorm = endXNorm,
+            endYNorm = endYNorm,
+            durationMillis = durationMillis,
+            timeoutMillis = timeoutMillis,
+        )
+    }
+
+    override fun longPress(
+        xNorm: Int,
+        yNorm: Int,
+        holdMillis: Long,
+        timeoutMillis: Long,
+    ): UiActionReadResult {
+        cache.clear()
+        return delegate.longPress(
+            xNorm = xNorm,
+            yNorm = yNorm,
+            holdMillis = holdMillis,
+            timeoutMillis = timeoutMillis,
+        )
+    }
+
+    override fun pressKey(key: UiSystemKey, timeoutMillis: Long): UiActionReadResult {
+        cache.clear()
+        return delegate.pressKey(key = key, timeoutMillis = timeoutMillis)
+    }
+
     private fun ocrGroundingValidationSnapshot(): ScreenStateSnapshot? =
         when (val result = delegate.observeCurrentScreen()) {
             is ScreenStateReadResult.Available -> result.snapshot
