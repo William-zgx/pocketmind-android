@@ -130,6 +130,7 @@ internal class ToolPlanCoordinator(
                 nextActionInput = traceStore.nextActionInput(run.id),
                 completedSegmentCount = completedSegmentCount,
                 screenObservationHistory = screenObservationFingerprints(run.id),
+                inheritedExpectedForegroundPackage = result.launchedTargetPackageOrNull(),
             ),
         ) ?: return NextObservationPlan.None
         if (
@@ -176,6 +177,7 @@ internal class ToolPlanCoordinator(
                 nextActionInput = traceStore.nextActionInput(run.id),
                 completedSegmentCount = completedSegmentCount,
                 screenObservationHistory = screenObservationFingerprints(run.id),
+                inheritedExpectedForegroundPackage = result.launchedTargetPackageOrNull(),
             ),
         ) ?: return null
         if (
@@ -265,6 +267,21 @@ internal class ToolPlanCoordinator(
      * the 5-step checkpoint budget. The expected foreground package (resolved from the launch) is
      * threaded onto the observe so the continuation fails closed if the target app isn't foreground.
      */
+    /**
+     * The just-launched target package, resolved ONLY from an unverified-external-launch result
+     * (open_app success), using the same keys as [planPostLaunchInAppContinuation]. Returns null for
+     * any other result so a stale package is never carried across unrelated steps. Threaded into
+     * [AgentObservationReplanContext.inheritedExpectedForegroundPackage] so a REMOTE-planned
+     * continuation (open_app_by_name with only appName, no followUpIntent) can still fail-close its
+     * downstream tap/type on the correct package even though no request-level key reached the replan.
+     */
+    private fun ToolResult.launchedTargetPackageOrNull(): String? {
+        if (!isUnverifiedExternalLaunch()) return null
+        return data["targetPackage"]?.takeIf { it.isNotBlank() }
+            ?: data["packageName"]?.takeIf { it.isNotBlank() }
+            ?: data["targetPackageName"]?.takeIf { it.isNotBlank() }
+    }
+
     fun planPostLaunchInAppContinuation(
         run: AgentRun,
         request: ToolRequest,

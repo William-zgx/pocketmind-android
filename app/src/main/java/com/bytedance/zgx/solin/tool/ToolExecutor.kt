@@ -1726,6 +1726,24 @@ class DeviceControlToolExecutor(
                     ),
                 )
             }
+        } else {
+            // Foreground-stability poll (no expected package threaded): a REMOTE-planned launch emits
+            // open_app_by_name with only appName (no followUpIntent), so the continuation observe is
+            // synthesized by the replanner/recovery and never inherits an expectedPackageName. A bare
+            // observe fired the instant open_app's startActivity() returns then reads the cross-app
+            // transition window (activeWindowRoot() momentarily null) and Fails in ~46ms. Retry a
+            // bounded number of times on a transient (retryable) Failed read until the window settles.
+            // No effect on the happy path (first read Available) or the PermissionDenied path (a
+            // distinct ScreenStateReadResult subtype, not matched here).
+            var attempt = 0
+            while (attempt < FOREGROUND_READINESS_POLL_MAX_ATTEMPTS &&
+                (result as? ScreenStateReadResult.Failed)?.failureKind
+                    ?.let { it != UiActionFailureKind.PermissionMissing } == true
+            ) {
+                Thread.sleep(FOREGROUND_READINESS_POLL_INTERVAL_MILLIS)
+                result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
+                attempt++
+            }
         }
         return when (result) {
             is ScreenStateReadResult.Available ->

@@ -211,6 +211,15 @@ data class AgentObservationReplanContext(
      * raw screen text — each fingerprint carries only non-sensitive metadata.
      */
     val screenObservationHistory: List<ScreenObservationFingerprint> = emptyList(),
+    /**
+     * The just-launched target package resolved from the most recent unverified-launch open_app
+     * result (targetPackage/packageName), threaded by [ToolPlanCoordinator] so a REMOTE-planned
+     * continuation — whose open_app_by_name carries only appName and never sets followUpIntent, so
+     * [ToolPlanCoordinator.planPostLaunchInAppContinuation] does not run and no expectedPackageName
+     * reaches the replanned request — can still fail-close its foreground-gated tap/type/etc. on the
+     * correct package. Null when there is no pending launch to bind to.
+     */
+    val inheritedExpectedForegroundPackage: String? = null,
 )
 
 data class AgentObservationReplan(
@@ -353,8 +362,11 @@ class ModelObservationReplanner(
         // replanned UI action so the executor's foreground-package preflight actually fires. Without
         // this the fail-closed binding threaded onto the post-launch continuation observe (see
         // ToolPlanCoordinator.planPostLaunchInAppContinuation) would be dropped here and never reach
-        // the tap/type/scroll that follows. The model's own value, if any, wins.
+        // the tap/type/scroll that follows. Prefer the triggering request's own value; fall back to
+        // the launched package threaded via context (the REMOTE path, where open_app_by_name carried
+        // only appName and no request-level package reached here). The model's own value still wins.
         val inheritedExpectedPackage = previousRequest.inheritableExpectedForegroundPackage()
+            ?: inheritedExpectedForegroundPackage
         val replanArguments =
             if (inheritedExpectedPackage != null &&
                 draft.functionName.isForegroundGatedUiAction() &&

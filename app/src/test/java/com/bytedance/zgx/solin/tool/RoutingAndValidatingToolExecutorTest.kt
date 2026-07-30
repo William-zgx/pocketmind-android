@@ -387,6 +387,67 @@ class RoutingAndValidatingToolExecutorTest {
         assertEquals("timeout", result.data["failureKind"])
     }
 
+    // Regression (Fix D Part 1): a REMOTE-planned continuation observe carries NO expectedPackageName
+    // (open_app_by_name emitted only appName, no followUpIntent), so the poll cannot key on a package.
+    // A bare observe fired the instant open_app returns hits the cross-app transition window
+    // (activeWindowRoot() null -> Failed) and fails in ~46ms. A bounded foreground-STABILITY poll must
+    // retry the transient Failed read until the launched window becomes readable.
+    @Test
+    fun observeSettlesThroughTransitionWindowWhenNoExpectedPackageThreaded() {
+        val screenProvider = StaticCurrentScreenControlProvider(
+            observeResults = listOf(
+                ScreenStateReadResult.Failed(
+                    reason = "当前屏幕没有可访问节点根节点",
+                    failureKind = UiActionFailureKind.Unknown,
+                ),
+                ScreenStateReadResult.Available(
+                    staticSnapshot(id = "target", packageName = "com.xingin.xhs"),
+                ),
+            ),
+        )
+        val executor = ValidatingToolExecutor(
+            routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = screenProvider),
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "observe-no-expected-pkg",
+                toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+                arguments = mapOf("maxTextChars" to "2000", "maxNodes" to "50"),
+                reason = "post-launch in-app continuation",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("screen-target", result.data["observationId"])
+        assertTrue(screenProvider.observeCallCount >= 2) // retried past the transition window
+    }
+
+    @Test
+    fun observeReturnsImmediatelyOnHappyPathWithNoExpectedPackage() {
+        val screenProvider = StaticCurrentScreenControlProvider(
+            observeResult = ScreenStateReadResult.Available(
+                staticSnapshot(id = "ready", packageName = "com.xingin.xhs"),
+            ),
+        )
+        val executor = ValidatingToolExecutor(
+            routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = screenProvider),
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "observe-happy",
+                toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+                arguments = mapOf("maxTextChars" to "2000", "maxNodes" to "50"),
+                reason = "post-launch in-app continuation",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        // No stability poll when the first read is Available: exactly one observe, zero added latency.
+        assertEquals(1, screenProvider.observeCallCount)
+    }
+
     @Test
     fun routingExecutorRejectsSubmitSearchWithoutSearchContext() {
         val delegate = RecordingDelegate()
