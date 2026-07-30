@@ -1043,6 +1043,10 @@ private val observeCurrentScreenSchemaJson = """
           "description": "Maximum visible Accessibility nodes returned with transient node ids and bounds.",
           "minimum": 1,
           "maximum": 120
+        },
+        "expectedPackageName": {
+          "type": "string",
+          "description": "Post-launch continuation only: the launched target package the observe should wait to reach the foreground before reading, so it does not read a cross-app transition window."
         }
       },
       "additionalProperties": false

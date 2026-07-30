@@ -318,6 +318,75 @@ class RoutingAndValidatingToolExecutorTest {
         assertEquals("home", pressKey.data["key"])
     }
 
+    // Regression (Fix D): the post-launch continuation observe threads expectedPackageName and fires
+    // before the launched app is foreground. executeObserve must bounded-poll until the foreground
+    // package matches the target instead of succeeding on the transitional/own-app window.
+    @Test
+    fun observeWaitsForExpectedForegroundPackageThenSucceeds() {
+        val screenProvider = StaticCurrentScreenControlProvider(
+            // First read is the launcher/transition window; second read is the target app foreground.
+            observeResults = listOf(
+                ScreenStateReadResult.Available(
+                    staticSnapshot(id = "transition", packageName = "com.android.launcher"),
+                ),
+                ScreenStateReadResult.Available(
+                    staticSnapshot(id = "target", packageName = "com.xingin.xhs"),
+                ),
+            ),
+        )
+        val executor = ValidatingToolExecutor(
+            routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = screenProvider),
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "observe-await-fg",
+                toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+                arguments = mapOf(
+                    "maxTextChars" to "2000",
+                    "maxNodes" to "50",
+                    "expectedPackageName" to "com.xingin.xhs",
+                ),
+                reason = "post-launch in-app continuation",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("screen-target", result.data["observationId"])
+        // Polled at least twice: transition window first, target app second.
+        assertTrue(screenProvider.observeCallCount >= 2)
+    }
+
+    @Test
+    fun observeReturnsTimeoutWhenExpectedForegroundPackageNeverAppears() {
+        val screenProvider = StaticCurrentScreenControlProvider(
+            observeResult = ScreenStateReadResult.Available(
+                staticSnapshot(id = "wrong", packageName = "com.android.launcher"),
+            ),
+        )
+        val executor = ValidatingToolExecutor(
+            routingExecutor(delegate = RecordingDelegate(), currentScreenControlProvider = screenProvider),
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "observe-fg-timeout",
+                toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN,
+                arguments = mapOf(
+                    "maxTextChars" to "2000",
+                    "maxNodes" to "50",
+                    "expectedPackageName" to "com.xingin.xhs",
+                ),
+                reason = "post-launch in-app continuation",
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        // Timeout (NOT app_not_foreground) keeps it eligible for bounded settle-recovery rounds.
+        // (expectedPackageName is stripped by private-result sanitization; failureKind survives.)
+        assertEquals("timeout", result.data["failureKind"])
+    }
+
     @Test
     fun routingExecutorRejectsSubmitSearchWithoutSearchContext() {
         val delegate = RecordingDelegate()

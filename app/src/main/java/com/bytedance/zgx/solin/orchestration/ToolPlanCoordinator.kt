@@ -213,13 +213,18 @@ internal class ToolPlanCoordinator(
             MobileActionFunctions.UI_WAIT -> MobileActionFunctions.OBSERVE_CURRENT_SCREEN
             else -> MobileActionFunctions.OBSERVE_CURRENT_SCREEN
         }
+        // Carry the expected foreground package (if the failed step had one) onto the recovery step
+        // so the bounded settle rounds verify the launched target is foreground instead of blindly
+        // waiting — otherwise a slow cold start keeps failing the same package-blind way.
+        val expectedPackage = request.arguments["expectedPackageName"]?.takeIf { it.isNotBlank() }
+            ?: request.arguments["targetPackageName"]?.takeIf { it.isNotBlank() }
         val arguments = when (nextToolName) {
             MobileActionFunctions.UI_WAIT -> mapOf("timeoutMillis" to "500")
             else -> mapOf(
                 "maxTextChars" to "2000",
                 "maxNodes" to "50",
             )
-        }
+        } + (expectedPackage?.let { mapOf("expectedPackageName" to it) } ?: emptyMap())
         val title = when (nextToolName) {
             MobileActionFunctions.UI_WAIT -> "等待屏幕稳定"
             else -> "重新观察当前屏幕"

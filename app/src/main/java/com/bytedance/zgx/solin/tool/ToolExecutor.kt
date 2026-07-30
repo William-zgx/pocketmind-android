@@ -1694,7 +1694,40 @@ class DeviceControlToolExecutor(
     ): ToolResult {
         val maxTextChars = request.arguments["maxTextChars"]?.toIntOrNull() ?: DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS
         val maxNodes = request.arguments["maxNodes"]?.toIntOrNull() ?: DEFAULT_MAX_SCREEN_STATE_NODES
-        return when (val result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)) {
+        // Foreground-readiness poll: the post-launch in-app continuation threads an expectedPackageName
+        // (ToolPlanCoordinator.planPostLaunchInAppContinuation) and fires the first observe the instant
+        // open_app's startActivity() returns — before the launched app is actually resumed. Without a
+        // settle, observe reads the cross-app transition window (activeWindowRoot() momentarily null or
+        // Solin's own window) and fails. Bounded-poll observeCurrentScreen until the foreground package
+        // matches the expected target, then map as usual. No added latency when expectedPackageName is
+        // absent or the target is already foreground.
+        val expectedPackage = request.expectedForegroundPackageName()
+        var result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
+        if (expectedPackage != null) {
+            var attempt = 0
+            while (attempt < FOREGROUND_READINESS_POLL_MAX_ATTEMPTS &&
+                (result as? ScreenStateReadResult.Available)?.snapshot?.packageName != expectedPackage
+            ) {
+                Thread.sleep(FOREGROUND_READINESS_POLL_INTERVAL_MILLIS)
+                result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
+                attempt++
+            }
+            val settledPackage = (result as? ScreenStateReadResult.Available)?.snapshot?.packageName
+            if (settledPackage != expectedPackage) {
+                // Report Timeout (NOT app_not_foreground) so the observation coordinator keeps this
+                // eligible for bounded settle-recovery rounds before falling back to open-then-stop.
+                return request.failed(
+                    code = ToolErrorCode.ExecutionFailed,
+                    summary = "目标应用尚未进入前台，稍后重试观察。",
+                    retryable = true,
+                    data = request.deviceControlBaseData() + mapOf(
+                        "failureKind" to UiActionFailureKind.Timeout.schemaValue,
+                        "expectedPackageName" to expectedPackage,
+                    ),
+                )
+            }
+        }
+        return when (result) {
             is ScreenStateReadResult.Available ->
                 request.succeeded(
                     summary = result.snapshot.observationSummary(),
@@ -2521,6 +2554,12 @@ class DeviceControlToolExecutor(
         const val DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS = 2_000
         const val DEFAULT_MAX_SCREEN_STATE_NODES = 50
         const val DEFAULT_UI_ACTION_TIMEOUT_MILLIS = 1_000L
+
+        // Bounded foreground-readiness poll for the post-launch continuation observe: up to
+        // 6 * 250ms = 1.5s waiting for the launched target app to become the foreground package
+        // before observing, covering a typical cold start without stalling the checkpoint budget.
+        const val FOREGROUND_READINESS_POLL_MAX_ATTEMPTS = 6
+        const val FOREGROUND_READINESS_POLL_INTERVAL_MILLIS = 250L
     }
 }
 
