@@ -21,6 +21,17 @@ const val DEFAULT_DEVICE_CONTROL_MAX_NODES = 50
 const val MAX_DEVICE_CONTROL_NODES = 120
 const val DEFAULT_UI_ACTION_TIMEOUT_MILLIS = 1_000L
 const val MIN_UI_ACTION_TIMEOUT_MILLIS = 100L
+
+/**
+ * Largest `timeoutMillis` a UI action may request.
+ *
+ * Not independent of the tool-execution boundary. The accessibility service wraps each action in a
+ * watchdog of `requested + ~9s` (two full-tree observes, the settle wait, slack), and the two
+ * preflight observes plus the readiness poll add ~7.5s before that window opens — all billed to
+ * DEVICE_CONTROL_TOOL_EXECUTION_TIMEOUT_MILLIS. At this ceiling the worst case is ~26.5s, inside
+ * that 30s budget; against the shared 20s default it would not fit, which is why device-control
+ * tools have their own boundary. UiActionTimeoutBudgetTest pins the arithmetic.
+ */
 const val MAX_UI_ACTION_TIMEOUT_MILLIS = 10_000L
 const val MAX_UI_TYPE_TEXT_CHARS = 2_000
 const val DEFAULT_UI_GESTURE_DURATION_MILLIS = 300L

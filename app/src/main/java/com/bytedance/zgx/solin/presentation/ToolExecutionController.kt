@@ -93,6 +93,9 @@ class ToolExecutionController(
     private val activeRunPlacement: (String) -> ActiveRunPlacementPermit? = { null },
 ) {
     private val toolExecutionBoundary = TimeoutToolExecutionBoundary(
+        // Needed so device-control tools get their longer boundary; without the registry the
+        // boundary fails closed to the shorter shared default.
+        toolRegistry = toolRegistry,
         executor = actionExecutor,
         dispatcher = ioDispatcher,
         publicEvidenceBatchRequestValidator = toolRegistry::validatePublicEvidenceBatchRequest,

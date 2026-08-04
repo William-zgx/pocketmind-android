@@ -85,6 +85,8 @@ private const val MAX_VERBOSE_TRACE_THINK_TEXT_CHARS = 4_000
  * views permanently disagree — in that case the loop must give up and log rather than spin.
  */
 private const val MAX_TERMINATE_RUN_CAS_ATTEMPTS = 8
+private const val TERMINATE_RUN_BACKOFF_STEP_MILLIS = 5L
+private const val TERMINATE_RUN_BACKOFF_MAX_MILLIS = 40L
 
 /**
  * CPU-friendly backoff between bounded compare-and-set retries.
@@ -94,13 +96,18 @@ private const val MAX_TERMINATE_RUN_CAS_ATTEMPTS = 8
  * `Thread.yield()`, which has the same intent (surrender the current scheduling slice) with weaker
  * hardware support, and swallows failures because a backoff hint must never break termination.
  */
-private fun spinWaitBackoff() {
+/**
+ * Backoff between contended CAS attempts in [AgentLoopRuntime.terminateRun].
+ *
+ * Sleeps rather than spin-hints. Each attempt costs two disk reads, so a sub-microsecond
+ * `onSpinWait`/`yield` let all attempts elapse within single-digit milliseconds — a competitor
+ * blocked on Room I/O for longer than that would exhaust the budget without ever getting the
+ * chance to finish its own transition. Growing the wait keeps the total bounded (8 attempts ≈
+ * 180ms) while actually leaving room for the other writer.
+ */
+private fun terminateRunBackoff(attempt: Int) {
     runCatching {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            Thread.onSpinWait()
-        } else {
-            Thread.yield()
-        }
+        Thread.sleep((TERMINATE_RUN_BACKOFF_STEP_MILLIS * attempt).coerceAtMost(TERMINATE_RUN_BACKOFF_MAX_MILLIS))
     }
 }
 
@@ -202,6 +209,40 @@ class AgentLoopRuntime(
     // deadline reads it (a property initializer may not forward-reference a later property).
     private val runStartedAtMillis = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    /**
+     * Per-run accounting of time spent parked on a user or an external app, so the wall-clock
+     * deadline bills the agent's own work rather than the user's response time.
+     *
+     * Sampled lazily by [parkedMillisFor] instead of hooked into every state transition: runs enter
+     * the awaiting states from a dozen call sites, and instrumenting each one is what makes this
+     * kind of bookkeeping drift. Reading the run's current state and its `updatedAtMillis` at
+     * budget-check time needs no such coverage — while a run sits parked, `updatedAtMillis` is the
+     * moment it parked, so the parked stretch is directly measurable.
+     */
+    private val parkedMillisByRunId = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val lastParkSampleAtMillis = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Total parked milliseconds for [runId], advancing the accumulator when the run is parked now.
+     *
+     * Each call adds the stretch since the previous sample if the run is still in an awaiting state,
+     * so repeated budget checks across a long park accumulate the full duration without needing an
+     * "unparked" callback. `updatedAtMillis` bounds the first sample so time before the park is
+     * never counted.
+     */
+    private fun parkedMillisFor(runId: String): Long {
+        val run = traceStore.run(runId) ?: return parkedMillisByRunId[runId] ?: 0L
+        val now = System.currentTimeMillis()
+        if (run.state !in parkedRunStates) {
+            lastParkSampleAtMillis.remove(runId)
+            return parkedMillisByRunId[runId] ?: 0L
+        }
+        val since = lastParkSampleAtMillis[runId] ?: run.updatedAtMillis
+        val delta = (now - since).coerceAtLeast(0L)
+        lastParkSampleAtMillis[runId] = now
+        return parkedMillisByRunId.merge(runId, delta) { a, b -> a + b } ?: delta
+    }
+
     private val runBudget = AgentRunBudget(
         maxRunToolSteps = maxRunToolSteps,
         maxObservationDecisions = maxObservationDecisions,
@@ -218,6 +259,7 @@ class AgentLoopRuntime(
         // runStartedAtMillis is otherwise statistics-only; feeding it to the budget turns it into the
         // run-level wall-clock deadline (step counts alone cannot bound an untimed model generation).
         runStartedAtMillis = { runId -> runStartedAtMillis[runId] },
+        runParkedMillis = ::parkedMillisFor,
     )
     private val initialToolPlanner = InitialToolPlanner(
         toolRegistry = toolRegistry,
@@ -935,17 +977,18 @@ class AgentLoopRuntime(
     }
 
     fun terminateRun(runId: String, reason: String = RUN_CANCELLED_REASON): AgentModelObservationResult? {
-        cancelAndClearModelCallJob(runId)
-        traceStore.clearPendingConfirmationsForRun(runId)
-        pendingUserQuestionsByRunId.remove(runId)
         val decision = AgentObservationDecision.Cancel
         // Bounded CAS retry, "read once, decide, then update" per iteration. The previous
         // `while (updatedRun == null)` loop was unbounded and spun with no backoff while doing two
         // disk reads per iteration: RoomAgentTraceStore.compareAndSetState can fail *persistently*
         // (not just transiently) when its DB and in-memory views disagree about the current state,
         // which turns "retry until success" into a real infinite loop that also hammers the DB.
-        // A small attempt cap plus a spin hint converts that into a diagnosable give-up: returning
-        // null leaves the run untouched, which the callers already handle as "nothing to cancel".
+        //
+        // Nothing destructive happens before the CAS wins. Cancelling the model job, dropping the
+        // pending confirmation row and forgetting the pending question used to run up here, so the
+        // give-up path left a NON-terminal run whose pending-confirmation row was already gone —
+        // and `awaitingWithoutPendingRuns` then failed it as UNRESTORABLE on the next process start,
+        // showing the user a spurious "cannot be restored" instead of their own cancellation.
         var updatedRun: AgentRun? = null
         var attempt = 0
         while (updatedRun == null && attempt < MAX_TERMINATE_RUN_CAS_ATTEMPTS) {
@@ -958,9 +1001,10 @@ class AgentLoopRuntime(
                 state = AgentRunState.Cancelled,
             )
             if (updatedRun == null) {
-                // Back off instead of burning CPU: yield to whoever is concurrently transitioning
-                // this run. The loop is bounded above, so this can never become a busy-wait.
-                spinWaitBackoff()
+                // Wait long enough to matter: each iteration costs two disk reads, so a sub-microsecond
+                // spin hint let all attempts elapse inside single-digit milliseconds and a competitor
+                // blocked on Room I/O could exhaust them without ever getting a chance to finish.
+                terminateRunBackoff(attempt)
             }
         }
         if (updatedRun == null) {
@@ -973,6 +1017,9 @@ class AgentLoopRuntime(
             }
             return null
         }
+        cancelAndClearModelCallJob(runId)
+        traceStore.clearPendingConfirmationsForRun(runId)
+        pendingUserQuestionsByRunId.remove(runId)
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         eventBus.publish(
             SolinEvent.Agent.RunCancelled(
@@ -1113,6 +1160,8 @@ class AgentLoopRuntime(
             runCatching { scratchpad.clear(runId) }
         }
         runStartedAtMillis.clear()
+        parkedMillisByRunId.clear()
+        lastParkSampleAtMillis.clear()
         runTurnIndex.clear()
         synchronized(undoStack) {
             undoStack.clear()
@@ -2894,6 +2943,8 @@ class AgentLoopRuntime(
 
     private fun clearDeletedRunState(runId: String) {
         runStartedAtMillis.remove(runId)
+        parkedMillisByRunId.remove(runId)
+        lastParkSampleAtMillis.remove(runId)
         runTurnIndex.remove(runId)
     }
 
@@ -2961,6 +3012,16 @@ class AgentLoopRuntime(
         AgentRunState.Completed,
         AgentRunState.Cancelled,
         AgentRunState.Failed,
+    )
+
+    /**
+     * States in which a run is waiting on someone outside the agent, so its wall-clock deadline is
+     * paused. Read by [parkedMillisFor]; see the wall-clock deadline in AgentRunBudget.
+     */
+    private val parkedRunStates = setOf(
+        AgentRunState.AwaitingUserConfirmation,
+        AgentRunState.AwaitingUserAnswer,
+        AgentRunState.AwaitingExternalOutcome,
     )
 
     private companion object {

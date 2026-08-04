@@ -350,6 +350,193 @@ class UiTargetScoringCoreParityTest {
         )
     }
 
+    // ── The two P0 regressions the scorer merge introduced ───────────────────────────────────────
+    //
+    // Both are invisible to the 25 UIAutomator fixtures: those are flat 4-7 node trees whose input
+    // controls are all real EditTexts with clean single-purpose labels, so semantic scoring always
+    // succeeds (never exercising the fallback) and no fixture has two competing editable fields.
+
+    @Test
+    fun aNonEditableInputBarStaysReachableWhenSemanticScoringFindsNothing() {
+        // P0-2. `ui_tap(target="输入")` resolves kind=EditableField, so EVERY semantic term is 0 on a
+        // comment bar rendered as a clickable TextView (not editable => semantic 0, no profile => hint 0).
+        // Upstream fell through to the direct text/description table whenever semantic scoring came up
+        // empty, whatever the kind; gating that fallback on `kind == null` made this node — whose own text
+        // literally contains the target — unreachable, i.e. the comment box could not be tapped at all.
+        val commentBar = ScreenNode(
+            id = "com.example.app:id/comment_bar",
+            text = "点击输入评论",
+            contentDescription = "",
+            className = "android.widget.TextView",
+            bounds = ScreenBounds(24, 2100, 900, 2200),
+            clickable = true,
+            editable = false,
+            scrollable = false,
+            enabled = true,
+        )
+
+        val score = runtimeTargetMatchScore(
+            node = commentBar,
+            label = runtimeLabelFor(commentBar),
+            target = "输入",
+            profile = null,
+            rootBounds = ScreenBounds(0, 0, 1080, 2400),
+        )
+
+        assertEquals(UiTargetKind.EditableField, UiTargetResolver.kindForTarget("输入"))
+        assertNotNull(
+            "a kind!=null target whose semantic terms all score 0 must still reach the direct-text table",
+            score,
+        )
+        // 650 (target inside `text`) + 120 clickable - 40 position - 1 noise. Pinned rather than merely
+        // ">= floor" so the direct table's field-level tier and continuous noise curve both stay put.
+        assertEquals(729, score)
+    }
+
+    @Test
+    fun aBrowserAddressBarStaysReachableForABareInputTargetOnEveryHomeDump() {
+        // Same regression on real fixtures: every browser home dump renders its address bar as a
+        // non-editable TextView, so `target="输入"` (kind=EditableField) has no semantic evidence at all
+        // and the direct-text table is the only thing that can reach it.
+        listOf(
+            "chrome_address_home.xml" to "com.android.chrome:id/search_box_text",
+            "quark_address_home.xml" to "com.quark.browser:id/address_bar",
+            "uc_address_home.xml" to "com.UCMobile:id/search_address_bar",
+            "android_browser_address_home.xml" to "com.android.browser:id/url",
+        ).forEach { (dump, expectedNodeId) ->
+            val snapshot = loadDump(dump)
+
+            val winner = runtimeTopCandidate(snapshot, "输入")
+
+            assertEquals(
+                "$dump: a bare 输入 target must still tap the address bar",
+                expectedNodeId,
+                winner?.nodeId,
+            )
+            assertEquals("$dump: direct-text evidence score drifted", 1049, winner?.score)
+        }
+    }
+
+    @Test
+    fun aCameraLabelledEditableFieldIsStillDemotedBelowAPlainOne() {
+        // P0-3. The camera/voice/scan demotion is an INDEPENDENT subtraction upstream, and it only applies
+        // to SearchEntry/EditableField — the two kinds whose real candidates are normally `editable`.
+        // Folding it into `targetRiskPenalty`, which returns early for editable nodes, silenced it exactly
+        // where it matters: these two fields then tied at 3070 and BFS document order decided, so a
+        // `type_text` could open the camera instead of the keyboard.
+        val cameraField = ScreenNode(
+            id = "camera_field",
+            text = "",
+            contentDescription = "搜索宝贝 拍照",
+            className = "android.widget.EditText",
+            bounds = ScreenBounds(48, 86, 900, 172),
+            clickable = true,
+            editable = true,
+            scrollable = false,
+            enabled = true,
+        )
+        val plainField = cameraField.copy(
+            id = "plain_field",
+            contentDescription = "搜索宝贝",
+            bounds = ScreenBounds(48, 200, 900, 286),
+        )
+        val profile = AppInteractionProfiles.forPackage("com.taobao.taobao")
+        val rootBounds = ScreenBounds(0, 0, 1080, 2400)
+
+        val cameraScore = runtimeTargetMatchScore(
+            node = cameraField,
+            label = runtimeLabelFor(cameraField),
+            target = "搜索入口",
+            profile = profile,
+            rootBounds = rootBounds,
+        )
+        val plainScore = runtimeTargetMatchScore(
+            node = plainField,
+            label = runtimeLabelFor(plainField),
+            target = "搜索入口",
+            profile = profile,
+            rootBounds = rootBounds,
+        )
+
+        assertNotNull(cameraScore)
+        assertNotNull(plainScore)
+        // Both remain selectable (a camera-labelled search box is still a search box — this is a demotion,
+        // not a veto), but the plain field must win outright rather than tie on document order.
+        assertTrue(
+            "the 拍照 field ($cameraScore) must rank strictly below the plain one ($plainScore)",
+            plainScore!! > cameraScore!!,
+        )
+        assertEquals("the 520 demotion tier drifted", 520, plainScore - cameraScore)
+    }
+
+    @Test
+    fun theCameraDemotionSurvivesTheEditableEarlyReturnItWasHiddenBehind() {
+        // Pins the structural cause directly: same label, same kind, differing only in `editable`. The
+        // penalty must be present in BOTH, because it is a separate term from the oversized-container
+        // geometry that legitimately stops at an editable node.
+        val bounds = ScreenBounds(48, 86, 900, 172)
+        val editableCamera = ScreenNode(
+            id = "editable_camera",
+            text = "",
+            contentDescription = "搜索宝贝 拍照",
+            className = "android.widget.EditText",
+            bounds = bounds,
+            clickable = true,
+            editable = true,
+            scrollable = false,
+            enabled = true,
+        )
+        val editablePlain = editableCamera.copy(contentDescription = "搜索宝贝")
+        val metrics = SnapshotBoundsMetrics.fromRootBounds(ScreenBounds(0, 0, 1080, 2400))
+
+        fun score(node: ScreenNode): Int = requireNotNull(
+            scoreTargetCandidate(
+                node = node,
+                label = node.contentDescription,
+                kind = UiTargetKind.SearchEntry,
+                normalizedTarget = "搜索入口".normalizedLookupKey(),
+                profile = AppInteractionProfiles.forPackage("com.taobao.taobao"),
+                metrics = metrics,
+            ),
+        ).score.riskPenalty
+
+        assertEquals("an editable node must still carry the camera demotion", 520, score(editableCamera))
+        assertEquals("a plain editable node carries no demotion", 0, score(editablePlain))
+    }
+
+    @Test
+    fun aTargetlessResolveStillFindsNothingWithoutSemanticEvidence() {
+        // Fail-closed guard on the widened fallback. `resolve(kind)` with no target normalizes to a blank
+        // string, and `"".contains(anything)` plus `description == ""` would make every text-less node an
+        // exact 900 "match" — handing a semantics-free winner to a caller that supplied no target at all.
+        // The direct-text table must refuse a blank target outright.
+        val snapshot = ScreenStateSnapshot(
+            id = "no_semantic_evidence",
+            packageName = null,
+            capturedAtMillis = 1L,
+            nodes = listOf(
+                ScreenNode(
+                    id = "top-action",
+                    text = "首页",
+                    contentDescription = "",
+                    className = "android.widget.TextView",
+                    bounds = ScreenBounds(12, 80, 200, 160),
+                    clickable = true,
+                    editable = false,
+                    scrollable = false,
+                    enabled = true,
+                ),
+            ),
+            textSummary = "首页",
+            truncated = false,
+        )
+
+        assertNull(UiTargetResolver.resolve(snapshot, UiTargetKind.SearchEntry))
+        assertNull(UiTargetResolver.resolve(snapshot, UiTargetKind.EditableField))
+        assertNull(UiTargetResolver.resolve(snapshot, UiTargetKind.SubmitSearch))
+        assertNull(UiTargetResolver.resolve(snapshot, UiTargetKind.FilterEntry))
+    }
+
     // ── The single minimum-score table ───────────────────────────────────────────────────────────
 
     @Test

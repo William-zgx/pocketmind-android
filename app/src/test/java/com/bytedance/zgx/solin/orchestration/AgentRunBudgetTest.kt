@@ -147,18 +147,97 @@ class AgentRunBudgetTest {
         observationDecisions: Int = 0,
         stepHistoryDegraded: Boolean = false,
         runStartedAt: Long? = null,
+        parkedMillis: Long = 0L,
         nowMillis: () -> Long = { START_MILLIS },
+        stepHistoryDegradedProbe: ((String) -> Boolean)? = null,
+        onHistoryRead: () -> Unit = {},
     ): AgentRunBudget = AgentRunBudget(
         maxRunToolSteps = 2,
         maxObservationDecisions = 2,
         profilesByRunId = ConcurrentHashMap(),
-        toolRequestsFor = { toolRequests },
+        toolRequestsFor = {
+            onHistoryRead()
+            toolRequests
+        },
         observationDecidedCount = { observationDecisions },
         sessionPlanStore = null,
-        stepHistoryDegraded = { stepHistoryDegraded },
+        stepHistoryDegraded = stepHistoryDegradedProbe ?: { stepHistoryDegraded },
         runStartedAtMillis = { runStartedAt },
+        runParkedMillis = { parkedMillis },
         nowMillis = nowMillis,
     )
+
+    @Test
+    fun theDeadlineDoesNotBillTimeSpentParkedWaitingForTheUser() {
+        // The failure this guards: a user who takes six minutes to read a confirmation had their run
+        // killed by the first step after they tapped it, blamed on elapsed runtime. take_over is the
+        // extreme case — its whole point is "go log in and come back".
+        val deadline = SolinConstants.AgentLoop.MAX_RUN_WALL_CLOCK_MILLIS
+        val budget = budget(
+            runStartedAt = START_MILLIS,
+            parkedMillis = deadline,
+            nowMillis = { START_MILLIS + deadline + 10_000L },
+        )
+
+        assertFalse(
+            "time parked awaiting the user must not count toward the run's working deadline",
+            budget.runDeadlineExceeded(RUN_ID),
+        )
+    }
+
+    @Test
+    fun theDeadlineStillFiresOnWorkingTimeEvenWhenSomeTimeWasParked() {
+        // The other half: pausing the clock while parked must not make the deadline unenforceable.
+        val deadline = SolinConstants.AgentLoop.MAX_RUN_WALL_CLOCK_MILLIS
+        val budget = budget(
+            runStartedAt = START_MILLIS,
+            parkedMillis = 60_000L,
+            nowMillis = { START_MILLIS + deadline + 60_000L },
+        )
+
+        assertTrue(
+            "working time at the deadline must still fail closed",
+            budget.runDeadlineExceeded(RUN_ID),
+        )
+    }
+
+    @Test
+    fun aDegradedHistoryThatRecoversOnReProbeDoesNotFailTheRun() {
+        // The one-way trap this guards: the latch is cleared by a SUCCESSFUL history read, but the
+        // budget used to return early on a raised latch and never perform that read — so a single
+        // transient SQLiteDatabaseLockedException failed every later check for the run's whole life.
+        var probeCalls = 0
+        var historyReads = 0
+        val budget = budget(
+            toolRequests = emptyList(),
+            stepHistoryDegradedProbe = {
+                probeCalls++
+                // Degraded on the first look, readable once the forced read has run.
+                historyReads == 0
+            },
+            onHistoryRead = { historyReads++ },
+        )
+
+        assertFalse(
+            "a latch that clears on re-probe must not fail the budget closed",
+            budget.toolStepBudgetExceeded(RUN_ID),
+        )
+        assertTrue("the budget must force a history read to give the store a chance", historyReads > 0)
+        assertTrue("the latch must be re-checked after that read", probeCalls >= 2)
+    }
+
+    @Test
+    fun aHistoryThatStaysDegradedAfterReProbeStillFailsClosed() {
+        val budget = budget(
+            toolRequests = emptyList(),
+            stepHistoryDegraded = true,
+        )
+
+        assertTrue(
+            "a persistently unreadable history must still fail closed",
+            budget.toolStepBudgetExceeded(RUN_ID),
+        )
+    }
 
     private fun request(id: String): ToolRequest =
         ToolRequest(

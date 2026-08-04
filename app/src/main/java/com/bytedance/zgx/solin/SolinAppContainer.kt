@@ -356,15 +356,21 @@ class SolinAppContainer(
                 // the step-derived budgets fail closed, so runs end early for a storage reason that
                 // is otherwise invisible. Only transitions are reported, not every failed read.
                 onStepHistoryDegradedChanged = { runId, degraded ->
-                    if (degraded) {
-                        runCatching {
-                            telemetrySink.record(
-                                MetricSample.CounterInc(
-                                    name = TelemetryCounter.StepHistoryDegraded,
-                                    runId = runId,
-                                ),
-                            )
-                        }
+                    // Both directions, not just the onset: the store already fires this only on a
+                    // real transition, so counting recoveries too is what lets a 1ms blip be told
+                    // apart from a sustained outage. Counting only the onset would leave every
+                    // degradation looking permanent.
+                    runCatching {
+                        telemetrySink.record(
+                            MetricSample.CounterInc(
+                                name = if (degraded) {
+                                    TelemetryCounter.StepHistoryDegraded
+                                } else {
+                                    TelemetryCounter.StepHistoryRecovered
+                                },
+                                runId = runId,
+                            ),
+                        )
                     }
                 },
             ),
@@ -461,6 +467,10 @@ class SolinAppContainer(
                 Build.SUPPORTED_64_BIT_ABIS.any { it == "arm64-v8a" }
             },
             skipStartupModelRuntimeWork = skipStartupModelRuntimeWork,
+            // The module-aware registry, not the built-in default: the safety authorizer inside
+            // ToolExecutionController rejects any tool its registry does not know, which would make
+            // every module-contributed tool unexecutable.
+            toolRegistry = toolRegistry,
         )
 
     internal fun sampleSystemResources(): SystemResourceSnapshot? =
@@ -557,6 +567,7 @@ private class SolinViewModelFactory(
     private val elapsedRealtimeMillis: () -> Long,
     private val isArm64DeviceProvider: () -> Boolean,
     private val skipStartupModelRuntimeWork: Boolean,
+    private val toolRegistry: ToolRegistry,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -592,6 +603,7 @@ private class SolinViewModelFactory(
             isArm64DeviceProvider = isArm64DeviceProvider,
             skipStartupModelRuntimeWork = skipStartupModelRuntimeWork,
             deferPersistenceInitialization = true,
+            toolRegistry = toolRegistry,
         ) as T
     }
 }

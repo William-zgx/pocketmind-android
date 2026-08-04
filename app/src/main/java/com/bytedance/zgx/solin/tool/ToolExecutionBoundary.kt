@@ -10,12 +10,31 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 const val DEFAULT_TOOL_EXECUTION_TIMEOUT_MILLIS = 20_000L
+
+/**
+ * Boundary timeout for device-control tools, which are structurally slower than the rest.
+ *
+ * A single UI action bills the boundary for far more than the action itself: the two preflight
+ * observes (dangerous-control detection and foreground-package binding) plus the readiness poll add
+ * ~7.5s before the action's own watchdog window even opens, and that watchdog is
+ * `requested + ~9s` for the two bracketing observes and the settle wait. At the shared 20s figure a
+ * legitimate `ui_wait` near its schema ceiling was killed by this boundary and surfaced as a
+ * retryable "tool execution timed out" instead of a UI-action timeout.
+ *
+ * Raising the boundary for these tools is the right side to move: shrinking the schema ceiling
+ * instead would cap how long the agent may wait for a screen to settle, which is a real capability.
+ * UiActionTimeoutBudgetTest pins the arithmetic against MAX_UI_ACTION_TIMEOUT_MILLIS.
+ */
+const val DEVICE_CONTROL_TOOL_EXECUTION_TIMEOUT_MILLIS = 30_000L
+
 const val DEFAULT_PUBLIC_EVIDENCE_BATCH_RETRY_ATTEMPTS = 1
 
 class TimeoutToolExecutionBoundary(
     private val executor: ToolExecutor,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val timeoutMillis: Long = DEFAULT_TOOL_EXECUTION_TIMEOUT_MILLIS,
+    private val deviceControlTimeoutMillis: Long = DEVICE_CONTROL_TOOL_EXECUTION_TIMEOUT_MILLIS,
+    private val toolRegistry: ToolRegistry? = null,
     private val publicEvidenceBatchRetryAttempts: Int =
         DEFAULT_PUBLIC_EVIDENCE_BATCH_RETRY_ATTEMPTS,
     private val publicEvidenceBatchRequestValidator: (ToolRequest) -> ToolResult? = { null },
@@ -26,8 +45,17 @@ class TimeoutToolExecutionBoundary(
         return executeInternal(request)
     }
 
+    /**
+     * Fails closed to the shorter default when the registry is absent or the tool is unknown: an
+     * unrecognised tool should not silently get the longer device-control budget.
+     */
+    private fun timeoutFor(request: ToolRequest): Long {
+        val capability = toolRegistry?.specFor(request.toolName)?.capability ?: return timeoutMillis
+        return if (capability == ToolCapability.DeviceControl) deviceControlTimeoutMillis else timeoutMillis
+    }
+
     private suspend fun executeInternal(request: ToolRequest): ToolResult =
-        withTimeoutOrNull(timeoutMillis) {
+        withTimeoutOrNull(timeoutFor(request)) {
             withContext(dispatcher) {
                 runCatching {
                     executor.execute(request)

@@ -126,6 +126,8 @@ import com.bytedance.zgx.solin.runtime.ModelOutputQualityGuard
 import com.bytedance.zgx.solin.runtime.OkHttpRemoteModelConnectivityProbe
 import com.bytedance.zgx.solin.runtime.RemoteChatEvent
 import com.bytedance.zgx.solin.runtime.RemoteChatRuntime
+import com.bytedance.zgx.solin.tool.ToolRegistry
+import com.bytedance.zgx.solin.tool.defaultBuiltInToolRegistry
 import com.bytedance.zgx.solin.resource.StableResourceState
 import com.bytedance.zgx.solin.runtime.RemoteConnectivityRefreshCoordinator
 import com.bytedance.zgx.solin.runtime.RemoteModelConnectivityProbe
@@ -235,6 +237,16 @@ class SolinViewModel internal constructor(
     private val bundledModelInstaller: BundledModelInstaller,
     private val skipStartupModelRuntimeWork: Boolean = false,
     private val deferPersistenceInitialization: Boolean = false,
+    /**
+     * Registry handed to [ToolExecutionController], and through it to the safety authorizer that
+     * makes the final allow/reject call before a tool runs.
+     *
+     * Must be the module-aware registry in production: the authorizer rejects any tool its registry
+     * does not know, so a built-in-only registry silently makes every module-contributed tool
+     * (plan tools, MCP tools) unexecutable. Defaults to the built-in set so tests that only drive
+     * built-in tools stay terse.
+     */
+    private val toolRegistry: ToolRegistry = defaultBuiltInToolRegistry,
 ) : ViewModel() {
     private val runtimeLock = Mutex()
     private val persistenceActionMutex = Mutex()
@@ -355,6 +367,7 @@ class SolinViewModel internal constructor(
     )
 
     private val toolExecutionController: ToolExecutionController = ToolExecutionController(
+        toolRegistry = toolRegistry,
         assistantOrchestrator = assistantOrchestrator,
         actionExecutor = actionExecutor,
         uiState = _uiState,

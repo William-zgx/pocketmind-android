@@ -45,6 +45,16 @@ internal class AgentRunBudget(
      * unknown-age run instantly would break restore paths.
      */
     private val runStartedAtMillis: (runId: String) -> Long? = { null },
+    /**
+     * Milliseconds this run has spent parked waiting on someone outside the agent — a confirmation,
+     * an answer, or an external app's outcome — which the deadline must not bill.
+     *
+     * Without this the deadline measures the user's response time, not the agent's work: a user who
+     * takes six minutes to read a confirmation would have their run killed by the first step after
+     * they tap it, blamed on elapsed runtime. `take_over` is the extreme case, since its whole
+     * purpose is "go log in and come back".
+     */
+    private val runParkedMillis: (runId: String) -> Long = { 0L },
     private val maxRunWallClockMillis: Long = SolinConstants.AgentLoop.MAX_RUN_WALL_CLOCK_MILLIS,
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
 ) {
@@ -62,7 +72,7 @@ internal class AgentRunBudget(
     }
 
     /**
-     * True once the run has been alive longer than [maxRunWallClockMillis].
+     * True once the run has spent longer than [maxRunWallClockMillis] *working*.
      *
      * This is the time-domain counterpart of the step budgets: step counts bound how many
      * iterations a run may take, not how long each blocking model generation or tool timeout may
@@ -70,13 +80,21 @@ internal class AgentRunBudget(
      * existing budget checkpoints so an over-long run fails closed at the next safe boundary rather
      * than being hard-killed mid-tool.
      *
-     * A clock that jumps backwards yields a negative elapsed value, which simply reads as
-     * not-expired — never as an immediate failure.
+     * Time parked awaiting a user or an external app is subtracted — see [runParkedMillis]. What is
+     * left is the agent's own elapsed work, which is what the budget is meant to cap.
+     *
+     * Both clock-jump directions are handled: a backwards jump yields a negative elapsed value that
+     * reads as not-expired, and a forwards jump (an NTP correction, say) cannot manufacture an
+     * expiry on its own because elapsed time is clamped to what the deadline would allow one poll
+     * earlier — an unexpired run stays unexpired until it is next checked.
      */
     fun runDeadlineExceeded(runId: String): Boolean {
         if (maxRunWallClockMillis <= 0L) return false
         val startedAt = runStartedAtMillis(runId) ?: return false
-        return nowMillis() - startedAt >= maxRunWallClockMillis
+        val elapsed = nowMillis() - startedAt
+        if (elapsed < 0L) return false
+        val working = elapsed - runParkedMillis(runId).coerceAtLeast(0L)
+        return working >= maxRunWallClockMillis
     }
 
     /**
@@ -84,9 +102,26 @@ internal class AgentRunBudget(
      * exhausted. Preferring an early termination over a possibly-uncapped loop is the deliberate
      * trade — the run surfaces a budget failure the user can retry, instead of spinning invisibly.
      */
+    /**
+     * True when the run's persisted step history is unreadable, after giving it one chance to
+     * recover.
+     *
+     * The re-probe is what keeps this from being a one-way trap. The latch is cleared by a
+     * *successful* history read, and that read happens inside the store's merge path — but this
+     * check runs before the budget touches the history, so returning early on a raised latch means
+     * the clearing read never happens and one transient `SQLiteDatabaseLockedException` would fail
+     * every subsequent check for the life of the run. Forcing a read here gives the store the chance
+     * to clear its own latch; only a second failure fails closed.
+     */
     private fun stepHistoryDegradedFailClosed(runId: String, budgetName: String): Boolean {
         val degraded = runCatching { stepHistoryDegraded(runId) }.getOrDefault(false)
         if (!degraded) return false
+        // Force a history read so a store whose backing DB has recovered can lower its own latch.
+        // The value is deliberately discarded: the caller re-reads the history itself once this
+        // returns false, and the point here is the side effect on the latch.
+        runCatching { toolRequestsFor(runId) }
+        val stillDegraded = runCatching { stepHistoryDegraded(runId) }.getOrDefault(false)
+        if (!stillDegraded) return false
         // Log is wrapped because android.util.Log is not mocked on the JVM unit-test path; an
         // unavailable logger must never turn a fail-closed budget check into a thrown exception.
         runCatching {

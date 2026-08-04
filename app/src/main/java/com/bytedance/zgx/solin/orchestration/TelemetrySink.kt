@@ -65,6 +65,15 @@ enum class TelemetryCounter {
      * count means runs are being cut short by a storage problem, not by their own step usage.
      */
     StepHistoryDegraded,
+
+    /**
+     * Incremented when a previously-degraded run's step history became readable again.
+     *
+     * Paired with [StepHistoryDegraded] so the two counters bound how long the budgets spent failing
+     * closed. Onset alone cannot distinguish a millisecond of DB contention from an outage that ended
+     * every run in the session.
+     */
+    StepHistoryRecovered,
 }
 
 // ---------------------------------------------------------------------------

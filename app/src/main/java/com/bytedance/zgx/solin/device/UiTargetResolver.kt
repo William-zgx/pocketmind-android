@@ -389,8 +389,9 @@ object UiTargetResolver {
 // Both callers now go through [scoreTargetCandidate]. Where the two differed, the resolver's numbers
 // win — those are the ones the replay corpus pins — except for the deliberately runtime-only
 // behaviours, which are called out at their branches below:
-//   * a null [kind] (a free-text `ui_tap` target with no recognizable semantic kind) has no resolver
-//     equivalent at all, so its evidence table and label penalty are preserved verbatim;
+//   * the direct text/description evidence table and its continuous label-noise curve, which the
+//     resolver had no equivalent for, are preserved verbatim. Note this table is NOT limited to a null
+//     [kind]: upstream fell back to it whenever semantic scoring came up empty, whatever the kind;
 //   * [effectivelyClickable] keeps the runtime's tap-through-a-clickable-ancestor reach.
 
 /** One scored candidate: the component breakdown plus the profile hint that matched, if any. */
@@ -405,7 +406,9 @@ internal data class UiTargetScoringOutcome(
  * @param label the text the caller wants scored. The resolver passes text+contentDescription; the
  * runtime click path additionally folds in `viewIdResourceName` and the class name, which is how it
  * can still reach an icon-only node whose only search evidence is `…:id/search_bar`.
- * @param kind null means "free-text target with no recognized semantic kind" — a runtime-only mode.
+ * @param kind null means "free-text target with no recognized semantic kind" — a runtime-only mode. Note
+ * a non-null kind does not guarantee semantic scoring succeeds; when it comes up empty the node still
+ * falls back to the direct text/description table, exactly as a null kind does.
  * @param effectivelyClickable whether a tap on this node lands on something clickable, directly or
  * through an ancestor. A lambda, not a value: on the runtime path answering it means walking the node's
  * parents (binder round-trips) and `findTargetCandidates` scores up to 240 nodes per action, so it must
@@ -447,22 +450,41 @@ internal fun scoreTargetCandidate(
 
         UiTargetKind.ResultItem -> targetScore + hintScore
         UiTargetKind.ScrollContainer -> if (node.scrollable) 700 else 0
-        // Runtime-only free-text mode: the direct text/description table below is the whole evidence.
+        // Free-text mode: no semantic evidence exists, so the direct text/description table below is
+        // the whole story. (Every other kind can also land there, when its own terms all score 0.)
         null -> 0
     }
-    val evidenceScore = if (kind == null) {
-        // Preserved verbatim from the runtime click path. It deliberately scores `text` and
-        // `contentDescription` as separate fields rather than through the joined label, because that is
-        // the only thing that separates "this node IS the thing you named" from "this node mentions it
-        // somewhere in a long row of text" when there is no semantic kind to lean on.
+    // The semantic CORE is what decides which evidence table applies: the kind-specific score plus the
+    // app-profile hint. Deliberately excludes [targetScore] — a bare phrase overlap with the target text
+    // is not semantic evidence that this node IS a search box / submit button / editable field.
+    val semanticCore = semanticScore + hintScore
+    val usesDirectTextEvidence = semanticCore <= 0
+    val evidenceScore = if (usesDirectTextEvidence) {
+        // Semantic scoring found nothing (or there is no semantic kind at all) — fall back to the direct
+        // text/description table. This fallback is NOT conditional on `kind == null`: upstream reached it
+        // whenever `semanticTargetMatchScore` returned null, for every kind. Gating it on a null kind
+        // instead cost the common case `ui_tap(target="输入")` on a comment bar or an address bar — kind
+        // resolves to EditableField/SearchEntry, every semantic term scores 0 because the node is not
+        // `editable`, and the node became unreachable even though its own text literally contains the
+        // target.
+        //
+        // It deliberately scores `text` and `contentDescription` as separate fields rather than through
+        // the joined label, because that is the only thing that separates "this node IS the thing you
+        // named" from "this node mentions it somewhere in a long row of text" when there is no semantic
+        // evidence to lean on.
         directTextTargetScore(node, normalizedLabel, normalizedTarget) ?: return null
     } else {
-        (semanticScore + hintScore + targetScore).takeIf { it > 0 } ?: return null
+        (semanticCore + targetScore).takeIf { it > 0 } ?: return null
     }
     val actionability = node.actionabilityScore()
     val position = node.positionScore(kind, metrics)
-    val riskPenalty = node.targetRiskPenalty(kind, normalizedLabel, profile, metrics)
-    val noisePenalty = labelNoisePenalty(kind, normalizedLabel)
+    // Two independent subtractions, mirroring upstream. The camera/voice/scan demotion must NOT live
+    // inside [targetRiskPenalty]: that function returns early for `editable` nodes, and SearchEntry /
+    // EditableField — the only two kinds this penalty applies to — are precisely the kinds whose real
+    // candidates are usually editable, so folding it in there silenced it almost everywhere.
+    val riskPenalty = node.targetRiskPenalty(kind, normalizedLabel, profile, metrics) +
+        negativeSemanticPenalty(kind, normalizedLabel)
+    val noisePenalty = labelNoisePenalty(kind, normalizedLabel, usesDirectTextEvidence)
     val score = evidenceScore + actionability + position - (riskPenalty + noisePenalty + fallbackPenalty)
     if (score <= 0) return null
     return UiTargetScoringOutcome(
@@ -579,16 +601,23 @@ private fun submitSearchScore(
 }
 
 /**
- * Free-text evidence table for a target with no semantic [UiTargetKind], preserved from the runtime
- * click path. Exact field matches must dominate incidental mentions inside a long joined label, so the
+ * Direct text/description evidence table, preserved from the runtime click path. Reached whenever
+ * semantic scoring produced nothing, for ANY [UiTargetKind] as well as for a free-text target with no
+ * kind at all. Exact field matches must dominate incidental mentions inside a long joined label, so the
  * gap between 900 (this node's own text IS the target) and 300 (the target appears somewhere in the
  * label, possibly via the class name) is load-bearing, not decorative.
+ *
+ * Returns null for a blank target. Without that guard `"".contains(x)` and `description == ""` make every
+ * text-less node an exact 900 match, which would hand a target-less `resolve(kind)` call a
+ * semantics-free winner and break the fail-closed contract (`resolve` with no target must find nothing
+ * unless real semantic evidence exists).
  */
 private fun directTextTargetScore(
     node: ScreenNode,
     normalizedLabel: String,
     normalizedTarget: String,
 ): Int? {
+    if (normalizedTarget.isBlank()) return null
     val text = node.text.normalizedLookupKey()
     val description = node.contentDescription.normalizedLookupKey()
     return when {
@@ -784,27 +813,46 @@ private fun ScreenNode.targetRiskPenalty(
         }
         if (scrollable) penalty += 380
         if (looksResultOrCommerceContainer(normalizedLabel, profile)) penalty += 360
-        if (kind == UiTargetKind.SearchEntry || kind == UiTargetKind.EditableField) {
-            if (
-                normalizedLabel.contains("拍照") ||
-                normalizedLabel.contains("拍立淘") ||
-                normalizedLabel.contains("拍照搜") ||
-                normalizedLabel.contains("相机") ||
-                normalizedLabel.contains("扫一扫") ||
-                normalizedLabel.contains("语音") ||
-                normalizedLabel.contains("图片") ||
-                normalizedLabel.contains("找同款")
-            ) {
-                penalty += 520
-            }
-            if (
-                normalizedLabel.contains("商品图片") ||
-                normalizedLabel.contains("推荐") ||
-                normalizedLabel.contains("猜你喜欢")
-            ) {
-                penalty += 260
-            }
-        }
+    }
+    return penalty
+}
+
+/**
+ * Demotion for a node whose label advertises a camera / voice / scan affordance, or generic feed bait,
+ * when we are looking for a text-input target.
+ *
+ * A separate subtraction rather than a branch inside [targetRiskPenalty], and the separation is the whole
+ * point: [targetRiskPenalty] returns early for `editable` nodes (its remaining work is oversized-container
+ * geometry, which is meaningless for a real input field). But SearchEntry / EditableField are exactly the
+ * kinds whose genuine candidates ARE editable, so a penalty folded in behind that early return would be
+ * skipped for almost every node it exists to punish — e.g. two editable fields labelled "搜索宝贝 拍照" and
+ * "搜索宝贝" would tie, and a document-order tie-break could send `type_text` into the camera instead of
+ * the keyboard.
+ *
+ * Applies only to the two text-input kinds: on other kinds these words are legitimate content (a
+ * ResultItem may well be a 图片 card, and "拍照" is a perfectly good SubmitSearch-adjacent label).
+ */
+private fun negativeSemanticPenalty(kind: UiTargetKind?, normalizedLabel: String): Int {
+    if (kind != UiTargetKind.SearchEntry && kind != UiTargetKind.EditableField) return 0
+    var penalty = 0
+    if (
+        normalizedLabel.contains("拍照") ||
+        normalizedLabel.contains("拍立淘") ||
+        normalizedLabel.contains("拍照搜") ||
+        normalizedLabel.contains("相机") ||
+        normalizedLabel.contains("扫一扫") ||
+        normalizedLabel.contains("语音") ||
+        normalizedLabel.contains("图片") ||
+        normalizedLabel.contains("找同款")
+    ) {
+        penalty += 520
+    }
+    if (
+        normalizedLabel.contains("商品图片") ||
+        normalizedLabel.contains("推荐") ||
+        normalizedLabel.contains("猜你喜欢")
+    ) {
+        penalty += 260
     }
     return penalty
 }
@@ -812,12 +860,19 @@ private fun ScreenNode.targetRiskPenalty(
 /**
  * Penalty for a long, noisy label — a target that "matched" only because it is a whole row of text.
  *
- * A null [kind] (runtime free-text target) uses the runtime's original continuous curve rather than
- * this stepped one. The two are close in shape but the continuous form is what the free-text evidence
- * table above was tuned against, and free-text `ui_tap` has no offline corpus to re-tune it with.
+ * Which curve applies follows the evidence table that scored the node, not the kind. The direct
+ * text/description table (see [directTextTargetScore]) is paired with the runtime's original continuous
+ * curve, because that is what it was tuned against upstream; the semantic path uses the stepped curve the
+ * offline replay corpus pins. The two are close in shape, but a node admitted by the direct table would be
+ * over-penalized by the stepped one (a 62-char address-bar label costs 1 point on the continuous curve
+ * versus 150 on the stepped one) — enough to push a legitimately matched control back under its floor.
  */
-private fun labelNoisePenalty(kind: UiTargetKind?, normalizedLabel: String): Int {
-    if (kind == null) return (normalizedLabel.length / 32).coerceAtMost(50)
+private fun labelNoisePenalty(
+    kind: UiTargetKind?,
+    normalizedLabel: String,
+    usesDirectTextEvidence: Boolean,
+): Int {
+    if (kind == null || usesDirectTextEvidence) return (normalizedLabel.length / 32).coerceAtMost(50)
     if (!kind.requiresPreciseTarget()) return 0
     return when {
         normalizedLabel.length >= 96 -> 260
