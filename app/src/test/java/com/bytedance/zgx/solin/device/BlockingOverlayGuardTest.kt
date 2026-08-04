@@ -104,4 +104,68 @@ class BlockingOverlayGuardTest {
         assertFalse("购买 must not be a dismiss label", "立即购买".isOverlayDismissLabel())
         assertFalse("overly long text is not a dismiss label", "关闭这个非常长的广告弹窗提示框内容".isOverlayDismissLabel())
     }
+
+    // ── One overlay predicate for both the ToolExecutor loop and the accessibility service ────────
+
+    @Test
+    fun labelsThatOnlyContainACloseWordAreNotDismissTargets() {
+        // The accessibility service used to run its own looser copy of this predicate: a length limit of
+        // 16 plus a bare `contains("关闭"|"close"|"dismiss")`. That made these strings qualify as close
+        // buttons on the ONE path that actually taps, so the loop could auto-tap a settings row or a
+        // payment toggle while trying to dismiss an ad. The strict predicate is now the only one.
+        listOf(
+            "关闭免密支付",
+            "关闭订单",
+            "关闭自动续费",
+            "close account",
+            "dismiss all reminders",
+            "确认关闭",
+        ).forEach { label ->
+            assertFalse(
+                "'$label' must not be treated as an overlay dismiss control",
+                label.isOverlayDismissLabel(),
+            )
+        }
+    }
+
+    @Test
+    fun dismissLabelsMustBeShortStandaloneAffordances() {
+        // The boundary that separates a real close control from content text that mentions closing.
+        assertTrue("关闭".isOverlayDismissLabel())
+        assertTrue("不感兴趣".isOverlayDismissLabel())
+        // 8 normalized characters is the cap; anything longer is content, not an affordance.
+        assertFalse("我知道了不再提醒我".isOverlayDismissLabel())
+        assertFalse("".isOverlayDismissLabel())
+        assertFalse((null as String?).isOverlayDismissLabel())
+    }
+
+    @Test
+    fun blockingOverlayMarkerPredicateIsSharedAndSubstringBased() {
+        // Markers are intentionally substring matches (a promo banner embeds them in longer copy), unlike
+        // dismiss labels which must be exact. Exposing the predicate is what lets the accessibility
+        // service's `looksLikeSearchBlockingOverlay` share this exact list instead of re-listing it.
+        assertTrue("恭喜已获得 88 元红包".hasBlockingOverlayMarker())
+        assertTrue("限时抢购倒计时 00:30".hasBlockingOverlayMarker())
+        assertFalse("商品详情".hasBlockingOverlayMarker())
+        assertFalse("".hasBlockingOverlayMarker())
+    }
+
+    @Test
+    fun overlayDetectionThresholdIsTheSharedConstant() {
+        // Both detectors count markers against the same threshold; a single marker is normal commerce
+        // copy, two or more is an interstitial.
+        assertEquals(2, BLOCKING_OVERLAY_MARKER_THRESHOLD)
+
+        val oneMarker = snapshot(
+            id = "one",
+            nodes = listOf(node(id = "promo", text = "限时抢购"), node(id = "body", text = "商品详情")),
+        )
+        val twoMarkers = snapshot(
+            id = "two",
+            nodes = listOf(node(id = "promo", text = "限时抢购"), node(id = "gift", text = "红包")),
+        )
+
+        assertFalse(oneMarker.hasBlockingOverlay())
+        assertTrue(twoMarkers.hasBlockingOverlay())
+    }
 }

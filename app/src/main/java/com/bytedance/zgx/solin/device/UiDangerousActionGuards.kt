@@ -83,8 +83,14 @@ private fun ScreenNode.hasDangerousActionControl(): Boolean {
     return label.hasDangerousActionText()
 }
 
-// ── Blocking overlay / interstitial detection (shared by the search-focus loop and the
-// ToolExecutor dismiss loop) ────────────────────────────────────────────────────────────────
+// ── Blocking overlay / interstitial detection ────────────────────────────────────────────────────
+//
+// ONE definition, shared by all three consumers: the ToolExecutor dismiss loop, the search-focus loop
+// inside SolinAccessibilityService, and the snapshot-level guards below. The accessibility service used
+// to keep a looser private copy (dismiss-label length limit 16 instead of 8, plus a bare
+// `contains("关闭"|"close"|"dismiss")` that no exactness check gated) — so the runtime, the only one
+// that actually taps, was the most willing to treat arbitrary content text as a close button. Both are
+// now the strict version; a stricter predicate can only refuse taps, which is the fail-closed direction.
 
 private val blockingOverlayMarkers = listOf(
     "优惠券",
@@ -107,9 +113,20 @@ private val overlayDismissLabels = listOf(
     "不感兴趣",
 )
 
+/** How many blocking-overlay markers a screen must show before it counts as occluded. */
+internal const val BLOCKING_OVERLAY_MARKER_THRESHOLD = 2
+
+/**
+ * Longest a string can be and still plausibly be a standalone close/skip affordance.
+ *
+ * Deliberately tight: real close controls are 2-4 characters ("关闭", "我知道了", "skip"). The looser
+ * limit the accessibility service used to apply let "关闭免密支付" through as a dismiss target.
+ */
+private const val MAX_OVERLAY_DISMISS_LABEL_LENGTH = 8
+
 internal fun String?.isOverlayDismissLabel(): Boolean {
     val normalized = normalizedLookupKey()
-    if (normalized.isBlank() || normalized.length > 8) return false
+    if (normalized.isBlank() || normalized.length > MAX_OVERLAY_DISMISS_LABEL_LENGTH) return false
     // Require an (almost) exact close/skip affordance, not a substring of longer content text.
     // A real dialog close control is a short standalone label; matching substrings of long text
     // (e.g. a product description that happens to contain 关闭/跳过) caused false-positive taps.
@@ -118,7 +135,7 @@ internal fun String?.isOverlayDismissLabel(): Boolean {
     return normalized in exactAscii
 }
 
-private fun String?.hasBlockingOverlayMarker(): Boolean {
+internal fun String?.hasBlockingOverlayMarker(): Boolean {
     val normalized = normalizedLookupKey()
     if (normalized.isBlank()) return false
     return blockingOverlayMarkers.any { marker -> normalized.contains(marker.normalizedLookupKey()) }
@@ -128,12 +145,13 @@ private fun ScreenNode.overlayLabel(): String = text.ifBlank { contentDescriptio
 
 /**
  * Heuristic: the screen carries a promotional/interstitial overlay that occludes real content.
- * True when at least two nodes match blocking-overlay markers (coupon/countdown/red-packet/…),
- * matching the search-focus loop's existing `looksLikeSearchBlockingOverlay` threshold.
+ * True when at least [BLOCKING_OVERLAY_MARKER_THRESHOLD] nodes match blocking-overlay markers
+ * (coupon/countdown/red-packet/…), the same threshold the search-focus loop's
+ * `looksLikeSearchBlockingOverlay` applies.
  */
 internal fun ScreenStateSnapshot.hasBlockingOverlay(): Boolean {
     val markerCount = nodes.count { node -> node.overlayLabel().hasBlockingOverlayMarker() }
-    return markerCount >= 2
+    return markerCount >= BLOCKING_OVERLAY_MARKER_THRESHOLD
 }
 
 /**

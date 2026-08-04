@@ -2194,194 +2194,50 @@ private class ScreenStateCollector(
     }
 }
 
+/**
+ * One live node considered as a click/type target, plus the transient id the model may address it by.
+ *
+ * [label] is the wide runtime label ([runtimeNodeSearchLabel]) — it folds in `viewIdResourceName` and
+ * the class name, which is often an icon-only control's only search evidence.
+ */
 private data class NodeCandidate(
     val node: AccessibilityNodeInfo,
     val id: String,
     val label: String,
 ) {
-    fun matchesTarget(target: String): Boolean {
-        return targetMatchScore(target) != null
-    }
-
+    /**
+     * Score for this node against [target], or null when it is not a usable target.
+     *
+     * The arithmetic itself lives in [runtimeTargetMatchScore] — the ONE scoring core also used by
+     * `UiTargetResolver`, so the offline `UiAutomatorDumpReplayTest` corpus now covers the ranking that
+     * really decides where a device gets tapped. What stays here is the part only a live node can
+     * supply: the transient node-id direct hit, and "clickable through an ancestor".
+     */
     fun targetMatchScore(
         target: String,
         profile: AppInteractionProfile? = null,
         rootBounds: ScreenBounds? = null,
     ): Int? {
         if (!node.isEnabled) return null
-        transientNodeIdTargetMatchScore(id, target)?.let { score -> return score + actionabilityScore() }
-        val normalizedTarget = target.normalizedLookupKey()
-        if (normalizedTarget.isBlank()) return null
-
-        val kind = UiTargetResolver.kindForTarget(target)
-        val text = node.text.normalizedNodeText().normalizedLookupKey()
-        val description = node.contentDescription.normalizedNodeText().normalizedLookupKey()
-        val normalizedLabel = label.normalizedLookupKey()
-        if (kind == UiTargetKind.SubmitSearch && looksNonTextSearchControl(normalizedLabel)) return null
-        semanticTargetMatchScore(target, normalizedLabel, profile)?.let { score ->
-            val finalScore = score +
-                actionabilityScore() +
-                targetPositionScore(kind, rootBounds) -
-                labelLengthPenalty(normalizedLabel) -
-                targetRiskPenalty(kind, normalizedLabel, profile, rootBounds) -
-                negativeSemanticPenalty(kind, normalizedLabel)
-            return finalScore.takeIf { it >= minimumRuntimeScore(kind) }
+        val screenNode = node.toScreenNode(id = id)
+        // A model addressing an observed node id has named THE node; that is stronger evidence than any
+        // text heuristic and deliberately bypasses the kind-specific minimum score. Kept ahead of the
+        // shared core (which knows nothing about transient ids) rather than folded into it.
+        transientNodeIdTargetMatchScore(id, target)?.let { score ->
+            return score + screenNodeActionabilityScore(screenNode)
         }
-        val baseScore = when {
-            text == normalizedTarget || description == normalizedTarget -> 900
-            normalizedLabel == normalizedTarget -> 850
-            text.contains(normalizedTarget) || description.contains(normalizedTarget) -> 650
-            normalizedLabel.contains(normalizedTarget) -> 300
-            else -> return null
-        }
-        val finalScore = baseScore + actionabilityScore() + targetPositionScore(kind, rootBounds) -
-            (normalizedLabel.length / 32).coerceAtMost(50) -
-            targetRiskPenalty(kind, normalizedLabel, profile, rootBounds) -
-            negativeSemanticPenalty(kind, normalizedLabel)
-        return finalScore.takeIf { it >= minimumRuntimeScore(kind) }
-    }
-
-    private fun semanticTargetMatchScore(
-        target: String,
-        normalizedLabel: String,
-        profile: AppInteractionProfile?,
-    ): Int? {
-        val kind = UiTargetResolver.kindForTarget(target) ?: return null
-        val hintScore = profileHintScore(kind, profile, normalizedLabel)
-        val score = when (kind) {
-            UiTargetKind.SearchEntry -> {
-                var value = hintScore
-                if (node.isEditable) value += 780
-                if (normalizedLabel.hasSearchEntryStrongEvidence()) value += 680
-                if (normalizedLabel.hasGenericSearchEvidence()) value += if (node.isEditable) 560 else 300
-                if (looksInputLike(normalizedLabel)) value += 180
-                if (normalizedLabel == "搜索" && !node.isEditable) value -= 260
-                value
-            }
-
-            UiTargetKind.EditableField ->
-                if (node.isEditable) 760 else 0
-
-            UiTargetKind.SubmitSearch ->
-                if (
-                    !node.isEditable &&
-                    !looksNonTextSearchControl(normalizedLabel) &&
-                    (looksSearchSubmitLike(normalizedLabel) || hintScore > 0)
-                ) {
-                    700 + hintScore
-                } else {
-                    0
-                }
-
-            UiTargetKind.FilterEntry ->
-                if (normalizedLabel.contains("筛选") || normalizedLabel.contains("filter")) 700 else 0
-
-            UiTargetKind.ScrollContainer ->
-                if (node.isScrollable) 700 else 0
-
-            UiTargetKind.ResultItem -> 0
-        }
-        return score.takeIf { it > 0 }
-    }
-
-    private fun actionabilityScore(): Int {
-        var score = 0
-        if (node.isClickable) score += 100
-        if (node.isEditable) score += 100
-        if (node.isScrollable) score += 100
-        if (node.isEnabled) score += 20
-        return score
-    }
-
-    private fun labelLengthPenalty(normalizedLabel: String): Int =
-        (normalizedLabel.length / 16).coerceAtMost(400)
-
-    private fun targetRiskPenalty(
-        kind: UiTargetKind?,
-        normalizedLabel: String,
-        profile: AppInteractionProfile?,
-        rootBounds: ScreenBounds?,
-    ): Int {
-        if (kind?.requiresPreciseTarget() != true || node.isEditable) return 0
-        var penalty = 0
-        if (kind == UiTargetKind.SearchEntry && isBrowserResultSearchBarLabel(normalizedLabel)) return penalty
-        val areaRatio = areaRatio(rootBounds)
-        val heightRatio = heightRatio(rootBounds)
-        penalty += when {
-            areaRatio >= 0.35f || heightRatio >= 0.55f -> 820
-            areaRatio >= 0.20f || heightRatio >= 0.38f -> 460
-            areaRatio >= 0.12f -> 180
-            else -> 0
-        }
-        if (node.isScrollable) penalty += 380
-        if (looksResultOrCommerceContainer(normalizedLabel, profile)) penalty += 360
-        return penalty
-    }
-
-    private fun areaRatio(rootBounds: ScreenBounds?): Float {
-        val bounds = node.safeBounds() ?: return 0f
-        val rootArea = (rootBounds?.width() ?: 0).toLong() * (rootBounds?.height() ?: 0).toLong()
-        if (rootArea <= 0L) return 0f
-        val nodeArea = bounds.width().toLong() * bounds.height().toLong()
-        return nodeArea.toFloat() / rootArea.toFloat()
-    }
-
-    private fun heightRatio(rootBounds: ScreenBounds?): Float {
-        val bounds = node.safeBounds() ?: return 0f
-        val rootHeight = rootBounds?.height() ?: return 0f
-        if (rootHeight <= 0) return 0f
-        return bounds.height().toFloat() / rootHeight.toFloat()
-    }
-
-    private fun targetPositionScore(kind: UiTargetKind?, rootBounds: ScreenBounds?): Int {
-        kind ?: return 0
-        val bounds = node.safeBounds() ?: return 0
-        val safeRootBounds = rootBounds ?: return 0
-        val rootWidth = safeRootBounds.width()
-        val rootHeight = safeRootBounds.height()
-        if (rootWidth <= 0 || rootHeight <= 0) return 0
-        val topRatio = (bounds.top - safeRootBounds.top).toFloat() / rootHeight.toFloat()
-        val widthRatio = bounds.width().toFloat() / rootWidth.toFloat()
-        val heightRatio = bounds.height().toFloat() / rootHeight.toFloat()
-        return when (kind) {
-            UiTargetKind.SearchEntry,
-            UiTargetKind.EditableField -> {
-                var score = 0
-                if (topRatio <= 0.25f) score += 140
-                if (widthRatio >= 0.35f && heightRatio >= 0.02f && heightRatio <= 0.14f) score += 140
-                if (topRatio >= 0.65f) score -= 180
-                score
-            }
-
-            UiTargetKind.SubmitSearch -> if (topRatio <= 0.30f) 80 else 0
-            else -> 0
-        }
-    }
-
-    private fun negativeSemanticPenalty(kind: UiTargetKind?, normalizedLabel: String): Int {
-        kind ?: return 0
-        if (kind != UiTargetKind.SearchEntry && kind != UiTargetKind.EditableField) return 0
-        var penalty = 0
-        if (
-            normalizedLabel.contains("拍照") ||
-            normalizedLabel.contains("拍立淘") ||
-            normalizedLabel.contains("拍照搜") ||
-            normalizedLabel.contains("相机") ||
-            normalizedLabel.contains("扫一扫") ||
-            normalizedLabel.contains("语音") ||
-            normalizedLabel.contains("图片") ||
-            normalizedLabel.contains("找同款")
-        ) {
-            penalty += 520
-        }
-        if (
-            normalizedLabel.contains("商品图片") ||
-            normalizedLabel.contains("推荐") ||
-            normalizedLabel.contains("猜你喜欢")
-        ) {
-            penalty += 260
-        }
-        return penalty
+        return runtimeTargetMatchScore(
+            node = screenNode,
+            label = label,
+            target = target,
+            profile = profile,
+            rootBounds = rootBounds,
+            // A row whose own `clickable` is false but whose parent handles the touch is still tappable
+            // via [activateCandidate]; the offline resolver has no parent to walk, so this reach is
+            // supplied here. Lazy because the walk costs binder round-trips and only the SubmitSearch
+            // branch consults it.
+            effectivelyClickable = { node.isClickable || node.clickableSelfOrAncestor() != null },
+        )
     }
 }
 
@@ -2411,33 +2267,6 @@ internal fun transientNodeIdTargetMatchScore(candidateId: String, target: String
     if (normalizedId == normalizedTarget) return 1_000
     return null
 }
-
-private fun profileHintScore(
-    kind: UiTargetKind,
-    profile: AppInteractionProfile?,
-    normalizedLabel: String,
-): Int {
-    val hints = when (kind) {
-        UiTargetKind.SearchEntry -> profile?.searchEntryHints.orEmpty()
-        UiTargetKind.SubmitSearch -> profile?.submitHints.orEmpty()
-        UiTargetKind.ResultItem -> profile?.resultHints.orEmpty()
-        else -> emptySet()
-    }
-    return hints.maxOfOrNull { hint ->
-        phraseScore(normalizedLabel, hint.normalizedLookupKey()) ?: 0
-    } ?: 0
-}
-
-private fun minimumRuntimeScore(kind: UiTargetKind?): Int =
-    when (kind) {
-        UiTargetKind.SearchEntry -> 560
-        UiTargetKind.EditableField -> 600
-        UiTargetKind.SubmitSearch -> 650
-        UiTargetKind.FilterEntry -> 430
-        UiTargetKind.ScrollContainer -> 650
-        UiTargetKind.ResultItem,
-        null -> 1
-    }
 
 private data class UiPrimitiveResult(
     val performed: Boolean,
@@ -2504,6 +2333,16 @@ private fun AccessibilityNodeInfo.findTargetCandidate(
 ): NodeCandidate? =
     findTargetCandidates(target = target, predicate = predicate, limit = 1).firstOrNull()
 
+/**
+ * The dismiss control of a transient overlay, if this window has one.
+ *
+ * Uses the strict `isOverlayDismissLabel` from `UiDangerousActionGuards` — the same predicate the
+ * ToolExecutor dismiss loop uses. The runtime used to carry its own looser copy (length limit 16, plus a
+ * bare `contains("关闭"|"close"|"dismiss")`), which meant a "关闭订单" / "关闭免密支付" row, or any long
+ * product description mentioning 关闭, qualified as a close button and got auto-tapped. Unifying on the
+ * strict predicate (short, standalone, near-exact affordance) can only ever refuse more taps, never
+ * more — the fail-closed direction.
+ */
 private fun AccessibilityNodeInfo.findTransientOverlayDismissCandidate(): NodeCandidate? =
     findNodeCandidate { candidate ->
         candidate.node.isEnabled &&
@@ -2512,8 +2351,19 @@ private fun AccessibilityNodeInfo.findTransientOverlayDismissCandidate(): NodeCa
                     candidate.node.clickableSelfOrAncestor() != null ||
                     candidate.node.safeBounds() != null
                 ) &&
-            candidate.label.normalizedLookupKey().isTransientOverlayDismissLabel()
+            // Deliberately NOT `candidate.label`: that wide label appends viewIdResourceName and the
+            // class name, so no real node could ever satisfy the strict predicate's exact/short match.
+            candidate.node.overlayLabel().isOverlayDismissLabel()
     }
+
+/**
+ * The visible label used for overlay judgments: text, else contentDescription.
+ *
+ * Matches `ScreenNode.overlayLabel()` on the guards side so both overlay predicates see the same string
+ * for the same node.
+ */
+private fun AccessibilityNodeInfo.overlayLabel(): String =
+    text.normalizedNodeText() ?: contentDescription.normalizedNodeText() ?: ""
 
 private fun AccessibilityNodeInfo.looksLikeSearchBlockingOverlay(): Boolean {
     var markerCount = 0
@@ -2522,13 +2372,12 @@ private fun AccessibilityNodeInfo.looksLikeSearchBlockingOverlay(): Boolean {
         // Counts label matches only; nothing is retained past the visit.
         recycleVisitedNodes = true,
     ) { node ->
-        val label = node.nodeSearchLabel().normalizedLookupKey()
-        if (label.isNotBlank() && label.hasSearchBlockingOverlayMarker()) {
+        if (node.overlayLabel().hasBlockingOverlayMarker()) {
             markerCount += 1
         }
-        markerCount < 2
+        markerCount < BLOCKING_OVERLAY_MARKER_THRESHOLD
     }
-    return markerCount >= 2
+    return markerCount >= BLOCKING_OVERLAY_MARKER_THRESHOLD
 }
 
 private fun AccessibilityNodeInfo.findTargetCandidates(
@@ -2592,32 +2441,6 @@ private fun AccessibilityNodeInfo.findSearchSubmitCandidate(
         .maxByOrNull { (_, score) -> score }
         ?.first
 }
-
-private fun String.isTransientOverlayDismissLabel(): Boolean {
-    if (isBlank() || length > 16) return false
-    return this == "关闭" ||
-        this == "取消" ||
-        this == "跳过" ||
-        this == "稍后" ||
-        this == "暂不" ||
-        this == "我知道了" ||
-        this == "不感兴趣" ||
-        contains("关闭") ||
-        contains("close") ||
-        contains("dismiss")
-}
-
-private fun String.hasSearchBlockingOverlayMarker(): Boolean =
-    listOf(
-        "优惠券",
-        "立即购买",
-        "倒计时",
-        "限时抢购",
-        "专属权益",
-        "已获得",
-        "红包",
-        "弹窗",
-    ).any { marker -> contains(marker.normalizedLookupKey()) }
 
 /**
  * Whether this node is close enough to [anchorEditable] to plausibly be its submit control.
@@ -2749,12 +2572,12 @@ private fun AccessibilityNodeInfo.countsTowardScreenNodeIndex(): Boolean =
     isVisibleToUser && !isPassword && isMeaningfulScreenNode()
 
 private fun AccessibilityNodeInfo.nodeSearchLabel(): String =
-    listOfNotNull(
-        text.normalizedNodeText(),
-        contentDescription.normalizedNodeText(),
-        viewIdResourceName?.takeIf { it.isNotBlank() },
-        className?.toString()?.takeIf { it.isNotBlank() },
-    ).joinToString(" ")
+    runtimeNodeSearchLabel(
+        text = text.normalizedNodeText(),
+        contentDescription = contentDescription.normalizedNodeText(),
+        viewIdResourceName = viewIdResourceName,
+        className = className?.toString(),
+    )
 
 private fun AccessibilityNodeInfo.fingerprint(): String {
     val bounds = safeBounds()
@@ -2916,34 +2739,3 @@ private fun CharSequence?.normalizedNodeText(): String? =
         ?.replace(Regex("\\s+"), " ")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
-
-private fun String.hasGenericSearchEvidence(): Boolean =
-    contains("搜索") ||
-        contains("搜") ||
-        contains("search") ||
-        contains("查找") ||
-        contains("查询") ||
-        contains("검색")
-
-private fun String.hasSearchEntryStrongEvidence(): Boolean =
-    contains("搜索栏") ||
-        contains("搜索框") ||
-        contains("搜索商品") ||
-        contains("搜索发现") ||
-        contains("搜索宝贝") ||
-        contains("搜索京东") ||
-        contains("搜索好物") ||
-        contains("搜索输入") ||
-        contains("输入文字") ||
-        contains("输入关键词") ||
-        contains("请输入搜索词") ||
-        contains("地址栏") ||
-        contains("网址") ||
-        contains("目的地") ||
-        contains("去哪儿") ||
-        contains("搜地点") ||
-        contains("公交地铁") ||
-        contains("搜索词或网址") ||
-        contains("searchbox") ||
-        contains("searchfield") ||
-        contains("omnibox")
