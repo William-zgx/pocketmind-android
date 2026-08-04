@@ -166,6 +166,10 @@ class SolinVoiceInputConsentUiTest {
                     onSaveHuggingFaceAccessToken = {},
                     onClearHuggingFaceAccessToken = {},
                     onStopGeneration = {},
+                    // These UI tests exercise sheets unrelated to permission gating, so an
+                    // empty requirement list is the accurate input: nothing is being confirmed.
+                    resolveRuntimePermissionRequirements = { emptyList() },
+                    resolveSpecialAccessRequirements = { emptyList() },
                 )
             }
         }
