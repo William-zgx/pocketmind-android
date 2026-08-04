@@ -3,11 +3,13 @@ package com.bytedance.zgx.solin
 import android.app.UiAutomation
 import android.content.ComponentName
 import android.content.Context
+import android.os.Build
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bytedance.zgx.solin.debug.DeviceControlEvalActivity
 import com.bytedance.zgx.solin.device.SolinAccessibilityService
 import com.bytedance.zgx.solin.device.ScreenStateReadResult
+import com.bytedance.zgx.solin.multimodal.RawScreenshotReadResult
 import com.bytedance.zgx.solin.device.UiActionFailureKind
 import com.bytedance.zgx.solin.device.UiActionReadResult
 import com.bytedance.zgx.solin.device.UiActionStatus
@@ -112,6 +114,37 @@ class SolinAccessibilityServiceDeviceControlTest {
                 "Expected typed text in after observation, got: $afterText",
                 afterText.contains("device control emulator input"),
             )
+        }
+    }
+
+    @Test
+    fun accessibilityServiceCapturesRawScreenshotForRemoteVisionOnDevice() {
+        assumeTrue(
+            "AccessibilityService.takeScreenshot requires API 30+.",
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
+        )
+        resetMainActivityPersistentState(
+            context = targetContext,
+            inferenceMode = InferenceMode.Remote,
+            remoteModelConfig = ReadyRemoteModelConfig,
+        )
+        enableSolinAccessibilityService()
+
+        ActivityScenario.launch<MainActivity>(
+            mainActivitySkipStartupIntent(targetContext, ReadyRemoteModelConfig),
+        ).use {
+            waitForScreenState(textContains = "Solin")
+
+            val capture = SolinAccessibilityService.performTakeScreenshotRaw("device-test")
+
+            assertTrue(
+                "Expected Available screenshot, got: $capture",
+                capture is RawScreenshotReadResult.Available,
+            )
+            val available = capture as RawScreenshotReadResult.Available
+            assertTrue("Screenshot JPEG bytes must be non-empty", available.jpegBytes.isNotEmpty())
+            assertTrue("Screenshot width must be positive", available.widthPx > 0)
+            assertTrue("Screenshot height must be positive", available.heightPx > 0)
         }
     }
 

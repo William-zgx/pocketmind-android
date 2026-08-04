@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Path
@@ -13,12 +14,18 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Display
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.TextView
+import androidx.annotation.RequiresApi
+import com.bytedance.zgx.solin.multimodal.JPEG_QUALITY
+import com.bytedance.zgx.solin.multimodal.RawScreenshotReadResult
+import com.bytedance.zgx.solin.multimodal.compactedForVision
+import java.io.ByteArrayOutputStream
 import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.UUID
@@ -27,6 +34,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
 
 private const val MAX_SCREEN_TEXT_NODE_COUNT = 120
 private const val MAX_SCREEN_STATE_NODE_WALK = 240
@@ -35,6 +43,8 @@ private const val SCREEN_TEXT_WALK_BUDGET_MILLIS = 1_500L
 private const val SCREEN_STATE_WALK_BUDGET_MILLIS = 3_000L
 private const val OBSERVE_HARD_TIMEOUT_MILLIS = 5_000L
 private const val UI_ACTION_HARD_TIMEOUT_MILLIS = 4_000L
+private const val TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS = 6_000L
+private const val TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS = 900L
 private const val ACTIVE_WINDOW_ROOT_WAIT_MILLIS = 1_000L
 private const val DEFAULT_POST_ACTION_WAIT_MILLIS = 250L
 private const val MAX_SEARCH_ENTRY_FOCUS_ATTEMPTS = 4
@@ -59,6 +69,15 @@ private val deviceControlTask = ThreadLocal<DeviceControlTaskLease?>()
 class SolinAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlOverlayView: TextView? = null
+
+    /**
+     * Dedicated executor for [takeScreenshot] result delivery. NOT the device-control executor
+     * (that thread blocks on the capture latch) and NOT the main thread (which can be busy rendering
+     * a window transition right when the loop captures, delaying delivery past the timeout).
+     */
+    private val screenshotCallbackExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "SolinScreenshotCallback").apply { isDaemon = true }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -492,6 +511,109 @@ class SolinAccessibilityService : AccessibilityService() {
         latch.await(500L, TimeUnit.MILLISECONDS)
         throwIfInterrupted()
         return completed
+    }
+
+    /** Wall-clock of the last takeScreenshot call, for the ~1/sec framework rate-limit guard. */
+    @Volatile
+    private var lastScreenshotAtMillis = 0L
+
+    /**
+     * Captures the current screen via [AccessibilityService.takeScreenshot] (API 30+) and returns
+     * transient compacted JPEG bytes for the opt-in remote-vision GUI automation path. NO
+     * MediaProjection and NO foreground service: the already-connected accessibility service
+     * captures directly. Screen-pixel egress is governed upstream by the in-app opt-in toggle plus
+     * the replanner's first-confirm gate — not by any per-capture OS consent dialog.
+     *
+     * Runs on the device-control thread inside [runDeviceControlWithTimeout]. The framework
+     * screenshot callback MUST be delivered on a different thread (this one blocks on the latch), so
+     * [mainExecutor] is used — mirroring how [dispatchTapGesture] receives its gesture callback off
+     * the control thread. Fails closed (returns [RawScreenshotReadResult.Failed]) on unsupported API,
+     * timeout, framework error, or decode failure.
+     */
+    private fun takeScreenshotRaw(): RawScreenshotReadResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return RawScreenshotReadResult.Failed("当前系统不支持无障碍截图")
+        }
+        throwIfInterrupted()
+        // Framework rate-limits takeScreenshot to ~1/sec (ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT).
+        // Space consecutive captures so a fast local model does not trip it and prematurely stop the loop.
+        val sinceLast = System.currentTimeMillis() - lastScreenshotAtMillis
+        if (sinceLast in 0 until TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS) {
+            sleepForUiIdle(TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS - sinceLast)
+        }
+        val latch = CountDownLatch(1)
+        val resultRef = AtomicReference<RawScreenshotReadResult>(
+            RawScreenshotReadResult.Failed("当前屏幕截图不可用"),
+        )
+        try {
+            submitUiSideEffect {
+                takeScreenshot(
+                    Display.DEFAULT_DISPLAY,
+                    screenshotCallbackExecutor,
+                    object : TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: ScreenshotResult) {
+                            resultRef.set(screenshot.toRawScreenshotReadResult())
+                            latch.countDown()
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            resultRef.set(takeScreenshotErrorToResult(errorCode))
+                            latch.countDown()
+                        }
+                    },
+                )
+            }
+        } catch (throwable: Throwable) {
+            return RawScreenshotReadResult.Failed("当前屏幕截图调用失败(${throwable.javaClass.simpleName})")
+        }
+        val done = latch.await(TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+        lastScreenshotAtMillis = System.currentTimeMillis()
+        throwIfInterrupted()
+        if (!done) return RawScreenshotReadResult.Failed("当前屏幕截图超时")
+        return resultRef.get()
+    }
+
+    /**
+     * Converts a [ScreenshotResult] into compacted JPEG bytes, reusing [compactedForVision]/
+     * [JPEG_QUALITY] (same compaction as the OCR/remote image paths). The wrapped hardware bitmap is
+     * immutable, so it is copied to a software ARGB_8888 bitmap before JPEG encoding. All bitmaps are
+     * recycled and the [android.hardware.HardwareBuffer] is closed to avoid leaks.
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun ScreenshotResult.toRawScreenshotReadResult(): RawScreenshotReadResult {
+        val buffer = hardwareBuffer
+        return try {
+            val wrapped = Bitmap.wrapHardwareBuffer(buffer, colorSpace)
+                ?: return RawScreenshotReadResult.Failed("当前屏幕截图解码失败")
+            val software = try {
+                wrapped.copy(Bitmap.Config.ARGB_8888, false)
+            } finally {
+                wrapped.recycle()
+            } ?: return RawScreenshotReadResult.Failed("当前屏幕截图解码失败")
+            try {
+                val vision = software.compactedForVision()
+                try {
+                    val output = ByteArrayOutputStream()
+                    if (!vision.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                        RawScreenshotReadResult.Failed("当前屏幕截图编码失败")
+                    } else {
+                        RawScreenshotReadResult.Available(
+                            jpegBytes = output.toByteArray(),
+                            widthPx = vision.width,
+                            heightPx = vision.height,
+                        )
+                    }
+                } finally {
+                    if (vision !== software) vision.recycle()
+                }
+            } finally {
+                software.recycle()
+            }
+        } catch (_: Throwable) {
+            RawScreenshotReadResult.Failed("当前屏幕截图不可用")
+        } finally {
+            buffer.close()
+        }
     }
 
     /**
@@ -1160,6 +1282,27 @@ class SolinAccessibilityService : AccessibilityService() {
             }
         }
 
+        /**
+         * Captures the current screen as transient compacted JPEG bytes for the opt-in remote-vision
+         * GUI automation path, via [AccessibilityService.takeScreenshot]. Fails closed to
+         * [RawScreenshotReadResult.Failed] when the accessibility service is not connected. [requestId]
+         * is a correlation/log id only — there is no per-request MediaProjection consent on this path.
+         */
+        internal fun performTakeScreenshotRaw(requestId: String): RawScreenshotReadResult {
+            val task = deviceControlTasks.startTask()
+                ?: return RawScreenshotReadResult.Failed("未开启Solin无障碍服务")
+            val service = task.owner as? SolinAccessibilityService
+                ?: return RawScreenshotReadResult.Failed("未开启Solin无障碍服务")
+            showControlProgress(task, service, "正在截取当前屏幕")
+            return runDeviceControlWithTimeout(
+                task = task,
+                timeoutMillis = TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS + UI_ACTION_HARD_TIMEOUT_MILLIS,
+                fallback = { RawScreenshotReadResult.Failed("当前屏幕截图超时") },
+            ) {
+                service.takeScreenshotRaw()
+            }
+        }
+
         internal fun showControlProgress(message: String) {
             (deviceControlTasks.currentOwner() as? SolinAccessibilityService)
                 ?.showControlProgressOverlay(message)
@@ -1234,6 +1377,14 @@ class SolinAccessibilityService : AccessibilityService() {
             (this + UI_ACTION_HARD_TIMEOUT_MILLIS).coerceAtMost(MAX_UI_ACTION_TIMEOUT_MILLIS)
     }
 }
+
+/**
+ * Maps an [AccessibilityService.TakeScreenshotCallback] error code to a fail-closed
+ * [RawScreenshotReadResult.Failed]. Pure (no Android instances) so it is unit-testable. The code is
+ * embedded for diagnostics; every error fails closed (no pixels leave the device).
+ */
+internal fun takeScreenshotErrorToResult(errorCode: Int): RawScreenshotReadResult.Failed =
+    RawScreenshotReadResult.Failed("当前屏幕截图失败(code=$errorCode)")
 
 private fun <T> submitUiSideEffect(action: () -> T): T {
     val task = deviceControlTask.get()

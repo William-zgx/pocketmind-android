@@ -98,7 +98,10 @@ class AndroidManifestTest {
         assertTrue(serviceConfig.contains("""android:canRetrieveWindowContent="true""""))
         assertTrue(serviceConfig.contains("""typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged"""))
         assertTrue(serviceConfig.contains("""android:canPerformGestures="true""""))
-        assertTrue(!serviceConfig.contains("""canTakeScreenshot="true""""))
+        // Screenshot capability is required for the opt-in remote-vision GUI automation path
+        // (AccessibilityService.takeScreenshot); the framework throws SecurityException without it.
+        // Screen-pixel egress is still gated by the in-app opt-in + first-confirm, not by this flag.
+        assertTrue(serviceConfig.contains("""android:canTakeScreenshot="true""""))
     }
 
     @Test

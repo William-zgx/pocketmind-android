@@ -13,6 +13,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Handler
 import android.os.HandlerThread
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -53,10 +54,47 @@ sealed interface CurrentScreenshotOcrReadResult {
     data class Failed(val reason: String) : CurrentScreenshotOcrReadResult
 }
 
+/**
+ * Captures the currently visible screen as transient JPEG pixels for the opt-in
+ * remote-vision GUI automation path (kimi-k2.5 sees the screenshot and decides taps).
+ *
+ * Unlike [CurrentScreenshotOcrProvider], whose output is LocalOnly OCR text with pixels
+ * recycled on-device, this provider returns the compacted JPEG bytes so they can cross the
+ * remote boundary AFTER user consent. The bytes are never persisted — the caller must send
+ * them and drop the reference. Consent, one-shot capture, and the remote-vision opt-in gate
+ * live upstream in the replanner ([com.bytedance.zgx.solin.orchestration]); this interface
+ * only performs the capture. See [RemoteVisionScreenshotContract] for the boundary invariants.
+ */
+interface RawScreenshotProvider {
+    fun captureCurrentScreenshotRaw(
+        requestId: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): RawScreenshotReadResult
+}
+
+sealed interface RawScreenshotReadResult {
+    data object MissingConsent : RawScreenshotReadResult
+
+    /**
+     * Transient compacted JPEG pixels of the current screen. Never persisted; the caller
+     * base64-encodes these into a [com.bytedance.zgx.solin.ChatImageAttachment] for a single
+     * remote send, then drops the reference. [widthPx]/[heightPx] are the compacted (sent)
+     * dimensions — tap coordinates remain resolution-agnostic (0-1000 normalized) so these
+     * are metadata only.
+     */
+    class Available(
+        val jpegBytes: ByteArray,
+        val widthPx: Int,
+        val heightPx: Int,
+    ) : RawScreenshotReadResult
+
+    data class Failed(val reason: String) : RawScreenshotReadResult
+}
+
 class AndroidCurrentScreenshotOcrProvider(
     private val context: Context,
     private val imageTextExtractor: ImageTextExtractor = MlKitImageTextExtractor(context),
-) : CurrentScreenshotOcrProvider {
+) : CurrentScreenshotOcrProvider, RawScreenshotProvider {
     private val pendingConsent =
         RequestBoundOneShotConsentStore<CurrentScreenshotOcrConsent>(
             ttlMillis = CURRENT_SCREENSHOT_OCR_CONSENT_TTL_MILLIS,
@@ -92,13 +130,78 @@ class AndroidCurrentScreenshotOcrProvider(
     ): CurrentScreenshotOcrReadResult {
         val consent = pendingConsent.consume(requestId, nowMillis)
             ?: return CurrentScreenshotOcrReadResult.MissingConsent
+        return captureBitmap(
+            consent = consent,
+            onMissingConsent = { CurrentScreenshotOcrReadResult.MissingConsent },
+            onFailed = { reason -> CurrentScreenshotOcrReadResult.Failed(reason) },
+            serviceUnavailableReason = "当前屏幕 OCR 服务不可用",
+        ) { bitmap ->
+            val ocrBitmap = bitmap.scaledForOcr()
+            try {
+                val preview = imageTextExtractor.extract(ocrBitmap)
+                CurrentScreenshotOcrReadResult.Available(
+                    text = preview?.text?.takeIf { it.isNotBlank() },
+                    truncated = preview?.truncated ?: false,
+                    ocrBlocks = preview?.ocrBlocks.orEmpty(),
+                )
+            } finally {
+                if (ocrBitmap !== bitmap) ocrBitmap.recycle()
+            }
+        }
+    }
+
+    override fun captureCurrentScreenshotRaw(
+        requestId: String,
+        nowMillis: Long,
+    ): RawScreenshotReadResult {
+        val consent = pendingConsent.consume(requestId, nowMillis)
+            ?: return RawScreenshotReadResult.MissingConsent
+        return captureBitmap(
+            consent = consent,
+            onMissingConsent = { RawScreenshotReadResult.MissingConsent },
+            onFailed = { reason -> RawScreenshotReadResult.Failed(reason) },
+            serviceUnavailableReason = "当前屏幕截图服务不可用",
+        ) { bitmap ->
+            val visionBitmap = bitmap.compactedForVision()
+            try {
+                val output = ByteArrayOutputStream()
+                if (!visionBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                    RawScreenshotReadResult.Failed("当前屏幕截图编码失败")
+                } else {
+                    RawScreenshotReadResult.Available(
+                        jpegBytes = output.toByteArray(),
+                        widthPx = visionBitmap.width,
+                        heightPx = visionBitmap.height,
+                    )
+                }
+            } finally {
+                if (visionBitmap !== bitmap) visionBitmap.recycle()
+            }
+        }
+    }
+
+    /**
+     * Shared MediaProjection→VirtualDisplay→ImageReader→Bitmap capture core. Handles
+     * consent-backed projection setup, one-shot frame acquisition, resource teardown, and
+     * SecurityException→MissingConsent mapping. [block] receives the captured bitmap (already
+     * scheduled for recycle) and produces the caller-specific result. Both the LocalOnly OCR
+     * path and the remote-vision raw path funnel through here so the projection plumbing stays
+     * identical and cannot drift between the two.
+     */
+    private fun <R> captureBitmap(
+        consent: CurrentScreenshotOcrConsent,
+        onMissingConsent: () -> R,
+        onFailed: (String) -> R,
+        serviceUnavailableReason: String,
+        block: (Bitmap) -> R,
+    ): R {
         val projection = mediaProjectionManager().getMediaProjection(consent.resultCode, consent.data)
-            ?: return CurrentScreenshotOcrReadResult.MissingConsent
+            ?: return onMissingConsent()
         val metrics = context.resources.displayMetrics
         val width = metrics.widthPixels.coerceAtLeast(1)
         val height = metrics.heightPixels.coerceAtLeast(1)
         val densityDpi = metrics.densityDpi.coerceAtLeast(1)
-        val handlerThread = HandlerThread("SolinCurrentScreenshotOcr")
+        val handlerThread = HandlerThread("SolinCurrentScreenshot")
         handlerThread.start()
         val handler = Handler(handlerThread.looper)
         val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, IMAGE_READER_MAX_IMAGES)
@@ -128,27 +231,15 @@ class AndroidCurrentScreenshotOcrProvider(
                 handler,
             )
             if (!imageLatch.await(CAPTURE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
-                return CurrentScreenshotOcrReadResult.Failed("当前屏幕截图超时")
+                return onFailed("当前屏幕截图超时")
             }
             val image = capturedImage.getAndSet(null)
-                ?: return CurrentScreenshotOcrReadResult.Failed("当前屏幕截图不可用")
-            image.useToBitmap { bitmap ->
-                val ocrBitmap = bitmap.scaledForOcr()
-                try {
-                    val preview = imageTextExtractor.extract(ocrBitmap)
-                    CurrentScreenshotOcrReadResult.Available(
-                        text = preview?.text?.takeIf { it.isNotBlank() },
-                        truncated = preview?.truncated ?: false,
-                        ocrBlocks = preview?.ocrBlocks.orEmpty(),
-                    )
-                } finally {
-                    if (ocrBitmap !== bitmap) ocrBitmap.recycle()
-                }
-            }
+                ?: return onFailed("当前屏幕截图不可用")
+            image.useToBitmap(block)
         } catch (_: SecurityException) {
-            CurrentScreenshotOcrReadResult.MissingConsent
+            onMissingConsent()
         } catch (_: Throwable) {
-            CurrentScreenshotOcrReadResult.Failed("当前屏幕 OCR 服务不可用")
+            onFailed(serviceUnavailableReason)
         } finally {
             virtualDisplay?.release()
             imageReader.close()
@@ -167,7 +258,7 @@ class AndroidCurrentScreenshotOcrProvider(
     )
 
     private companion object {
-        const val VIRTUAL_DISPLAY_NAME = "SolinCurrentScreenshotOcr"
+        const val VIRTUAL_DISPLAY_NAME = "SolinCurrentScreenshot"
         const val IMAGE_READER_MAX_IMAGES = 2
         const val CAPTURE_TIMEOUT_MILLIS = 2_500L
     }
@@ -230,7 +321,7 @@ private data class RequestBoundOneShotConsent<T>(
     val data: T,
 )
 
-private inline fun Image.useToBitmap(block: (Bitmap) -> CurrentScreenshotOcrReadResult): CurrentScreenshotOcrReadResult =
+private inline fun <R> Image.useToBitmap(block: (Bitmap) -> R): R =
     use { image ->
         val bitmap = image.toBitmap()
         try {
