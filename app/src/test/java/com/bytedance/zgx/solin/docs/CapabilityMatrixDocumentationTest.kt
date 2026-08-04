@@ -53,6 +53,7 @@ class CapabilityMatrixDocumentationTest {
                 "shared_file_text_input",
                 "local_vision_image_input",
                 "remote_vision_image_input",
+                "remote_vision_gui_automation",
                 "voice_transcript_input",
                 "confirmed_device_tools",
                 "auditable_agent_trace",
@@ -166,6 +167,7 @@ class CapabilityMatrixDocumentationTest {
             "usage_stats_foreground_app",
             "accessibility_current_screen_text",
             "media_projection_screenshot_ocr",
+            "remote_vision_gui_automation",
         )
 
         assertEquals(CapabilityMatrix.sensitiveCapabilityDisclosures.size, documented.length())
@@ -356,6 +358,16 @@ class CapabilityMatrixDocumentationTest {
             "media_projection_screenshot_ocr" to listOf(
                 SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/solin/MainActivitySkillUiTest.kt", "currentScreenshotOcrSkillShowsOneShotMediaProjectionConfirmation"),
                 SourceAnchor("app/src/androidTest/java/com/bytedance/zgx/solin/MainActivitySkillUiTest.kt", "MediaProjection"),
+            ),
+            "remote_vision_gui_automation" to listOf(
+                SourceAnchor(
+                    "app/src/main/java/com/bytedance/zgx/solin/ui/components/TrustBoundaryPanel.kt",
+                    "remote_gui_automation_switch",
+                ),
+                SourceAnchor(
+                    "app/src/test/java/com/bytedance/zgx/solin/orchestration/RemoteVisionObservationReplannerTest.kt",
+                    "failsClosedWhenRunNotYetUserConfirmed",
+                ),
             ),
         )
         val disclosureIds = CapabilityMatrix.sensitiveCapabilityDisclosures

@@ -85,7 +85,9 @@ memory hits, device context, clipboard content, OCR text, current-screen
 Accessibility text, shared-input excerpts, attachment metadata, and local
 action draft turns are not automatically sent to a remote model. If the user
 manually types or pastes the same content into a normal remote-eligible
-message, that new message can be sent.
+message, that new message can be sent. Current-screen screenshots are the one
+exception, and only under the explicit opt-in described in "Remote-Vision GUI
+Automation" below.
 
 Remote send reminders are policy-controlled for ordinary text. User-provided
 images and suspected sensitive content are stricter: they require per-send
@@ -149,16 +151,22 @@ Android runtime permissions and special-access flows are requested only after
 the user confirms the associated tool request. Permission denial is a
 structured tool failure, not an automatic retry. Usage Access is used only for
 confirmed foreground-app estimates. Accessibility is used for confirmed
-current-screen reads and low-risk phone-control gestures. MediaProjection is
-used only for one-shot current-screen screenshot OCR after foreground consent.
+current-screen reads, low-risk phone-control gestures, and — when the opt-in
+Remote-vision GUI automation control is enabled — direct screen capture via the
+already-connected Accessibility service (`AccessibilityService.takeScreenshot`),
+whose pixels are transmitted to the remote vision model (see "Remote-Vision GUI
+Automation" below). MediaProjection is used only for one-shot current-screen
+screenshot OCR after foreground consent (a separate, LocalOnly path).
 
 For screen understanding specifically, screen pixels, OCR excerpts,
 Accessibility text, Accessibility snapshot nodes/bounds metadata, and
 post-action structured observations and verification summaries stay
-`LocalOnly`. They are not automatically included in remote history, sent to a
-remote endpoint, or sent to a remote VLM.
+`LocalOnly` by default. They are not automatically included in remote history,
+sent to a remote endpoint, or sent to a remote VLM.
 The same content may leave the device only if the user manually creates a
-separate `RemoteEligible` message containing it.
+separate `RemoteEligible` message containing it, **or** if the user has
+explicitly enabled the opt-in "Remote-vision GUI automation" control described
+below and confirmed the run's first action.
 Current-screen screenshot OCR may return a fused LocalOnly screen observation
 that combines OCR text/bounds with transient Accessibility nodes/bounds; it
 does not persist screenshots, pixels, URI/path metadata, or window titles.
@@ -167,6 +175,49 @@ tap/type actions. When a post-action page-change check fails or the action
 target cannot be grounded, phone control fails closed or asks for a new
 confirmation instead of converting private screen evidence into `web_search`,
 external sends, or other outbound actions.
+
+### Remote-Vision GUI Automation (opt-in)
+
+Solin also offers an **opt-in** mode in which a remote vision model plans
+in-app taps by looking at screenshots of the current screen. This is off by
+default. When the user turns on the "Remote-vision GUI automation" toggle in
+the Trust Center **and** the configured remote model declares vision support
+**and** the app is in Remote mode, the in-app observe→plan→tap loop may capture
+the current screen and **transmit** those pixels to the user-configured remote
+vision endpoint so the model can decide the next tap.
+
+This is a deliberate, disclosed reversal of the default screen-pixel boundary,
+gated by defense-in-depth:
+
+- **Informed consent:** the pixels leave only after the user enables the
+  Trust-Center opt-in (which carries an explicit egress warning). Capture uses
+  the already-connected, user-granted Accessibility service
+  (`AccessibilityService.takeScreenshot`); there is no separate per-capture
+  system screen-cast dialog. Egress is instead governed by this opt-in plus the
+  first-confirm gate below.
+- **First-confirm-then-auto:** the first screenshot of a run is transmitted only
+  after the user has confirmed that run's first action (e.g. opening the app).
+  Once confirmed, subsequent screenshots in the same run may be captured and
+  sent automatically, bounded by a per-run step limit. A new run, session, or
+  mode change resets this and requires a fresh first confirmation.
+- **Pixels are transmitted, not persisted:** the compacted JPEG is sent for a
+  single request and then dropped; screenshots are never written to local
+  records, audit, or receipts.
+- **This is NOT the remote tool-planning path:** the remote model receives the
+  screenshot plus a decision prompt, not device-control tool schemas, and never
+  executes anything. Its reply is an untrusted coordinate suggestion parsed into
+  a local `ui_tap`. Every tap runs locally through the same device-control
+  preflights (dangerous-action and foreground-package checks) and confirmation
+  policy as any other phone-control action; payment/send/delete/publish/purchase
+  /transfer/authorization controls still stop or require confirmation.
+- **Egress audit:** each screenshot send records a redacted remote-send audit
+  event (decision, model name, image count, summary) — never the pixels or the
+  prompt — so the user can review every screenshot that left the device in the
+  Trust Center's remote-send log.
+- **Fail closed:** if the opt-in is off, the model is not vision-capable, the
+  mode is not Remote, the Accessibility service is not connected, or the screen
+  cannot be captured, no pixels leave and the loop stops (or falls back to the
+  local action model where available).
 
 ## External Intents And Attachments
 
@@ -186,10 +237,13 @@ composer drafts and are not sent to generation until the user taps send.
 
 Images are not written into text prompts, chat history, audit, or receipts.
 They enter model requests only as bounded image bytes on a verified local
-vision path or as confirmed remote vision content parts on a configured remote
-vision path. Non-image attachments, shared text, text excerpts, and OCR
-excerpts are not read or sent on the remote image path. Explicit confirmed OCR
-tools remain separate.
+vision path, as confirmed remote vision content parts on a configured remote
+vision path, or — when the opt-in Remote-vision GUI automation control is
+enabled — as transient current-screen screenshots captured by the in-app
+automation loop and transmitted to the remote vision model to plan a tap (see
+"Remote-Vision GUI Automation"). Non-image attachments, shared text, text
+excerpts, and OCR excerpts are not read or sent on the remote image path.
+Explicit confirmed OCR tools remain separate.
 
 ## Model Downloads And Tokens
 
