@@ -29,14 +29,23 @@ class SolinAccessibilityServiceDeviceControlTest {
     private var previousEnabledAccessibilityServices: String? = null
     private var previousAccessibilityEnabled: String? = null
     private var previousSolinAccessibilityActive: Boolean = false
+    private var remoteConfigBackup: MainActivityRemoteConfigBackup? = null
 
     @Before
     fun keepAccessibilityServicesAvailableDuringInstrumentation() {
         accessibilitySafeUiAutomation()
+        // Preserve whatever real remote config the device had: tests here call
+        // resetMainActivityPersistentState, which would otherwise permanently overwrite a user's
+        // configured endpoint/API key on a real device (harmless on a throwaway CI emulator).
+        remoteConfigBackup = MainActivityRemoteConfigBackup.capture(targetContext)
     }
 
     @After
     fun restoreAccessibilityServices() {
+        // Restore first, before any early return below, so the device's real remote config is put
+        // back even when accessibility settings were untouched.
+        remoteConfigBackup?.restore(targetContext)
+        remoteConfigBackup = null
         val previousServices = previousEnabledAccessibilityServices ?: return
         if (previousServices == SETTINGS_NULL_VALUE && previousSolinAccessibilityActive) {
             return
@@ -123,15 +132,13 @@ class SolinAccessibilityServiceDeviceControlTest {
             "AccessibilityService.takeScreenshot requires API 30+.",
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
         )
-        resetMainActivityPersistentState(
-            context = targetContext,
-            inferenceMode = InferenceMode.Remote,
-            remoteModelConfig = ReadyRemoteModelConfig,
-        )
+        // This test only needs the accessibility service connected and a foreground screen to
+        // capture; it does NOT need Remote mode or any remote config, so it must not mutate
+        // persistent config (the @Before/@After backup/restore also guards the device regardless).
         enableSolinAccessibilityService()
 
         ActivityScenario.launch<MainActivity>(
-            mainActivitySkipStartupIntent(targetContext, ReadyRemoteModelConfig),
+            mainActivitySkipStartupIntent(targetContext),
         ).use {
             waitForScreenState(textContains = "Solin")
 

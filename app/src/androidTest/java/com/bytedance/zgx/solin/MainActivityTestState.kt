@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import com.bytedance.zgx.solin.data.FirstRunSetupRepository
+import com.bytedance.zgx.solin.data.RemoteModelRepository
 import com.bytedance.zgx.solin.data.SolinDatabase
 import com.bytedance.zgx.solin.data.PreferenceSettingsStore
 import java.util.concurrent.atomic.AtomicReference
@@ -14,6 +15,34 @@ internal val ReadyRemoteModelConfig = RemoteModelConfig(
     modelName = "android-test-model",
     supportsVisionInput = true,
 )
+
+/**
+ * Snapshot of the persistent remote config + inference mode a test found on the device, so an
+ * on-device run can restore whatever real (API-key-bearing) config the user had. On a throwaway CI
+ * emulator this is a no-op restore; on a real device it prevents [resetMainActivityPersistentState]
+ * from permanently clobbering the user's configured endpoint. Captured via [RemoteModelRepository]
+ * because the API key lives in the SecretStore, not in [PreferenceSettingsStore] alone.
+ */
+internal class MainActivityRemoteConfigBackup private constructor(
+    private val inferenceMode: InferenceMode,
+    private val remoteConfig: RemoteModelConfig,
+) {
+    fun restore(context: Context) {
+        val repository = RemoteModelRepository(context.applicationContext)
+        runCatching { repository.saveConfig(remoteConfig) }
+        runCatching { repository.saveMode(inferenceMode) }
+        (context.applicationContext as? SolinApplication)?.clearContainersForInstrumentation()
+    }
+
+    companion object {
+        fun capture(context: Context): MainActivityRemoteConfigBackup {
+            val repository = RemoteModelRepository(context.applicationContext)
+            val mode = runCatching { repository.loadMode() }.getOrDefault(InferenceMode.Local)
+            val config = runCatching { repository.loadConfig() }.getOrDefault(RemoteModelConfig())
+            return MainActivityRemoteConfigBackup(mode, config)
+        }
+    }
+}
 
 internal fun resetMainActivityPersistentState(
     context: Context,
