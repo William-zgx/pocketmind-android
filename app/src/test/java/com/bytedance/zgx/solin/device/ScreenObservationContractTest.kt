@@ -8,6 +8,7 @@ import com.bytedance.zgx.solin.multimodal.OcrTextLine
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -328,6 +329,96 @@ class ScreenObservationContractTest {
             scrollable = scrollable,
             enabled = true,
         )
+
+    /**
+     * The bounds decoder is now shared by the `device`, `tool` and `orchestration` readers (it used
+     * to exist as three byte-identical private copies). Pin its fail-closed contract here so the
+     * single surviving implementation cannot be "helpfully" relaxed into padding missing edges with
+     * 0 — a 0-padded rectangle looks like a real region at the screen origin and would send a tap
+     * to (0,0) instead of being rejected.
+     */
+    @Test
+    fun sharedBoundsDecoderRejectsPartialBoundsInsteadOfPaddingWithZero() {
+        val complete = JSONObject()
+            .put("left", 10)
+            .put("top", 20)
+            .put("right", 110)
+            .put("bottom", 70)
+        assertEquals(
+            ScreenBounds(left = 10, top = 20, right = 110, bottom = 70),
+            complete.toScreenBoundsOrNull(),
+        )
+
+        for (missing in listOf("left", "top", "right", "bottom")) {
+            val partial = JSONObject()
+                .put("left", 10)
+                .put("top", 20)
+                .put("right", 110)
+                .put("bottom", 70)
+            partial.remove(missing)
+            assertNull(
+                "bounds missing \"$missing\" must decode to null, not a 0-padded rectangle",
+                partial.toScreenBoundsOrNull(),
+            )
+        }
+
+        assertNull("an empty bounds object must decode to null", JSONObject().toScreenBoundsOrNull())
+    }
+
+    /**
+     * Pins the exact reason the two OCR-grounding fingerprint variants in `ToolExecutor`
+     * (`ScreenNode.ocrGroundingFingerprint` / `JSONObject.ocrGroundingFingerprint`) are NOT
+     * interchangeable, so anyone unifying them sees the constraint spelled out in a failing/renamed
+     * test rather than discovering it on a device.
+     *
+     * The node variant fingerprints `text.ifBlank { contentDescription }` — ONE of the two fields.
+     * Serialization instead CONCATENATES both into `text`, and blanks it entirely for credential
+     * nodes. So for a node with two differing non-blank fields, or for a sensitive node, the
+     * serialized `text` differs from what the node variant fingerprints, the stored signature never
+     * matches the live one, and the cached grounding hint is discarded (fail-closed: the tap falls
+     * back to normal target resolution rather than using stale coordinates).
+     *
+     * A future unification must make BOTH sides fingerprint this same serialized projection.
+     */
+    @Test
+    fun serializedElementTextDiffersFromTheSingleFieldNodeFingerprintInput() {
+        val snapshot = ScreenStateSnapshot(
+            id = "screen-fingerprint",
+            packageName = "com.example",
+            capturedAtMillis = 7L,
+            nodes = listOf(
+                node(
+                    id = "n_both",
+                    text = "继续",
+                    contentDescription = "继续按钮",
+                    bounds = ScreenBounds(left = 0, top = 0, right = 100, bottom = 50),
+                    clickable = true,
+                ),
+                node(
+                    id = "n_secret",
+                    text = "hunter2",
+                    contentDescription = "password",
+                    bounds = ScreenBounds(left = 0, top = 60, right = 100, bottom = 110),
+                    editable = true,
+                ),
+            ),
+            textSummary = "继续",
+            truncated = false,
+        )
+
+        val json = JSONObject(snapshot.toScreenObservationJsonString())
+
+        // Concatenation, not "text or else contentDescription".
+        assertEquals("继续 继续按钮", json.elementById("n_both").getString("text"))
+        // Credential nodes serialize with the text stripped, so the two sides cannot agree here
+        // either. The blanking is a privacy requirement and must not be removed to make the
+        // fingerprints line up.
+        assertEquals("", json.elementById("n_secret").getString("text"))
+        assertEquals(
+            "credential",
+            json.elementById("n_secret").getJSONArray("sensitiveFlags").getString(0),
+        )
+    }
 
     private fun JSONObject.elementById(id: String): JSONObject {
         val elements = getJSONArray("elements")

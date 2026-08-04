@@ -11,7 +11,6 @@ import com.bytedance.zgx.solin.action.MobileActionFunctions
 import com.bytedance.zgx.solin.action.extractUiTargetArgumentValue
 import com.bytedance.zgx.solin.audit.ToolAuditSummaryRedactor
 import com.bytedance.zgx.solin.device.AppSearchProgressEvidence
-import com.bytedance.zgx.solin.device.ScreenBounds
 import com.bytedance.zgx.solin.device.ScreenObservation
 import com.bytedance.zgx.solin.device.UiTargetEvidenceCandidate
 import com.bytedance.zgx.solin.device.UiTargetKind
@@ -22,6 +21,7 @@ import com.bytedance.zgx.solin.device.hasOcrDangerousActionText
 import com.bytedance.zgx.solin.device.hasStrongDangerousActionText
 import com.bytedance.zgx.solin.device.normalizedLookupKey
 import com.bytedance.zgx.solin.device.screenObservationFromJsonStringOrNull
+import com.bytedance.zgx.solin.device.toScreenBoundsOrNull
 import com.bytedance.zgx.solin.tool.ToolCapability
 import com.bytedance.zgx.solin.tool.ToolErrorCode
 import com.bytedance.zgx.solin.tool.ToolRequest
@@ -2241,16 +2241,6 @@ private fun JSONObject.containsOcrGroundingElementBounds(ocrBounds: JSONObject?)
     val container = toScreenBoundsOrNull() ?: return false
     val ocr = ocrBounds?.toScreenBoundsOrNull() ?: return false
     return container.containsOcrGroundingBounds(ocr)
-}
-
-private fun JSONObject.toScreenBoundsOrNull(): ScreenBounds? {
-    if (!has("left") || !has("top") || !has("right") || !has("bottom")) return null
-    return ScreenBounds(
-        left = optInt("left"),
-        top = optInt("top"),
-        right = optInt("right"),
-        bottom = optInt("bottom"),
-    )
 }
 
 private fun JSONArray.joinCompact(): String =

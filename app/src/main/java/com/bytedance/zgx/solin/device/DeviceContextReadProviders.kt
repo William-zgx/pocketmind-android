@@ -443,6 +443,70 @@ class AndroidNotificationSummaryProvider(
     }
 }
 
+/**
+ * Filename / relative-path substrings that identify a system screenshot across OEM skins and locales.
+ *
+ * Shared by the recent-file and image-text (OCR) readers so "which files count as screenshots" has one
+ * answer. Previously each provider kept a private copy, which meant adding an OEM marker for one reader
+ * silently left the other reader blind to the same file.
+ */
+private val SCREENSHOT_MARKERS = listOf(
+    "screenshot",
+    "screen_shot",
+    "screencap",
+    "screen capture",
+    "截屏",
+    "截图",
+)
+
+/**
+ * Column list for the `MediaStore.Files` queries in this file.
+ *
+ * Column *order* is not load-bearing here — both readers resolve indices via
+ * `getColumnIndexOrThrow(<column>)` rather than by positional index — but the column *set* is: dropping
+ * a column would make those lookups throw at runtime. Keep every column that any reader resolves.
+ */
+private val MEDIA_FILE_PROJECTION = arrayOf(
+    MediaStore.Files.FileColumns._ID,
+    MediaStore.Files.FileColumns.DISPLAY_NAME,
+    MediaStore.Files.FileColumns.MIME_TYPE,
+    MediaStore.Files.FileColumns.SIZE,
+    MediaStore.Files.FileColumns.DATE_MODIFIED,
+)
+
+/**
+ * Screenshot `WHERE` clause: an image whose display name *or* (on Q+) relative path matches any
+ * [SCREENSHOT_MARKERS] entry. Must stay paired with [screenshotSelectionArgs] — the clause and the args
+ * encode the same marker count and the same Q+ path branch, so they can only be changed together.
+ */
+private fun screenshotSelection(): String {
+    val nameClauses = SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
+        "LOWER(${MediaStore.Files.FileColumns.DISPLAY_NAME}) LIKE ?"
+    }
+    val pathClauses = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
+            "LOWER(${MediaStore.Files.FileColumns.RELATIVE_PATH}) LIKE ?"
+        }
+    } else {
+        ""
+    }
+    val screenshotClauses = listOf(nameClauses, pathClauses)
+        .filter { it.isNotBlank() }
+        .joinToString(separator = " OR ")
+    return "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? AND ($screenshotClauses)"
+}
+
+/** Positional args for [screenshotSelection]; see that function for the pairing invariant. */
+private fun screenshotSelectionArgs(): Array<String> {
+    val markers = SCREENSHOT_MARKERS.map { "%$it%" }
+    val args = mutableListOf("image/%")
+    args += markers
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        args += markers
+    }
+    return args.toTypedArray()
+}
+
 class AndroidRecentFileProvider(
     private val context: Context,
 ) : RecentFileProvider {
@@ -460,7 +524,7 @@ class AndroidRecentFileProvider(
         return try {
             val cursor = context.contentResolver.query(
                 MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL),
-                FILE_PROJECTION,
+                MEDIA_FILE_PROJECTION,
                 filter.selection,
                 filter.selectionArgs,
                 "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC",
@@ -683,54 +747,8 @@ class AndroidRecentFileProvider(
                 hasPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
     }
 
-    private fun screenshotSelection(): String {
-        val nameClauses = SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
-            "LOWER(${MediaStore.Files.FileColumns.DISPLAY_NAME}) LIKE ?"
-        }
-        val pathClauses = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
-                "LOWER(${MediaStore.Files.FileColumns.RELATIVE_PATH}) LIKE ?"
-            }
-        } else {
-            ""
-        }
-        val screenshotClauses = listOf(nameClauses, pathClauses)
-            .filter { it.isNotBlank() }
-            .joinToString(separator = " OR ")
-        return "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? AND ($screenshotClauses)"
-    }
-
-    private fun screenshotSelectionArgs(): Array<String> {
-        val markers = SCREENSHOT_MARKERS.map { "%$it%" }
-        val args = mutableListOf("image/%")
-        args += markers
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            args += markers
-        }
-        return args.toTypedArray()
-    }
-
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-
-    private companion object {
-        val SCREENSHOT_MARKERS = listOf(
-            "screenshot",
-            "screen_shot",
-            "screencap",
-            "screen capture",
-            "截屏",
-            "截图",
-        )
-
-        val FILE_PROJECTION = arrayOf(
-            MediaStore.Files.FileColumns._ID,
-            MediaStore.Files.FileColumns.DISPLAY_NAME,
-            MediaStore.Files.FileColumns.MIME_TYPE,
-            MediaStore.Files.FileColumns.SIZE,
-            MediaStore.Files.FileColumns.DATE_MODIFIED,
-        )
-    }
 }
 
 class AndroidRecentImageTextProvider(
@@ -748,7 +766,7 @@ class AndroidRecentImageTextProvider(
         return try {
             val cursor = context.contentResolver.query(
                 MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL),
-                IMAGE_TEXT_PROJECTION,
+                MEDIA_FILE_PROJECTION,
                 filter.selection,
                 filter.selectionArgs,
                 "${MediaStore.Files.FileColumns.DATE_ADDED} DESC, ${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC",
@@ -839,33 +857,6 @@ class AndroidRecentImageTextProvider(
             MEDIA_ACCESS_SCOPE_GRANTED_MEDIA_ONLY
         }
 
-    private fun screenshotSelection(): String {
-        val nameClauses = IMAGE_TEXT_SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
-            "LOWER(${MediaStore.Files.FileColumns.DISPLAY_NAME}) LIKE ?"
-        }
-        val pathClauses = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            IMAGE_TEXT_SCREENSHOT_MARKERS.joinToString(separator = " OR ") {
-                "LOWER(${MediaStore.Files.FileColumns.RELATIVE_PATH}) LIKE ?"
-            }
-        } else {
-            ""
-        }
-        val screenshotClauses = listOf(nameClauses, pathClauses)
-            .filter { it.isNotBlank() }
-            .joinToString(separator = " OR ")
-        return "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? AND ($screenshotClauses)"
-    }
-
-    private fun screenshotSelectionArgs(): Array<String> {
-        val markers = IMAGE_TEXT_SCREENSHOT_MARKERS.map { "%$it%" }
-        val args = mutableListOf("image/%")
-        args += markers
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            args += markers
-        }
-        return args.toTypedArray()
-    }
-
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
@@ -890,23 +881,4 @@ class AndroidRecentImageTextProvider(
         val selection: String,
         val selectionArgs: Array<String>,
     )
-
-    private companion object {
-        val IMAGE_TEXT_SCREENSHOT_MARKERS = listOf(
-            "screenshot",
-            "screen_shot",
-            "screencap",
-            "screen capture",
-            "截屏",
-            "截图",
-        )
-
-        val IMAGE_TEXT_PROJECTION = arrayOf(
-            MediaStore.Files.FileColumns._ID,
-            MediaStore.Files.FileColumns.DISPLAY_NAME,
-            MediaStore.Files.FileColumns.MIME_TYPE,
-            MediaStore.Files.FileColumns.SIZE,
-            MediaStore.Files.FileColumns.DATE_MODIFIED,
-        )
-    }
 }

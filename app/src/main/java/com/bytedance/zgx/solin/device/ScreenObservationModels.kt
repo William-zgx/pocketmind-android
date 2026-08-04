@@ -380,7 +380,17 @@ private fun ScreenBounds.toJsonObject(): JSONObject =
         .put("right", right)
         .put("bottom", bottom)
 
-private fun JSONObject.toScreenBoundsOrNull(): ScreenBounds? {
+/**
+ * Single decoder for the `{left,top,right,bottom}` bounds object emitted by [ScreenBounds.toJsonObject]
+ * and by the screen-observation / screen-node JSON payloads.
+ *
+ * Lives in `device` because [ScreenBounds] is a `device` type, and is `internal` (not private) so the
+ * `tool` and `orchestration` readers of the same payload share one decoder instead of keeping private
+ * byte-for-byte copies that can silently drift apart. Fails closed — a partial bounds object (any of
+ * the four edges missing) decodes to `null` rather than to a `0`-padded rectangle, so callers cannot
+ * mistake an incomplete payload for a real on-screen region and tap at (0,0).
+ */
+internal fun JSONObject.toScreenBoundsOrNull(): ScreenBounds? {
     if (!has("left") || !has("top") || !has("right") || !has("bottom")) return null
     return ScreenBounds(
         left = optInt("left"),

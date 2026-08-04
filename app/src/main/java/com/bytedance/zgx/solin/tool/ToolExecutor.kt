@@ -57,6 +57,7 @@ import com.bytedance.zgx.solin.device.hasSearchSubmitContext
 import com.bytedance.zgx.solin.device.hasTargetlessTypingContext
 import com.bytedance.zgx.solin.device.height
 import com.bytedance.zgx.solin.device.normalizedLookupKey
+import com.bytedance.zgx.solin.device.toScreenBoundsOrNull
 import com.bytedance.zgx.solin.device.toScreenNodesJsonString
 import com.bytedance.zgx.solin.device.toScreenObservationJsonString
 import com.bytedance.zgx.solin.device.width
@@ -810,6 +811,15 @@ private fun JSONObject.toOcrGroundingScreenSignature(): OcrGroundingScreenSignat
     )
 }
 
+/**
+ * Screen fingerprint computed from the LIVE [ScreenNode] list.
+ *
+ * !! MUST STAY EQUIVALENT TO [JSONObject.ocrGroundingFingerprint] !!
+ * [OcrGroundingScreenSignature.matches] stores the signature built from the observation JSON at
+ * capture time and compares it against the signature built from live nodes at tap time, so the two
+ * functions below are compared cross-representation. They are NOT interchangeable today — see the
+ * KNOWN DIVERGENCES note on the JSON variant before touching either.
+ */
 private fun ScreenNode.ocrGroundingFingerprint(): String =
     listOf(
         clickable.toString(),
@@ -820,6 +830,33 @@ private fun ScreenNode.ocrGroundingFingerprint(): String =
         text.ifBlank { contentDescription }.normalizedLookupKey(),
     ).joinToString(separator = ",")
 
+/**
+ * Same fingerprint, read back from a serialized observation element.
+ *
+ * !! MUST STAY EQUIVALENT TO [ScreenNode.ocrGroundingFingerprint] !! Kept as a separate function
+ * because the two inputs are different types; there is no shared receiver to hang one
+ * implementation off. Any edit to one has to be mirrored in the other.
+ *
+ * KNOWN DIVERGENCES (pre-existing; deliberately NOT changed in this de-duplication pass because
+ * they alter where a tap lands, which is a device-safety surface that needs its own reviewed fix):
+ *  1. Text field. The node variant uses `text.ifBlank { contentDescription }` — one field or the
+ *     other. The serialized `text` is `ScreenNode.observationText()`, which CONCATENATES both
+ *     (`"text contentDescription"`). A node with two different non-blank fields therefore
+ *     fingerprints differently on the two sides.
+ *  2. Sensitive nodes. `toObservationElement` blanks `text` to `""` for credential-flagged nodes,
+ *     so the JSON side fingerprints an empty text where the node side still fingerprints the real
+ *     label. (The blanking itself is a privacy requirement and must stay.)
+ *  3. `actionableNodeCount` in the enclosing signature. [isActionableObservationElement] excludes
+ *     `enabled == false` elements; `ScreenStateSnapshot.actionableNodeCount` does not. A
+ *     disabled-but-clickable node is counted on the node side only.
+ *
+ * Consequence today is fail-CLOSED, which is why the build stays green and no tap is misplaced: a
+ * spurious mismatch makes [OcrGroundingScreenSignature.matches] return false, so the cached OCR
+ * grounding hint is discarded and the tap falls back to ordinary target resolution. The cost is a
+ * silently ineffective grounding cache on such screens, not a wrong tap. Any fix must unify both
+ * sides onto ONE projection (most likely by fingerprinting `toScreenObservation()` elements on the
+ * node side too, so the lossy serialization is applied identically) and land with a regression test.
+ */
 private fun JSONObject.ocrGroundingFingerprint(): String {
     val clickability = optJSONObject("clickability")
     return listOf(
@@ -840,6 +877,19 @@ private fun JSONObject.isActionableObservationElement(): Boolean {
         clickability.optBoolean("scrollable", false)
 }
 
+/**
+ * Bounds half of the fingerprint pair above.
+ *
+ * !! THESE TWO MUST PRODUCE THE SAME STRING FOR THE SAME RECTANGLE !! They are compared
+ * cross-representation (see [ScreenNode.ocrGroundingFingerprint]). They cannot share one body
+ * because there is no common receiver type, so the format string is duplicated on purpose.
+ *
+ * Unlike the text field, this half is provably equivalent for every payload the serializer emits:
+ * `ScreenBounds.toJsonObject()` always writes all four edges as ints, and a `bounds` object is only
+ * ever produced from a `ScreenBounds`. The `optInt` defaults below are therefore unreachable in
+ * practice; they only matter for a hand-written partial payload, which would fingerprint as `0` edges
+ * here and so simply fail the match (fail-closed — the grounding hint is dropped, never mis-applied).
+ */
 private fun ScreenBounds.boundsFingerprint(): String =
     "$left,$top,$right,$bottom"
 
@@ -883,16 +933,6 @@ private fun JSONObject.toOcrGroundingHint(observation: JSONObject): UiOcrGroundi
         elementId = optString("id", "ocr"),
         text = text,
         bounds = bounds,
-    )
-}
-
-private fun JSONObject.toScreenBoundsOrNull(): ScreenBounds? {
-    if (!has("left") || !has("top") || !has("right") || !has("bottom")) return null
-    return ScreenBounds(
-        left = optInt("left"),
-        top = optInt("top"),
-        right = optInt("right"),
-        bottom = optInt("bottom"),
     )
 }
 
