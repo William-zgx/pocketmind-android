@@ -7410,6 +7410,30 @@ class SolinViewModelTest {
     }
 
     @Test
+    fun updateRemoteGuiAutomationEnabledPersistsAndReflectsInState() = runTest(dispatcher) {
+        val firstRunStore = FakeFirstRunSetupStore(setupDismissed = true)
+        val viewModel = createViewModel(firstRunStore = firstRunStore)
+        viewModel.restoreStartupState(skipModelRuntimeWork = true)
+        advanceUntilIdle()
+
+        // Defaults off — no screen pixels leave the device until explicitly opted in.
+        assertFalse(viewModel.uiState.value.remoteGuiAutomationEnabled)
+        assertFalse(firstRunStore.remoteGuiAutomationEnabled())
+
+        viewModel.updateRemoteGuiAutomationEnabled(true)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.remoteGuiAutomationEnabled)
+        assertTrue(firstRunStore.remoteGuiAutomationEnabled())
+
+        viewModel.updateRemoteGuiAutomationEnabled(false)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.remoteGuiAutomationEnabled)
+        assertFalse(firstRunStore.remoteGuiAutomationEnabled())
+    }
+
+    @Test
     fun cancelBackgroundTaskForgetsTaskStateMemory() = runTest(dispatcher) {
         val store = FakeMemoryRecordStore()
         val memoryRepository = MemoryRepository(recordStore = store)
@@ -10286,6 +10310,8 @@ class SolinViewModelTest {
     private class FakeFirstRunSetupStore(
         private var memoryEnabled: Boolean = true,
         private var setupDismissed: Boolean = true,
+        private var reduceDeviceActionConfirmations: Boolean = false,
+        private var remoteGuiAutomationEnabled: Boolean = false,
     ) : FirstRunSetupStore {
         override fun isSetupDismissed(): Boolean = setupDismissed
 
@@ -10297,6 +10323,18 @@ class SolinViewModelTest {
 
         override fun setMemoryEnabled(enabled: Boolean) {
             memoryEnabled = enabled
+        }
+
+        override fun reduceDeviceActionConfirmations(): Boolean = reduceDeviceActionConfirmations
+
+        override fun setReduceDeviceActionConfirmations(enabled: Boolean) {
+            reduceDeviceActionConfirmations = enabled
+        }
+
+        override fun remoteGuiAutomationEnabled(): Boolean = remoteGuiAutomationEnabled
+
+        override fun setRemoteGuiAutomationEnabled(enabled: Boolean) {
+            remoteGuiAutomationEnabled = enabled
         }
     }
 

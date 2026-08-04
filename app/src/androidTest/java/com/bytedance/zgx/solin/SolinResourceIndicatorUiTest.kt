@@ -112,6 +112,7 @@ internal fun ComposeContentTestRule.setSolinScreenWithResourceSnapshot(
                     onDismissRemoteSendDisclosure = {},
                     onRemoteSendDisclosurePolicySelected = {},
                     onReduceDeviceActionConfirmationsChanged = {},
+                    onRemoteGuiAutomationEnabledChanged = {},
                     onSendMessage = {},
                     onSendPendingSharedInput = {},
                     onClearPendingSharedInput = {},

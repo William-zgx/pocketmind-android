@@ -42,6 +42,7 @@ internal fun TrustBoundaryPanel(
     state: ChatUiState,
     onRemoteSendDisclosurePolicySelected: (RemoteSendDisclosurePolicy) -> Unit,
     onReduceDeviceActionConfirmationsChanged: (Boolean) -> Unit,
+    onRemoteGuiAutomationEnabledChanged: (Boolean) -> Unit,
 ) {
     val sensitiveDisclosureRows = sensitiveCapabilityDisclosureDisplayRows()
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -140,6 +141,25 @@ internal fun TrustBoundaryPanel(
                     checked = state.reduceDeviceActionConfirmations,
                     enabled = !state.isBusy,
                     onCheckedChange = onReduceDeviceActionConfirmationsChanged,
+                )
+            }
+        }
+        PanelSurface {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SectionTitle(
+                    modifier = Modifier.weight(1f),
+                    text = "远程视觉操作应用（需知情同意）",
+                    subtitle = "仅远程模式生效。开启后，操作应用时会把当前屏幕截图发给远程视觉模型，由它看截图规划点击；首次外发仍需你确认，支付、发送、删除、发布等危险动作始终逐个确认。关闭则截图不外发，改由本地动作模型驱动。",
+                )
+                Switch(
+                    modifier = Modifier.testTag("remote_gui_automation_switch"),
+                    checked = state.remoteGuiAutomationEnabled,
+                    enabled = !state.isBusy,
+                    onCheckedChange = onRemoteGuiAutomationEnabledChanged,
                 )
             }
         }

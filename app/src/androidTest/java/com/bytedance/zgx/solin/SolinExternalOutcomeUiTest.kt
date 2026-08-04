@@ -103,6 +103,7 @@ class SolinExternalOutcomeUiTest {
                     onDismissRemoteSendDisclosure = {},
                     onRemoteSendDisclosurePolicySelected = {},
                     onReduceDeviceActionConfirmationsChanged = {},
+                    onRemoteGuiAutomationEnabledChanged = {},
                     onSendMessage = {},
                     onSendPendingSharedInput = {},
                     onClearPendingSharedInput = {},

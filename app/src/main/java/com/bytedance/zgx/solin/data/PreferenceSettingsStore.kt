@@ -68,6 +68,13 @@ class PreferenceSettingsStore(context: Context) : SettingsStore, ActiveSessionSt
         writeBoolean(Keys.REDUCE_DEVICE_ACTION_CONFIRMATIONS, enabled)
     }
 
+    override fun remoteGuiAutomationEnabled(): Boolean =
+        readBoolean(Keys.REMOTE_GUI_AUTOMATION_ENABLED, false)
+
+    override fun setRemoteGuiAutomationEnabled(enabled: Boolean) {
+        writeBoolean(Keys.REMOTE_GUI_AUTOMATION_ENABLED, enabled)
+    }
+
     override fun loadGenerationParameters(): GenerationParameters =
         GenerationParameters(
             temperature = readFloat(Keys.TEMPERATURE, GenerationParameters.DEFAULT_TEMPERATURE),
@@ -239,6 +246,7 @@ class PreferenceSettingsStore(context: Context) : SettingsStore, ActiveSessionSt
         val FIRST_RUN_DISMISSED = booleanPreferencesKey("first_run_setup_dismissed")
         val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
         val REDUCE_DEVICE_ACTION_CONFIRMATIONS = booleanPreferencesKey("reduce_device_action_confirmations")
+        val REMOTE_GUI_AUTOMATION_ENABLED = booleanPreferencesKey("remote_gui_automation_enabled")
         val TEMPERATURE = floatPreferencesKey("generation_temperature")
         val TOP_P = floatPreferencesKey("generation_top_p")
         val TOP_K = intPreferencesKey("generation_top_k")

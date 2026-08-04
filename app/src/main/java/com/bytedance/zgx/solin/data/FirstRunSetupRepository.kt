@@ -23,4 +23,11 @@ class FirstRunSetupRepository(
     override fun setReduceDeviceActionConfirmations(enabled: Boolean) {
         settingsStore.setReduceDeviceActionConfirmations(enabled)
     }
+
+    override fun remoteGuiAutomationEnabled(): Boolean =
+        settingsStore.remoteGuiAutomationEnabled()
+
+    override fun setRemoteGuiAutomationEnabled(enabled: Boolean) {
+        settingsStore.setRemoteGuiAutomationEnabled(enabled)
+    }
 }

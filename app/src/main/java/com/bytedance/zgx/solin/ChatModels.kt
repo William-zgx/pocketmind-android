@@ -434,6 +434,7 @@ data class ChatUiState(
     val showFirstRunSetup: Boolean = false,
     val memoryEnabled: Boolean = true,
     val reduceDeviceActionConfirmations: Boolean = false,
+    val remoteGuiAutomationEnabled: Boolean = false,
     val semanticMemoryEnabled: Boolean = false,
     val semanticMemoryRuntimeStatus: SemanticMemoryRuntimeStatus =
         SemanticMemoryRuntimeStatus.NoVerifiedModel,

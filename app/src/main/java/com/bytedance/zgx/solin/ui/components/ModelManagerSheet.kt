@@ -94,6 +94,7 @@ internal fun ModelManagerSheet(
     onForgetLongTermMemory: (String) -> Unit,
     onClearLongTermMemory: () -> Unit,
     onReduceDeviceActionConfirmationsChanged: (Boolean) -> Unit,
+    onRemoteGuiAutomationEnabledChanged: (Boolean) -> Unit,
     onRemoteSendDisclosurePolicySelected: (RemoteSendDisclosurePolicy) -> Unit,
     onOpenModelPage: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -210,6 +211,7 @@ internal fun ModelManagerSheet(
                 state = state,
                 onRemoteSendDisclosurePolicySelected = onRemoteSendDisclosurePolicySelected,
                 onReduceDeviceActionConfirmationsChanged = onReduceDeviceActionConfirmationsChanged,
+                onRemoteGuiAutomationEnabledChanged = onRemoteGuiAutomationEnabledChanged,
             )
         }
 

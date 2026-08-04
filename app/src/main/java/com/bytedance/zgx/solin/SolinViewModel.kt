@@ -694,6 +694,20 @@ class SolinViewModel internal constructor(
         }
     }
 
+    fun updateRemoteGuiAutomationEnabled(enabled: Boolean) {
+        firstRunSetupRepository.setRemoteGuiAutomationEnabled(enabled)
+        _uiState.update {
+            it.copy(
+                remoteGuiAutomationEnabled = enabled,
+                statusText = if (enabled) {
+                    "已开启远程视觉操作：远程模型可看屏幕截图并规划点击（首次外发仍需确认）"
+                } else {
+                    "已关闭远程视觉操作：屏幕截图不再外发，改由本地动作模型驱动"
+                },
+            )
+        }
+    }
+
     fun forgetLongTermMemory(memoryId: String) {
         if (_uiState.value.isBusy) return
         val result = memoryController.forgetLongTermMemory(
@@ -1174,6 +1188,7 @@ class SolinViewModel internal constructor(
         val backend = generationParametersRepository.loadBackend()
         val memoryEnabled = firstRunSetupRepository.isMemoryEnabled()
         val reduceDeviceActionConfirmations = firstRunSetupRepository.reduceDeviceActionConfirmations()
+        val remoteGuiAutomationEnabled = firstRunSetupRepository.remoteGuiAutomationEnabled()
         val storedInferenceMode = remoteModelRepository.loadMode()
         val inferenceMode = adaptiveInferenceRollout.sanitizePreference(storedInferenceMode)
         if (inferenceMode != storedInferenceMode) remoteModelRepository.saveMode(inferenceMode)
@@ -1197,6 +1212,7 @@ class SolinViewModel internal constructor(
             showFirstRunSetup = showFirstRunSetup,
             memoryEnabled = memoryEnabled,
             reduceDeviceActionConfirmations = reduceDeviceActionConfirmations,
+            remoteGuiAutomationEnabled = remoteGuiAutomationEnabled,
             semanticMemoryEnabled = semanticMemory.semanticMemoryEnabled,
             semanticMemoryRuntimeStatus = semanticMemory.semanticMemoryRuntimeStatus,
             semanticMemoryIndexedRecordCount = semanticMemory.semanticMemoryIndexedRecordCount,

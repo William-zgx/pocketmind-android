@@ -154,6 +154,7 @@ class SolinVoiceInputConsentUiTest {
                     onDismissRemoteSendDisclosure = {},
                     onRemoteSendDisclosurePolicySelected = {},
                     onReduceDeviceActionConfirmationsChanged = {},
+                    onRemoteGuiAutomationEnabledChanged = {},
                     onSendMessage = onSendMessage,
                     onSendPendingSharedInput = {},
                     onClearPendingSharedInput = {},
