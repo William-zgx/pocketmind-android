@@ -81,6 +81,19 @@ internal class ToolPlanCoordinator(
         fun nextSequentialSegmentInput(run: AgentRun, completedSegmentCount: Int): String?
         fun hasMobileActionPlanningModel(installedCapabilityProfiles: List<ModelCapabilityProfile>): Boolean
         fun installedCapabilityProfiles(runId: String): List<ModelCapabilityProfile>
+        /**
+         * True when this run may drive the in-app loop with the remote vision model instead of a
+         * local action model (inferenceMode==Remote AND remote-GUI opt-in AND vision support). OR-ed
+         * with [hasMobileActionPlanningModel] at every loop gate so the fail-closed MissingModel
+         * rejection passes on the remote-vision path.
+         */
+        fun remoteGuiDrivingEnabled(runId: String): Boolean
+        /**
+         * True when this run has at least one user-confirmed tool step. Threaded into the observation
+         * replan context so the remote-vision screenshot egress only fires after the user's first
+         * confirmation (see [AgentObservationReplanContext.runHasUserConfirmedStep]).
+         */
+        fun runHasUserConfirmedStep(runId: String): Boolean
         fun valueFreeCompletedStepFrontiers(runId: String): Set<String>
         fun withConfirmationBypass(runId: String, plan: AgentPlan.UseTool): AgentPlan.UseTool
         fun withLowRiskAppControlContinuationBypass(
@@ -131,13 +144,12 @@ internal class ToolPlanCoordinator(
                 completedSegmentCount = completedSegmentCount,
                 screenObservationHistory = screenObservationFingerprints(run.id),
                 inheritedExpectedForegroundPackage = result.launchedTargetPackageOrNull(),
+                runHasUserConfirmedStep = host.runHasUserConfirmedStep(run.id),
             ),
         ) ?: return NextObservationPlan.None
         if (
             replan.plannedByModel &&
-            !host.hasMobileActionPlanningModel(
-                installedCapabilityProfiles = host.installedCapabilityProfiles(run.id),
-            )
+            !canDriveInAppLoop(run.id)
         ) {
             return failMissingModelNextPlan(run.id, AgentPlan.MissingModel(ModelCapability.MobileAction))
         }
@@ -178,13 +190,12 @@ internal class ToolPlanCoordinator(
                 completedSegmentCount = completedSegmentCount,
                 screenObservationHistory = screenObservationFingerprints(run.id),
                 inheritedExpectedForegroundPackage = result.launchedTargetPackageOrNull(),
+                runHasUserConfirmedStep = host.runHasUserConfirmedStep(run.id),
             ),
         ) ?: return null
         if (
             replan.plannedByModel &&
-            !host.hasMobileActionPlanningModel(
-                installedCapabilityProfiles = host.installedCapabilityProfiles(run.id),
-            )
+            !canDriveInAppLoop(run.id)
         ) {
             return failMissingModelNextPlan(run.id, AgentPlan.MissingModel(ModelCapability.MobileAction))
         }
@@ -289,7 +300,7 @@ internal class ToolPlanCoordinator(
     ): NextObservationPlan? {
         if (!result.isUnverifiedExternalLaunch()) return null
         val followUpIntent = request.arguments["followUpIntent"]?.takeIf { it.isNotBlank() } ?: return null
-        if (!host.hasMobileActionPlanningModel(host.installedCapabilityProfiles(run.id))) return null
+        if (!canDriveInAppLoop(run.id)) return null
         // Best-effort continuation: if the step budget is already exhausted, do NOT call the
         // side-effecting buildNextToolPlan (which would append ModelPlanned/ToolRejected/Failed trace
         // steps + audit for a plan the caller then discards via `as? Planned`, leaving phantom
@@ -590,7 +601,7 @@ internal class ToolPlanCoordinator(
         )
         if (
             request.requiresMobileActionProfileForInlineToolCall() &&
-            !host.hasMobileActionPlanningModel(host.installedCapabilityProfiles(run.id))
+            !canDriveInAppLoop(run.id)
         ) {
             return failMissingModelNextPlan(run.id, AgentPlan.MissingModel(ModelCapability.MobileAction))
         }
@@ -698,6 +709,16 @@ internal class ToolPlanCoordinator(
             plan,
         )
     }
+
+    /**
+     * The in-app loop's mobile-action gate: satisfied by a local action-planning model OR by the
+     * remote-vision GUI path being enabled for this run. OR-ing the two here keeps every gate site
+     * consistent — a local model drives in Local/Auto mode, the remote vision model drives in the
+     * opt-in Remote path, and with neither the loop still fails closed to MissingModel.
+     */
+    private fun canDriveInAppLoop(runId: String): Boolean =
+        host.hasMobileActionPlanningModel(host.installedCapabilityProfiles(runId)) ||
+            host.remoteGuiDrivingEnabled(runId)
 
     private fun failMissingModelNextPlan(
         runId: String,

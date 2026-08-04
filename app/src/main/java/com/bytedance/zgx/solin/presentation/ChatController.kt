@@ -578,6 +578,11 @@ class ChatController internal constructor(
                 initialPlanningMode = InitialPlanningMode.ModelFirstRemoteTools,
                 remoteToolScope = RemoteToolScope.ModelPlanning,
                 reduceDeviceActionConfirmations = stateBeforeSend.reduceDeviceActionConfirmations,
+                // Enable remote-vision GUI driving only when the user opted in AND the remote model
+                // declares vision support. This lets the in-app observe→replan→tap loop run without a
+                // local action model — the remote model sees screenshots and decides taps.
+                remoteGuiDrivingEnabled = stateBeforeSend.remoteGuiAutomationEnabled &&
+                    remoteConfig.supportsVisionInput,
             )
         } else {
             AgentRunOptions(

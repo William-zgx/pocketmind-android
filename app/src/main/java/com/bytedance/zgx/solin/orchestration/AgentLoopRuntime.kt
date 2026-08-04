@@ -165,6 +165,7 @@ class AgentLoopRuntime(
     private val remoteToolScopesByRunId = java.util.concurrent.ConcurrentHashMap<String, RemoteToolScope>()
     private val remoteExposedToolNamesByRunId = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
     private val lowRiskDeviceActionConfirmationBypassByRunId = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val remoteGuiDrivingEnabledByRunId = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     private val installedCapabilityProfilesByRunId = java.util.concurrent.ConcurrentHashMap<String, List<ModelCapabilityProfile>>()
     private val profilesByRunId = java.util.concurrent.ConcurrentHashMap<String, AgentProfile>()
     private val scratchpad = com.bytedance.zgx.solin.memory.PerRunScratchpad()
@@ -226,6 +227,12 @@ class AgentLoopRuntime(
 
             override fun installedCapabilityProfiles(runId: String): List<ModelCapabilityProfile> =
                 installedCapabilityProfilesByRunId[runId].orEmpty()
+
+            override fun remoteGuiDrivingEnabled(runId: String): Boolean =
+                remoteGuiDrivingEnabledByRunId[runId] ?: false
+
+            override fun runHasUserConfirmedStep(runId: String): Boolean =
+                traceStore.steps(runId).any { step -> step is AgentStep.UserConfirmed }
 
             override fun valueFreeCompletedStepFrontiers(runId: String): Set<String> =
                 valueFreeCompletedStepFrontiersByRunId[runId].orEmpty()
@@ -634,6 +641,7 @@ class AgentLoopRuntime(
         runTurnIndex[createdRun.id] = 0
         remoteToolScopesByRunId[createdRun.id] = options.remoteToolScope
         lowRiskDeviceActionConfirmationBypassByRunId[createdRun.id] = options.reduceDeviceActionConfirmations
+        remoteGuiDrivingEnabledByRunId[createdRun.id] = options.remoteGuiDrivingEnabled
         installedCapabilityProfilesByRunId[createdRun.id] = installedCapabilityProfiles.toList()
         traceStore.updateState(createdRun.id, AgentRunState.LoadingContext)
         // Wave 2 lifecycle: dual-write RunStarted + initial TurnStarted alongside trace steps.
@@ -698,6 +706,7 @@ class AgentLoopRuntime(
                 input = input,
                 installedCapabilityProfiles = installedCapabilityProfiles,
                 actionModelPath = actionModelPath,
+                remoteGuiDrivingEnabled = options.remoteGuiDrivingEnabled,
             )
             InitialPlanningMode.ModelFirstRemoteTools -> initialToolPlanner.planLocalOnlySkillBeforeRemote(input)
         }
@@ -1012,6 +1021,7 @@ class AgentLoopRuntime(
         remoteToolScopesByRunId.clear()
         remoteExposedToolNamesByRunId.clear()
         lowRiskDeviceActionConfirmationBypassByRunId.clear()
+        remoteGuiDrivingEnabledByRunId.clear()
         installedCapabilityProfilesByRunId.clear()
         profilesByRunId.clear()
         pendingUserQuestionsByRunId.clear()

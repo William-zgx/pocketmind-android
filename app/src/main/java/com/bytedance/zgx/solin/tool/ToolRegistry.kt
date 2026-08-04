@@ -1056,13 +1056,24 @@ private val observeCurrentScreenSchemaJson = """
 private val uiTapSchemaJson = """
     {
       "type": "object",
-      "required": ["target"],
       "properties": {
         "target": {
           "type": "string",
-          "description": "Transient node id from observe_current_screen, or visible text/contentDescription to match.",
+          "description": "Transient node id from observe_current_screen, or visible text/contentDescription to match. Provide this OR both targetX and targetY.",
           "minLength": 1,
           "maxLength": 200
+        },
+        "targetX": {
+          "type": "integer",
+          "description": "Normalized 0-1000 horizontal coordinate (left=0, right=1000). Requires targetY. Used by the remote vision planner for coordinate taps; resolution-agnostic.",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "targetY": {
+          "type": "integer",
+          "description": "Normalized 0-1000 vertical coordinate (top=0, bottom=1000). Requires targetX.",
+          "minimum": 0,
+          "maximum": 1000
         },
         "timeoutMillis": {
           "type": "integer",
@@ -2758,6 +2769,8 @@ private val builtInToolSpecs: List<ToolSpec> = listOf(
         confirmationPolicy = ConfirmationPolicy.Required,
         pendingArgumentAllowlist = setOf(
             "target",
+            "targetX",
+            "targetY",
             "timeoutMillis",
             "expectedPackageName",
             "targetPackageName",

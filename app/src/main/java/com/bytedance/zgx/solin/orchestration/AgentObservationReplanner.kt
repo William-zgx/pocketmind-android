@@ -36,7 +36,7 @@ import org.json.JSONObject
 private const val DEFAULT_MAX_SEQUENTIAL_ACTIONS = 4
 private const val DEFAULT_MAX_MODEL_OBSERVATION_REPLANS = 1
 private const val SEQUENTIAL_REPLAN_REQUEST_REASON = "Explicit sequential action step planned."
-private const val MODEL_OBSERVATION_REPLAN_REQUEST_REASON = "Observation model step planned."
+internal const val MODEL_OBSERVATION_REPLAN_REQUEST_REASON = "Observation model step planned."
 private const val MODEL_OBSERVATION_REPLAN_FALLBACK_REASON = "observation model replan"
 private const val MAX_LOCAL_OBSERVATION_ELEMENTS = 10
 private const val MAX_LOCAL_OCR_BLOCKS = 8
@@ -220,6 +220,15 @@ data class AgentObservationReplanContext(
      * correct package. Null when there is no pending launch to bind to.
      */
     val inheritedExpectedForegroundPackage: String? = null,
+    /**
+     * True when this run already has at least one user-confirmed tool step. Gates the remote-vision
+     * screenshot egress: [RemoteVisionObservationReplanner] only sends a screenshot off-device once
+     * the user has confirmed the run's first action (open_app / the initial observe), giving the
+     * "first confirm → then auto" behaviour. Recomputed statelessly from the trace each step by
+     * [ToolPlanCoordinator], so authorization auto-resets on a new run (new session/mode/config).
+     * Local replanners ignore this field. Defaults false → fail closed (no screenshot leaves).
+     */
+    val runHasUserConfirmedStep: Boolean = false,
 )
 
 data class AgentObservationReplan(
@@ -999,10 +1008,10 @@ internal fun ActionIntentConfidence.isActionableForAgentPlan(): Boolean =
 internal fun ActionIntentConfidence.isActionableForSequentialReplan(): Boolean =
     this == ActionIntentConfidence.High
 
-private fun AgentObservationReplanContext.modelObservationReplanCount(): Int =
+internal fun AgentObservationReplanContext.modelObservationReplanCount(): Int =
     priorRequests.count { request -> request.reason == MODEL_OBSERVATION_REPLAN_REQUEST_REASON }
 
-private fun ToolResult.isModelReplannableObservation(): Boolean =
+internal fun ToolResult.isModelReplannableObservation(): Boolean =
     when (status) {
         ToolStatus.Succeeded -> true
         ToolStatus.Failed -> isRecoverableLocalObservationFailure()

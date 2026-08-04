@@ -41,6 +41,7 @@ import com.bytedance.zgx.solin.data.PreferenceSettingsStore
 import com.bytedance.zgx.solin.data.RemoteModelRepository
 import com.bytedance.zgx.solin.data.RemoteSendPendingStore
 import com.bytedance.zgx.solin.data.SessionRepository
+import com.bytedance.zgx.solin.device.AccessibilityRawScreenshotProvider
 import com.bytedance.zgx.solin.device.AndroidCalendarAvailabilityProvider
 import com.bytedance.zgx.solin.device.AndroidContactSummaryProvider
 import com.bytedance.zgx.solin.device.AndroidCurrentScreenControlProvider
@@ -62,7 +63,9 @@ import com.bytedance.zgx.solin.memory.RoomMemoryRecordStore
 import com.bytedance.zgx.solin.memory.LegacyMemoryStorageRetirement
 import com.bytedance.zgx.solin.multimodal.AndroidCurrentScreenshotOcrProvider
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrProvider
+import com.bytedance.zgx.solin.multimodal.RawScreenshotProvider
 import com.bytedance.zgx.solin.orchestration.AgentHooks
+import com.bytedance.zgx.solin.orchestration.AndroidRemoteVisionDecider
 import com.bytedance.zgx.solin.orchestration.AvailableSkillsContributor
 import com.bytedance.zgx.solin.orchestration.AssistantOrchestrator
 import com.bytedance.zgx.solin.orchestration.CompositeAgentObservationReplanner
@@ -73,6 +76,7 @@ import com.bytedance.zgx.solin.orchestration.DefaultToolProgressPublisher
 import com.bytedance.zgx.solin.orchestration.InMemoryTelemetrySink
 import com.bytedance.zgx.solin.orchestration.MODEL_OBSERVATION_REPLAN_ACTION_TOOL_NAMES
 import com.bytedance.zgx.solin.orchestration.ModelObservationReplanner
+import com.bytedance.zgx.solin.orchestration.RemoteVisionObservationReplanner
 import com.bytedance.zgx.solin.orchestration.ModelRuntimeDispatcher
 import com.bytedance.zgx.solin.orchestration.NoOpAgentHooks
 import com.bytedance.zgx.solin.orchestration.RoomRunPlacementBindingStore
@@ -176,6 +180,7 @@ class SolinAppContainer(
     private val backgroundTaskScheduler: AndroidBackgroundTaskScheduler
     private val reminderNotificationHelper: ReminderNotificationHelper
     val currentScreenshotOcrProvider: CurrentScreenshotOcrProvider
+    val rawScreenshotProvider: RawScreenshotProvider
     private val actionPlanningRuntime: HybridActionPlanningRuntime
     private val observationActionPlanningRuntime: HybridActionPlanningRuntime
     private val actionExecutor: ToolExecutor
@@ -263,6 +268,11 @@ class SolinAppContainer(
         backgroundTaskScheduler = AndroidBackgroundTaskScheduler(appContext, scheduledTaskRepository)
         reminderNotificationHelper = ReminderNotificationHelper(appContext)
         currentScreenshotOcrProvider = AndroidCurrentScreenshotOcrProvider(appContext)
+        // Remote-vision GUI automation captures the screen via the already-connected accessibility
+        // service (AccessibilityService.takeScreenshot) — NO MediaProjection dialog and NO foreground
+        // service. Egress is governed by the in-app opt-in + first-confirm gate + per-send audit.
+        // The MediaProjection-based OCR provider above stays the LocalOnly OCR tool's capture path.
+        rawScreenshotProvider = AccessibilityRawScreenshotProvider()
         // Seams: event bus, telemetry, hooks, and system-context contributors.
         eventBus = DefaultSolinEventBus()
         telemetrySink = InMemoryTelemetrySink()
@@ -343,6 +353,28 @@ class SolinAppContainer(
             ),
             observationReplanner = CompositeAgentObservationReplanner(
                 DeadLoopDetectionReplanner(),
+                // Remote-vision GUI driving: when the user opted in and the remote model supports
+                // vision, kimi sees screenshots and decides taps. Outranks the local action model
+                // (below) when active; returns null when the gate is off so the local model still
+                // runs in Local/Auto mode. executeDecisions=true: a parsed tap becomes a real local
+                // ui_tap that still passes every device-control preflight and confirmation gate.
+                RemoteVisionObservationReplanner(
+                    decider = AndroidRemoteVisionDecider(
+                        rawScreenshotProvider = rawScreenshotProvider,
+                        remoteRuntime = remoteRuntime,
+                        configProvider = { remoteModelRepository.loadConfig() },
+                        inferenceModeProvider = { remoteModelRepository.loadMode() },
+                        generationParametersProvider = { generationParametersRepository.load() },
+                        auditSink = remoteSendAuditRepository,
+                    ),
+                    gateProvider = {
+                        remoteModelRepository.loadMode() == InferenceMode.Remote &&
+                            firstRunSetupRepository.remoteGuiAutomationEnabled() &&
+                            remoteModelRepository.loadConfig().supportsVisionInput
+                    },
+                    executeDecisions = true,
+                    maxReplans = 5,
+                ),
                 ModelObservationReplanner(
                     actionPlanningRuntime = observationActionPlanningRuntime,
                     actionModelPathProvider = modelRepository::verifiedObservationActionModelPath,

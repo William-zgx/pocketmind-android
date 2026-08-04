@@ -510,6 +510,40 @@ class AgentLoopRuntimeTest {
     }
 
     @Test
+    fun localModelActionToolCallWithRemoteGuiDrivingEnabledPassesTheMissingModelGate() {
+        // Same setup as the fails-closed test above, but with remoteGuiDrivingEnabled=true (the
+        // remote-vision GUI opt-in). The MissingModel gate must NOT fire even without a local
+        // MobileAction profile — the loop is allowed to proceed on the remote-vision path.
+        val actionRuntime = RecordingActionRuntime(
+            likelyAction = false,
+            modelOutputResult = modelToolOutputPlanningResult("""call:share_text{"text":"draft"}"""),
+        )
+        val runtime = agentLoopRuntime(
+            actionPlanningRuntime = actionRuntime,
+        )
+        val result = runtime.runOnce(
+            input = "准备分享一段文字",
+            installedCapabilities = setOf(ModelCapability.Chat),
+            memoryEnabled = false,
+            options = AgentRunOptions(remoteGuiDrivingEnabled = true),
+        )
+
+        val observed = runtime.observeModelResult(result.run.id, """call:share_text{"text":"draft"}""")
+
+        requireNotNull(observed)
+        // The gate passed: no MissingModel failure was recorded.
+        assertTrue(observed.steps.none { step ->
+            step is AgentStep.ModelPlanned &&
+                step.plan == AgentPlan.MissingModel(ModelCapability.MobileAction)
+        })
+        assertTrue(
+            "run should not fail with a MissingModel reason when remote-GUI driving is enabled",
+            observed.decision !is AgentObservationDecision.Fail ||
+                !(observed.decision as AgentObservationDecision.Fail).reason.contains("MobileAction"),
+        )
+    }
+
+    @Test
     fun remotePlainTextDoesNotUseInlineLocalToolParser() {
         val actionRuntime = RecordingActionRuntime(
             likelyAction = false,

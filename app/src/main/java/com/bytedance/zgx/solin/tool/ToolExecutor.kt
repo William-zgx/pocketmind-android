@@ -1783,8 +1783,18 @@ class DeviceControlToolExecutor(
             val targetLabel = "坐标(${normalizedTarget.x}, ${normalizedTarget.y})"
             expectedForegroundPackagePreflight(request, actionType = "tap", target = targetLabel)
                 ?.let { return it }
-            dangerousUiActionPreflight(request, actionType = "tap", target = targetLabel)
-                ?.let { return it }
+            // A normalized-coordinate tap is a raw-pixel action with no named-target second layer
+            // (like swipe/long_press/press_key), so this preflight is the sole content-aware guard
+            // between the model and the pixel. Fail CLOSED when the screen cannot be confirmed
+            // dangerous-free — otherwise a remote-vision coordinate tap could land on a payment/send
+            // control on a momentarily-unreadable screen. Named-target taps below keep fail-open
+            // because their node matching provides the second layer.
+            dangerousUiActionPreflight(
+                request,
+                actionType = "tap",
+                target = targetLabel,
+                failClosedOnUnavailable = true,
+            )?.let { return it }
             return actionResult(
                 request = request,
                 actionType = "tap_normalized",

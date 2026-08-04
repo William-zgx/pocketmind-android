@@ -244,6 +244,77 @@ class RoutingAndValidatingToolExecutorTest {
         assertTrue(delegate.requests.isEmpty())
     }
 
+    @Test
+    fun routingExecutorAcceptsCoordinateTapAndRoutesToNormalizedCoords() {
+        // Phase 3 regression: ui_tap with normalized targetX/targetY (the remote-vision planner's
+        // output). Before adding targetX/targetY to uiTapSchemaJson, ValidatingToolExecutor rejected
+        // these as unknown arguments (additionalProperties:false). The tap must validate and route
+        // to tapByNormalizedCoords, not named-target resolution.
+        val delegate = RecordingDelegate()
+        val screenProvider = StaticCurrentScreenControlProvider(
+            observeResult = ScreenStateReadResult.Available(
+                staticSnapshot(
+                    id = "coord-tap-screen",
+                    textSummary = "内容列表",
+                    nodes = listOf(staticNode(id = "list-item", text = "列表项", clickable = true)),
+                    widthPx = 1080,
+                    heightPx = 2400,
+                ),
+            ),
+        )
+        val executor = ValidatingToolExecutor(
+            routingExecutor(
+                delegate = delegate,
+                currentScreenControlProvider = screenProvider,
+            ),
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "coord-tap",
+                toolName = MobileActionFunctions.UI_TAP,
+                arguments = mapOf("targetX" to "500", "targetY" to "250", "timeoutMillis" to "500"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Succeeded, result.status)
+        assertEquals("tap_normalized", result.data["actionType"])
+        assertEquals(listOf("coord(500,250)"), screenProvider.tapTargets)
+    }
+
+    @Test
+    fun routingExecutorFailsClosedOnCoordinateTapWhenScreenUnreadable() {
+        // A normalized-coordinate tap has no named-target second layer, so when the dangerous-action
+        // preflight cannot read the screen it must fail CLOSED (like swipe/long_press), never tap a
+        // pixel on a screen that might contain a payment/send control. This is the remote-vision path.
+        val delegate = RecordingDelegate()
+        val screenProvider = StaticCurrentScreenControlProvider(
+            observeResult = ScreenStateReadResult.Failed(
+                reason = "当前屏幕状态读取超时",
+                failureKind = UiActionFailureKind.Timeout,
+            ),
+        )
+        val executor = routingExecutor(
+            delegate = delegate,
+            currentScreenControlProvider = screenProvider,
+        )
+
+        val result = executor.execute(
+            ToolRequest(
+                id = "coord-tap-unreadable",
+                toolName = MobileActionFunctions.UI_TAP,
+                arguments = mapOf("targetX" to "500", "targetY" to "250", "timeoutMillis" to "500"),
+                reason = "test",
+            ),
+        )
+
+        assertEquals(ToolStatus.Failed, result.status)
+        assertEquals(ToolErrorCode.ExecutionFailed, result.error?.code)
+        assertTrue(screenProvider.tapTargets.isEmpty())
+        assertTrue(delegate.requests.isEmpty())
+    }
+
     // Regression: on real devices ScreenStateSnapshot.widthPx/heightPx are non-null, so UI-action
     // results carry screen-dimension / screenshot-perception keys and gesture actionType values
     // (swipe/long_press/press_key) plus press_key's `key`. These were absent from the output schema

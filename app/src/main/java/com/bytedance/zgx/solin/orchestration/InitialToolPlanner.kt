@@ -40,6 +40,7 @@ internal class InitialToolPlanner(
         input: String,
         installedCapabilityProfiles: List<ModelCapabilityProfile>,
         actionModelPath: String?,
+        remoteGuiDrivingEnabled: Boolean = false,
     ): AgentPlan? =
         planToolForInput(
             input = input,
@@ -47,11 +48,13 @@ internal class InitialToolPlanner(
             actionModelPath = actionModelPath,
             allowDirectSkillPlan = true,
             allowMultiStepSkillPlan = true,
+            remoteGuiDrivingEnabled = remoteGuiDrivingEnabled,
         ) ?: input.initialSequentialActionInput()?.let { firstActionInput ->
             planInitialSequentialSegment(
                 input = firstActionInput,
                 installedCapabilityProfiles = installedCapabilityProfiles,
                 actionModelPath = actionModelPath,
+                remoteGuiDrivingEnabled = remoteGuiDrivingEnabled,
             )
         }
 
@@ -78,6 +81,7 @@ internal class InitialToolPlanner(
         input: String,
         installedCapabilityProfiles: List<ModelCapabilityProfile> = emptyList(),
         actionModelPath: String?,
+        remoteGuiDrivingEnabled: Boolean = false,
     ): AgentPlan? =
         planCompositeSkillForInitialSequentialSegment(input)
             ?: planToolForInput(
@@ -86,6 +90,7 @@ internal class InitialToolPlanner(
                 actionModelPath = actionModelPath,
                 allowDirectSkillPlan = false,
                 allowMultiStepSkillPlan = false,
+                remoteGuiDrivingEnabled = remoteGuiDrivingEnabled,
             )
 
     fun planCompositeSkillForInitialSequentialSegment(input: String): AgentPlan? {
@@ -107,6 +112,7 @@ internal class InitialToolPlanner(
         actionModelPath: String?,
         allowDirectSkillPlan: Boolean,
         allowMultiStepSkillPlan: Boolean,
+        remoteGuiDrivingEnabled: Boolean = false,
     ): AgentPlan? {
         if (allowDirectSkillPlan) {
             skillRuntime.plan(input)?.let { skillPlan ->
@@ -119,6 +125,7 @@ internal class InitialToolPlanner(
         val result = actionPlanningRuntime.plan(input, actionModelPath)
         if (
             result.usedModel &&
+            !remoteGuiDrivingEnabled &&
             !hasMobileActionPlanningModel(
                 installedCapabilityProfiles = installedCapabilityProfiles,
             )
