@@ -27,9 +27,29 @@ const val SPECIAL_ACCESS_USAGE_STATS = "usage_stats"
 const val SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT = "accessibility_screen_text"
 const val SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL = "accessibility_device_control"
 
+// ─────────────────────────────────────────────────────────────────────────────
+// `toolRegistry` is REQUIRED on every function below — deliberately no default.
+//
+// These functions decide whether a tool needs a runtime permission, a special access grant, or
+// MediaProjection consent, and they answer purely from what the registry they are handed knows.
+// A registry built from built-in specs alone does NOT know tools contributed by a SolinModule
+// (plan tools, MCP tools, …); for an unknown tool it yields NO permission requirement, NO
+// special-access requirement and NO consent requirement — the gate silently opens.
+//
+// A default value would make that failure invisible: forget the argument and you get a
+// plausible-looking "nothing required" answer instead of an error. So callers must pass the
+// module-aware registry published as `SolinAppContainer.toolRegistry`, and omitting it is a
+// COMPILE error rather than a silent misconfiguration.
+//
+// AgentRuntimePermissionPolicyTest pins this from both sides: a built-in-only registry answers
+// "no requirement" for a module tool, while the module-aware registry answers with the real
+// requirement — so the pair fails loudly if these functions ever stop honouring the registry
+// they are given.
+// ─────────────────────────────────────────────────────────────────────────────
+
 fun PendingAgentConfirmation.runtimePermissionsFor(
     apiLevel: Int = Build.VERSION.SDK_INT,
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): List<String> {
     return runtimePermissionRequirementsFor(apiLevel, toolRegistry)
         .flatMap { it.permissions }
@@ -45,7 +65,7 @@ internal fun PendingAgentConfirmation.matchesExecution(other: PendingAgentConfir
 internal fun PendingAgentConfirmation.requiresRuntimePermissionResult(
     resultPermissions: Set<String>,
     apiLevel: Int = Build.VERSION.SDK_INT,
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): Boolean {
     val expectedPermissions = runtimePermissionsFor(apiLevel, toolRegistry).toSet()
     if (expectedPermissions.isEmpty()) return false
@@ -53,7 +73,7 @@ internal fun PendingAgentConfirmation.requiresRuntimePermissionResult(
 }
 
 internal fun PendingAgentConfirmation.requiresCurrentScreenshotOcrConsent(
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): Boolean {
     val toolName = toolRequest?.toolName ?: draft.functionName
     return toolRegistry.specFor(toolName)?.permissions?.contains(ToolPermission.RequiresMediaProjectionConsent) == true
@@ -61,7 +81,7 @@ internal fun PendingAgentConfirmation.requiresCurrentScreenshotOcrConsent(
 
 fun PendingAgentConfirmation.runtimePermissionRequirementsFor(
     apiLevel: Int = Build.VERSION.SDK_INT,
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): List<RuntimePermissionRequirement> {
     val toolName = toolRequest?.toolName ?: draft.functionName
     return toolRegistry.androidRuntimePermissionSpecsFor(toolName)
@@ -70,7 +90,7 @@ fun PendingAgentConfirmation.runtimePermissionRequirementsFor(
 }
 
 fun PendingAgentConfirmation.specialAccessRequirementsFor(
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): List<SpecialAccessRequirement> {
     val toolName = toolRequest?.toolName ?: draft.functionName
     return toolRegistry.specialAccessTagsFor(toolName)
@@ -89,7 +109,7 @@ fun PendingAgentConfirmation.specialAccessRequirementsFor(
 internal fun restoredPendingSpecialAccessRequirement(
     requirementId: String?,
     pendingConfirmation: PendingAgentConfirmation?,
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): SpecialAccessRequirement? =
     pendingConfirmation
         ?.specialAccessRequirementsFor(toolRegistry)
@@ -99,7 +119,7 @@ fun PendingAgentConfirmation.deniedRuntimePermissionsAfterGrantResult(
     grantResults: Map<String, Boolean>,
     apiLevel: Int = Build.VERSION.SDK_INT,
     hasRuntimePermission: (String) -> Boolean,
-    toolRegistry: ToolRegistry = ToolRegistry(),
+    toolRegistry: ToolRegistry,
 ): List<String> =
     runtimePermissionsFor(apiLevel, toolRegistry)
         .filterNot { permission ->

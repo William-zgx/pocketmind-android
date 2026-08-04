@@ -1,6 +1,7 @@
 package com.bytedance.zgx.solin.orchestration
 
 import com.bytedance.zgx.solin.MessagePrivacy
+import com.bytedance.zgx.solin.SolinConstants
 import com.bytedance.zgx.solin.action.ActionDraft
 import com.bytedance.zgx.solin.action.ActionIntentConfidence
 import com.bytedance.zgx.solin.action.ActionPlanKind
@@ -28,16 +29,35 @@ import com.bytedance.zgx.solin.tool.ToolResult
 import com.bytedance.zgx.solin.tool.ToolStatus
 import com.bytedance.zgx.solin.tool.ToolSpec
 import com.bytedance.zgx.solin.tool.ToolRegistry
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val DEFAULT_MAX_SEQUENTIAL_ACTIONS = 4
-private const val DEFAULT_MAX_MODEL_OBSERVATION_REPLANS = 1
+// Replan budgets live in SolinConstants.AgentLoop so the worst-case cost of one run (tool steps x
+// observation decisions x sequential tail x model replans) can be audited from one place. These
+// aliases keep the local call sites readable without reintroducing a second source of truth.
+private const val DEFAULT_MAX_SEQUENTIAL_ACTIONS = SolinConstants.AgentLoop.MAX_SEQUENTIAL_ACTIONS
+private const val DEFAULT_MAX_MODEL_OBSERVATION_REPLANS =
+    SolinConstants.AgentLoop.MAX_MODEL_OBSERVATION_REPLANS
 private const val SEQUENTIAL_REPLAN_REQUEST_REASON = "Explicit sequential action step planned."
+
+/**
+ * Trace-visible marker that a request came from an observation-driven model replan.
+ *
+ * **This string is load-bearing, not cosmetic.** [modelObservationReplanCount] counts prior requests
+ * carrying exactly this reason to enforce the model-replan budget, and the reason is persisted in the
+ * agent trace — so the count survives process restarts, and *editing this text silently resets every
+ * in-flight run's replan budget to zero* (the anti-loop gate reopens). [RemoteVisionObservationReplanner]
+ * intentionally reuses the same constant: local and remote-vision replans share ONE budget, because
+ * both drive the same observe → act loop and alternating between backends must not double it.
+ *
+ * If this ever needs to become a structured field, the migration must keep reading the legacy reason
+ * string for already-persisted traces; a straight replacement is a silent budget reset.
+ */
 internal const val MODEL_OBSERVATION_REPLAN_REQUEST_REASON = "Observation model step planned."
 private const val MODEL_OBSERVATION_REPLAN_FALLBACK_REASON = "observation model replan"
+/** Fixed retention window for [ModelObservationReplanner]'s diagnostics ring buffer. */
+private const val MAX_RETAINED_DIAGNOSTICS = 32
 private const val MAX_LOCAL_OBSERVATION_ELEMENTS = 10
 private const val MAX_LOCAL_OCR_BLOCKS = 8
 private const val MAX_LOCAL_TARGET_CANDIDATES = 8
@@ -266,10 +286,26 @@ class ModelObservationReplanner(
 ) : AgentObservationReplanner {
     private val modelReplanLimit = maxModelReplans.coerceAtLeast(0)
     private val lastDiagnostic = AtomicReference<ModelObservationReplanDiagnostic?>(null)
-    private val diagnostics = CopyOnWriteArrayList<ModelObservationReplanDiagnostic>()
+
+    /**
+     * Bounded ring buffer of the most recent diagnostics.
+     *
+     * A replanner instance is process-scoped and shared across every run, and [planNext] records at
+     * least one diagnostic per invocation. The previous unbounded `CopyOnWriteArrayList` therefore
+     * grew for the lifetime of the process (a memory leak across a long session) AND degraded
+     * quadratically, because each COW `add` copies the whole backing array — exactly the wrong shape
+     * for an append-mostly diagnostic log. A fixed-capacity ArrayDeque under a private lock keeps
+     * memory flat and appends O(1); [diagnosticSnapshots] keeps its existing contract (oldest-first
+     * list copy), just truncated to the newest [MAX_RETAINED_DIAGNOSTICS] entries.
+     */
+    private val diagnostics = ArrayDeque<ModelObservationReplanDiagnostic>(MAX_RETAINED_DIAGNOSTICS)
+    private val diagnosticsLock = Any()
 
     fun lastDiagnosticSnapshot(): ModelObservationReplanDiagnostic? = lastDiagnostic.get()
-    fun diagnosticSnapshots(): List<ModelObservationReplanDiagnostic> = diagnostics.toList()
+
+    /** Oldest-first copy of the retained diagnostics (at most [MAX_RETAINED_DIAGNOSTICS]). */
+    fun diagnosticSnapshots(): List<ModelObservationReplanDiagnostic> =
+        synchronized(diagnosticsLock) { diagnostics.toList() }
 
     override fun planNext(context: AgentObservationReplanContext): AgentObservationReplan? {
         if (!context.observedResult.isModelReplannableObservation()) {
@@ -330,7 +366,14 @@ class ModelObservationReplanner(
 
     private fun recordDiagnostic(diagnostic: ModelObservationReplanDiagnostic) {
         lastDiagnostic.set(diagnostic)
-        diagnostics += diagnostic
+        synchronized(diagnosticsLock) {
+            diagnostics.addLast(diagnostic)
+            // Evict from the front so the buffer always holds the newest window; a while-loop (not a
+            // single removeFirst) keeps the invariant even if the cap is ever lowered at runtime.
+            while (diagnostics.size > MAX_RETAINED_DIAGNOSTICS) {
+                diagnostics.removeFirst()
+            }
+        }
     }
 
     private fun AgentObservationReplanContext.acceptModelObservationReplan(
@@ -1008,6 +1051,15 @@ internal fun ActionIntentConfidence.isActionableForAgentPlan(): Boolean =
 internal fun ActionIntentConfidence.isActionableForSequentialReplan(): Boolean =
     this == ActionIntentConfidence.High
 
+/**
+ * Number of prior requests in this run that were produced by an observation-driven model replan.
+ *
+ * Counted by comparing [ToolRequest.reason] against [MODEL_OBSERVATION_REPLAN_REQUEST_REASON] rather
+ * than by a dedicated field, because the reason is what survives in the persisted trace — restoring a
+ * run must not hand the model a fresh replan budget. Consequence: the shared constant IS the counter
+ * key, so it is intentionally shared with [RemoteVisionObservationReplanner] (one budget for the whole
+ * observe→act loop, regardless of which backend planned the step) and must not be reworded casually.
+ */
 internal fun AgentObservationReplanContext.modelObservationReplanCount(): Int =
     priorRequests.count { request -> request.reason == MODEL_OBSERVATION_REPLAN_REQUEST_REASON }
 

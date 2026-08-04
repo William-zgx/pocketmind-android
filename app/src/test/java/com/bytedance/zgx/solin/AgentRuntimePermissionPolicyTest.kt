@@ -21,21 +21,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRuntimePermissionPolicyTest {
+    /**
+     * Shared built-in registry for the cases that assert on built-in tools only.
+     *
+     * The policy functions take `toolRegistry` without a default so production call sites cannot
+     * silently resolve a module tool against a built-in-only registry (see the file header on
+     * AgentRuntimePermissionPolicy). Tests that only exercise built-in tools still want a terse
+     * call, and one shared instance avoids re-parsing every tool schema per assertion. Cases that
+     * are specifically about module tools build their own registries instead.
+     */
+    private val builtInRegistry = ToolRegistry()
+
     @Test
     fun backgroundNotificationToolsRequestNotificationPermissionOnlyOnAndroid13Plus() {
         val confirmation = confirmationFor(MobileActionFunctions.SCHEDULE_REMINDER)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry).isEmpty())
         assertEquals(
             listOf(Manifest.permission.POST_NOTIFICATIONS),
-            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
 
         val periodicCheckConfirmation = confirmationFor(MobileActionFunctions.CONFIGURE_PERIODIC_CHECK)
-        assertTrue(periodicCheckConfirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S).isEmpty())
+        assertTrue(periodicCheckConfirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry).isEmpty())
         assertEquals(
             listOf(Manifest.permission.POST_NOTIFICATIONS),
-            periodicCheckConfirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            periodicCheckConfirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
     }
 
@@ -43,11 +54,11 @@ class AgentRuntimePermissionPolicyTest {
     fun calendarAndContactToolsRequestTheirRuntimePermissions() {
         assertEquals(
             listOf(Manifest.permission.READ_CALENDAR),
-            confirmationFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY).runtimePermissionsFor(),
+            confirmationFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY).runtimePermissionsFor(toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_CONTACTS),
-            confirmationFor(MobileActionFunctions.QUERY_CONTACTS).runtimePermissionsFor(),
+            confirmationFor(MobileActionFunctions.QUERY_CONTACTS).runtimePermissionsFor(toolRegistry = builtInRegistry),
         )
     }
 
@@ -61,9 +72,9 @@ class AgentRuntimePermissionPolicyTest {
 
         assertEquals(
             listOf(Manifest.permission.READ_CONTACTS),
-            confirmation.runtimePermissionsFor(),
+            confirmation.runtimePermissionsFor(toolRegistry = builtInRegistry),
         )
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
@@ -74,9 +85,9 @@ class AgentRuntimePermissionPolicyTest {
             skillId = BuiltInSkillRuntime.CONTACT_DRAFT_SKILL,
         )
 
-        assertTrue(confirmation.runtimePermissionsFor().isEmpty())
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
@@ -92,13 +103,13 @@ class AgentRuntimePermissionPolicyTest {
 
         assertEquals(
             listOf(Manifest.permission.READ_CALENDAR),
-            confirmation.runtimePermissionsFor(),
+            confirmation.runtimePermissionsFor(toolRegistry = builtInRegistry),
         )
         assertEquals(
             "用于只读查询忙闲时间段，不读取标题、地点或参与人。",
-            confirmation.runtimePermissionRequirementsFor().single().rationale,
+            confirmation.runtimePermissionRequirementsFor(toolRegistry = builtInRegistry).single().rationale,
         )
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
@@ -108,24 +119,24 @@ class AgentRuntimePermissionPolicyTest {
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "images"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE),
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "screenshots"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE),
             confirmationFor(MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE),
             confirmationFor(MobileActionFunctions.READ_RECENT_IMAGE_OCR)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
     }
 
@@ -136,24 +147,24 @@ class AgentRuntimePermissionPolicyTest {
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "images"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_MEDIA_IMAGES),
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "screenshots"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_MEDIA_IMAGES),
             confirmationFor(MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_MEDIA_IMAGES),
             confirmationFor(MobileActionFunctions.READ_RECENT_IMAGE_OCR)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(
@@ -162,7 +173,7 @@ class AgentRuntimePermissionPolicyTest {
                 Manifest.permission.READ_MEDIA_AUDIO,
             ),
             confirmationFor(MobileActionFunctions.QUERY_RECENT_FILES)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
     }
 
@@ -176,7 +187,7 @@ class AgentRuntimePermissionPolicyTest {
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "images"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(
@@ -186,7 +197,7 @@ class AgentRuntimePermissionPolicyTest {
             confirmationFor(
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "videos"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(
@@ -194,7 +205,7 @@ class AgentRuntimePermissionPolicyTest {
                 Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
             ),
             confirmationFor(MobileActionFunctions.READ_RECENT_IMAGE_OCR)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(
@@ -204,7 +215,7 @@ class AgentRuntimePermissionPolicyTest {
                 Manifest.permission.READ_MEDIA_AUDIO,
             ),
             confirmationFor(MobileActionFunctions.QUERY_RECENT_FILES)
-                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE),
+                .runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, toolRegistry = builtInRegistry),
         )
     }
 
@@ -216,8 +227,8 @@ class AgentRuntimePermissionPolicyTest {
                 arguments = mapOf("kind" to kind),
             )
 
-            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE).isEmpty())
+            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE, toolRegistry = builtInRegistry).isEmpty())
         }
     }
 
@@ -231,13 +242,13 @@ class AgentRuntimePermissionPolicyTest {
 
         assertEquals(
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_MEDIA_IMAGES),
-            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
@@ -250,19 +261,19 @@ class AgentRuntimePermissionPolicyTest {
 
         assertEquals(
             listOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S),
+            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry),
         )
         assertEquals(
             listOf(Manifest.permission.READ_MEDIA_IMAGES),
-            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU),
+            confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry),
         )
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
     fun runtimePermissionRequirementsExposeFriendlyLabelsAndRationales() {
         val requirements = confirmationFor(MobileActionFunctions.QUERY_CONTACTS)
-            .runtimePermissionRequirementsFor()
+            .runtimePermissionRequirementsFor(toolRegistry = builtInRegistry)
 
         assertEquals(1, requirements.size)
         assertEquals(listOf(Manifest.permission.READ_CONTACTS), requirements.single().permissions)
@@ -274,7 +285,7 @@ class AgentRuntimePermissionPolicyTest {
     @Test
     fun recentScreenshotOcrPermissionRationaleDisclosesPixelAndOcrRead() {
         val requirement = confirmationFor(MobileActionFunctions.READ_RECENT_SCREENSHOT_OCR)
-            .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU)
+            .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry)
             .single()
 
         assertEquals(listOf(Manifest.permission.READ_MEDIA_IMAGES), requirement.permissions)
@@ -286,7 +297,7 @@ class AgentRuntimePermissionPolicyTest {
     @Test
     fun recentImageOcrPermissionRationaleDisclosesBoundedPixelAndOcrRead() {
         val requirement = confirmationFor(MobileActionFunctions.READ_RECENT_IMAGE_OCR)
-            .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU)
+            .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry)
             .single()
 
         assertEquals(listOf(Manifest.permission.READ_MEDIA_IMAGES), requirement.permissions)
@@ -300,21 +311,21 @@ class AgentRuntimePermissionPolicyTest {
         assertEquals(
             "通知权限",
             confirmationFor(MobileActionFunctions.SCHEDULE_REMINDER)
-                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU)
+                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry)
                 .single()
                 .title,
         )
         assertEquals(
             "日历权限",
             confirmationFor(MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY)
-                .runtimePermissionRequirementsFor()
+                .runtimePermissionRequirementsFor(toolRegistry = builtInRegistry)
                 .single()
                 .title,
         )
         assertEquals(
             listOf("照片和图片权限", "视频权限", "音频权限"),
             confirmationFor(MobileActionFunctions.QUERY_RECENT_FILES)
-                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU)
+                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry)
                 .map { it.title },
         )
         assertEquals(
@@ -323,7 +334,7 @@ class AgentRuntimePermissionPolicyTest {
                 toolName = MobileActionFunctions.QUERY_RECENT_FILES,
                 arguments = mapOf("kind" to "downloads"),
             )
-                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.S)
+                .runtimePermissionRequirementsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry)
                 .single()
                 .title,
         )
@@ -335,19 +346,19 @@ class AgentRuntimePermissionPolicyTest {
             confirmationFor(
                 toolName = MobileActionFunctions.OPEN_DEEP_LINK,
                 arguments = mapOf("uri" to "https://example.com"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty(),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty(),
         )
         assertTrue(
             confirmationFor(
                 toolName = MobileActionFunctions.OPEN_APP_BY_NAME,
                 arguments = mapOf("appName" to "淘宝"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty(),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty(),
         )
         assertTrue(
             confirmationFor(
                 toolName = MobileActionFunctions.OPEN_APP_INTENT,
                 arguments = mapOf("packageName" to "com.example.app"),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty(),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty(),
         )
         assertTrue(
             confirmationFor(
@@ -356,7 +367,7 @@ class AgentRuntimePermissionPolicyTest {
                     "targetId" to "android_app_details_settings",
                     "packageName" to "com.example.app",
                 ),
-            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty(),
+            ).runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty(),
         )
     }
 
@@ -426,9 +437,9 @@ class AgentRuntimePermissionPolicyTest {
     @Test
     fun foregroundAppDeclaresUsageAccessAsSpecialAccessNotRuntimePermission() {
         val confirmation = confirmationFor(MobileActionFunctions.QUERY_FOREGROUND_APP)
-        val requirements = confirmation.specialAccessRequirementsFor()
+        val requirements = confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
         assertEquals(1, requirements.size)
         assertEquals(SPECIAL_ACCESS_USAGE_STATS, requirements.single().id)
         assertEquals("使用情况访问权限", requirements.single().title)
@@ -443,16 +454,16 @@ class AgentRuntimePermissionPolicyTest {
     fun usageAccessSettingsDeclaresNoRuntimePermissionOrSpecialAccess() {
         val confirmation = confirmationFor(MobileActionFunctions.OPEN_USAGE_ACCESS_SETTINGS)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
     fun recentNotificationsDeclareNoRuntimePermissionOrSpecialAccess() {
         val confirmation = confirmationFor(MobileActionFunctions.QUERY_RECENT_NOTIFICATIONS)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
@@ -463,17 +474,17 @@ class AgentRuntimePermissionPolicyTest {
             skillId = BuiltInSkillRuntime.BACKGROUND_TASKS_CONTEXT_SKILL,
         )
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S).isEmpty())
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.S, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
     }
 
     @Test
     fun currentScreenTextDeclaresAccessibilityAsSpecialAccessNotRuntimePermission() {
         val confirmation = confirmationFor(MobileActionFunctions.READ_CURRENT_SCREEN_TEXT)
-        val requirements = confirmation.specialAccessRequirementsFor()
+        val requirements = confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
         assertEquals(1, requirements.size)
         assertEquals(SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT, requirements.single().id)
         assertEquals("无障碍屏幕文本权限", requirements.single().title)
@@ -529,9 +540,9 @@ class AgentRuntimePermissionPolicyTest {
                     else -> emptyMap()
                 },
             )
-            val requirements = confirmation.specialAccessRequirementsFor()
+            val requirements = confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry)
 
-            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+            assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
             assertEquals(1, requirements.size)
             assertEquals(SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL, requirements.single().id)
             assertEquals("无障碍设备控制权限", requirements.single().title)
@@ -547,8 +558,8 @@ class AgentRuntimePermissionPolicyTest {
             arguments = mapOf("captureMode" to "current_screen"),
         )
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
-        assertTrue(confirmation.specialAccessRequirementsFor().isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
+        assertTrue(confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry).isEmpty())
         val spec = requireNotNull(ToolRegistry().specFor(MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR))
         assertTrue(spec.permissions.contains(ToolPermission.RequiresMediaProjectionConsent))
         assertTrue(ToolPermission.RequiresAndroidRuntimePermission !in spec.permissions)
@@ -562,13 +573,13 @@ class AgentRuntimePermissionPolicyTest {
             specialAccessDenialSummary(
                 listOf(
                     confirmationFor(MobileActionFunctions.QUERY_FOREGROUND_APP)
-                        .specialAccessRequirementsFor()
+                        .specialAccessRequirementsFor(toolRegistry = builtInRegistry)
                         .single(),
                     confirmationFor(MobileActionFunctions.READ_CURRENT_SCREEN_TEXT)
-                        .specialAccessRequirementsFor()
+                        .specialAccessRequirementsFor(toolRegistry = builtInRegistry)
                         .single(),
                     confirmationFor(MobileActionFunctions.READ_CURRENT_SCREEN_TEXT)
-                        .specialAccessRequirementsFor()
+                        .specialAccessRequirementsFor(toolRegistry = builtInRegistry)
                         .single(),
                 ),
             ),
@@ -582,9 +593,9 @@ class AgentRuntimePermissionPolicyTest {
             arguments = mapOf("maxChars" to "1200"),
             skillId = BuiltInSkillRuntime.CURRENT_SCREEN_TEXT_CONTEXT_SKILL,
         )
-        val requirements = confirmation.specialAccessRequirementsFor()
+        val requirements = confirmation.specialAccessRequirementsFor(toolRegistry = builtInRegistry)
 
-        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU).isEmpty())
+        assertTrue(confirmation.runtimePermissionsFor(apiLevel = Build.VERSION_CODES.TIRAMISU, toolRegistry = builtInRegistry).isEmpty())
         assertEquals(1, requirements.size)
         assertEquals(SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT, requirements.single().id)
         assertEquals(Settings.ACTION_ACCESSIBILITY_SETTINGS, requirements.single().settingsAction)
@@ -600,6 +611,7 @@ class AgentRuntimePermissionPolicyTest {
             restoredPendingSpecialAccessRequirement(
                 requirementId = SPECIAL_ACCESS_USAGE_STATS,
                 pendingConfirmation = usageConfirmation,
+                toolRegistry = builtInRegistry,
             )?.id,
         )
         assertEquals(
@@ -607,18 +619,21 @@ class AgentRuntimePermissionPolicyTest {
             restoredPendingSpecialAccessRequirement(
                 requirementId = SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT,
                 pendingConfirmation = screenTextConfirmation,
+                toolRegistry = builtInRegistry,
             )?.id,
         )
         assertNull(
             restoredPendingSpecialAccessRequirement(
                 requirementId = SPECIAL_ACCESS_ACCESSIBILITY_SCREEN_TEXT,
                 pendingConfirmation = usageConfirmation,
+                toolRegistry = builtInRegistry,
             ),
         )
         assertNull(
             restoredPendingSpecialAccessRequirement(
                 requirementId = SPECIAL_ACCESS_USAGE_STATS,
                 pendingConfirmation = null,
+                toolRegistry = builtInRegistry,
             ),
         )
     }
@@ -633,6 +648,7 @@ class AgentRuntimePermissionPolicyTest {
             confirmation.deniedRuntimePermissionsAfterGrantResult(
                 grantResults = mapOf(permission to false),
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ),
         )
         assertEquals(
@@ -640,18 +656,21 @@ class AgentRuntimePermissionPolicyTest {
             confirmation.deniedRuntimePermissionsAfterGrantResult(
                 grantResults = emptyMap(),
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ),
         )
         assertTrue(
             confirmation.deniedRuntimePermissionsAfterGrantResult(
                 grantResults = mapOf(permission to true),
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
         assertTrue(
             confirmation.deniedRuntimePermissionsAfterGrantResult(
                 grantResults = emptyMap(),
                 hasRuntimePermission = { it == permission },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
     }
@@ -673,6 +692,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
         assertTrue(
@@ -683,6 +703,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
         assertEquals(
@@ -694,6 +715,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ),
         )
     }
@@ -719,6 +741,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
         assertTrue(
@@ -731,6 +754,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ).isEmpty(),
         )
         assertEquals(
@@ -744,6 +768,7 @@ class AgentRuntimePermissionPolicyTest {
                 ),
                 apiLevel = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
                 hasRuntimePermission = { false },
+                toolRegistry = builtInRegistry,
             ),
         )
     }
@@ -757,12 +782,14 @@ class AgentRuntimePermissionPolicyTest {
             contacts.requiresRuntimePermissionResult(
                 resultPermissions = setOf(Manifest.permission.READ_CONTACTS),
                 apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = builtInRegistry,
             ),
         )
         assertTrue(
             contacts.requiresRuntimePermissionResult(
                 resultPermissions = emptySet(),
                 apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = builtInRegistry,
             ),
         )
         assertTrue(
@@ -775,9 +802,193 @@ class AgentRuntimePermissionPolicyTest {
             !contacts.requiresRuntimePermissionResult(
                 resultPermissions = setOf(Manifest.permission.READ_MEDIA_IMAGES),
                 apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = builtInRegistry,
             ),
         )
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Regression guard for the silent fail-OPEN documented in AgentRuntimePermissionPolicy.kt.
+    //
+    // These functions answer "does this tool need a runtime permission / special access /
+    // MediaProjection consent?" by looking the tool up in the registry they are handed. A
+    // built-in-only registry does not know module-contributed tools, so it answers "unknown",
+    // and an unknown tool yields NO requirement at all — the gate opens without asking.
+    //
+    // The tests below pin BOTH halves of that contract, so the pair fails loudly if someone
+    // makes these functions read a registry other than the one passed in (e.g. reintroduces a
+    // hard-coded default inside the body):
+    //   1. built-in-only registry + module tool  -> answers "no requirement" (the hazard)
+    //   2. module-aware registry + same tool     -> answers with the real requirement
+    // Only (2) is the correct production answer, so (2) proves the argument is actually used
+    // while (1) documents exactly why passing the wrong registry is unsafe.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun moduleToolPermissionGateUsesSuppliedRegistryNotABuiltInOnlyOne() {
+        val confirmation = confirmationFor(MODULE_CONTACT_TOOL)
+        val builtInOnlyRegistry = ToolRegistry()
+        val moduleAwareRegistry = ToolRegistry(moduleContactToolProvider())
+
+        // (1) The hazard: a built-in-only registry cannot see the module tool, so the runtime
+        // permission gate finds nothing to request and would let execution through unasked.
+        assertTrue(
+            "A built-in-only registry cannot know module tools; this asserts the hazard exists, " +
+                "which is why production must pass the module-aware registry.",
+            confirmation.runtimePermissionsFor(
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = builtInOnlyRegistry,
+            ).isEmpty(),
+        )
+        assertNull(builtInOnlyRegistry.specFor(MODULE_CONTACT_TOOL))
+
+        // (2) Fail-closed: handed the module-aware registry, the same confirmation demands the
+        // real permission. This is what proves the `toolRegistry` argument is honoured.
+        assertEquals(
+            listOf(Manifest.permission.READ_CONTACTS),
+            confirmation.runtimePermissionsFor(
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = moduleAwareRegistry,
+            ),
+        )
+        assertEquals(
+            listOf(Manifest.permission.READ_CONTACTS),
+            confirmation.runtimePermissionRequirementsFor(
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = moduleAwareRegistry,
+            ).flatMap { requirement -> requirement.permissions },
+        )
+        // The permission result matcher must also route through the supplied registry, otherwise
+        // a granted/denied callback for a module tool would never be attributed to its pending
+        // confirmation and the denial path would be skipped.
+        assertTrue(
+            confirmation.requiresRuntimePermissionResult(
+                resultPermissions = setOf(Manifest.permission.READ_CONTACTS),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                toolRegistry = moduleAwareRegistry,
+            ),
+        )
+    }
+
+    @Test
+    fun moduleToolSpecialAccessGateUsesSuppliedRegistryNotABuiltInOnlyOne() {
+        val confirmation = confirmationFor(MODULE_SCREEN_CONTROL_TOOL)
+        val moduleAwareRegistry = ToolRegistry(moduleScreenControlToolProvider())
+
+        assertTrue(
+            "Built-in-only registry cannot see the module tool, so no special access is demanded.",
+            confirmation.specialAccessRequirementsFor(ToolRegistry()).isEmpty(),
+        )
+
+        val requirements = confirmation.specialAccessRequirementsFor(moduleAwareRegistry)
+        assertEquals(1, requirements.size)
+        assertEquals(SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL, requirements.single().id)
+
+        // Restore-after-recreation must resolve against the same registry; otherwise a module
+        // tool's pending special-access requirement silently vanishes across a config change.
+        assertEquals(
+            requirements.single(),
+            restoredPendingSpecialAccessRequirement(
+                requirementId = SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL,
+                pendingConfirmation = confirmation,
+                toolRegistry = moduleAwareRegistry,
+            ),
+        )
+        assertNull(
+            restoredPendingSpecialAccessRequirement(
+                requirementId = SPECIAL_ACCESS_ACCESSIBILITY_DEVICE_CONTROL,
+                pendingConfirmation = confirmation,
+                toolRegistry = ToolRegistry(),
+            ),
+        )
+    }
+
+    @Test
+    fun moduleToolMediaProjectionConsentGateUsesSuppliedRegistryNotABuiltInOnlyOne() {
+        val confirmation = confirmationFor(MODULE_SCREENSHOT_TOOL)
+
+        // Screen-pixel capture without consent is the most sensitive of the three gates: with a
+        // built-in-only registry the module tool reads as "no consent needed" and the system
+        // MediaProjection dialog would never be shown.
+        assertTrue(
+            !confirmation.requiresCurrentScreenshotOcrConsent(ToolRegistry()),
+        )
+        assertTrue(
+            confirmation.requiresCurrentScreenshotOcrConsent(
+                ToolRegistry(moduleScreenshotToolProvider()),
+            ),
+        )
+    }
+
+    @Test
+    fun moduleToolDeniedPermissionsAreComputedFromSuppliedRegistry() {
+        val confirmation = confirmationFor(MODULE_CONTACT_TOOL)
+
+        assertEquals(
+            listOf(Manifest.permission.READ_CONTACTS),
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(Manifest.permission.READ_CONTACTS to false),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                hasRuntimePermission = { false },
+                toolRegistry = ToolRegistry(moduleContactToolProvider()),
+            ),
+        )
+        // Same call with a registry that does not know the tool reports nothing denied, which
+        // would read as "all permissions satisfied" and confirm the action.
+        assertTrue(
+            confirmation.deniedRuntimePermissionsAfterGrantResult(
+                grantResults = mapOf(Manifest.permission.READ_CONTACTS to false),
+                apiLevel = Build.VERSION_CODES.TIRAMISU,
+                hasRuntimePermission = { false },
+                toolRegistry = ToolRegistry(),
+            ).isEmpty(),
+        )
+    }
+
+    private fun moduleContactToolProvider(): ToolProvider =
+        ToolProvider {
+            listOf(
+                ToolSpec(
+                    name = MODULE_CONTACT_TOOL,
+                    title = "Module contact context",
+                    description = "Module-contributed contact context tool",
+                    inputSchemaJson = EMPTY_OBJECT_SCHEMA_JSON,
+                    capability = ToolCapability.DeviceContext,
+                    permissions = setOf(ToolPermission.RequiresAndroidRuntimePermission),
+                    androidRuntimePermissions = listOf(
+                        AndroidRuntimePermissionSpec(AndroidRuntimePermissionKind.ReadContacts),
+                    ),
+                ),
+            )
+        }
+
+    private fun moduleScreenControlToolProvider(): ToolProvider =
+        ToolProvider {
+            listOf(
+                ToolSpec(
+                    name = MODULE_SCREEN_CONTROL_TOOL,
+                    title = "Module screen control",
+                    description = "Module-contributed device control tool",
+                    inputSchemaJson = EMPTY_OBJECT_SCHEMA_JSON,
+                    capability = ToolCapability.DeviceControl,
+                    tags = setOf(ToolCapabilityTag.AccessibilityDeviceControlSpecialAccess),
+                ),
+            )
+        }
+
+    private fun moduleScreenshotToolProvider(): ToolProvider =
+        ToolProvider {
+            listOf(
+                ToolSpec(
+                    name = MODULE_SCREENSHOT_TOOL,
+                    title = "Module screenshot OCR",
+                    description = "Module-contributed screenshot OCR tool",
+                    inputSchemaJson = EMPTY_OBJECT_SCHEMA_JSON,
+                    capability = ToolCapability.DeviceContext,
+                    permissions = setOf(ToolPermission.RequiresMediaProjectionConsent),
+                ),
+            )
+        }
 
     private fun confirmationFor(
         toolName: String,
@@ -802,4 +1013,14 @@ class AgentRuntimePermissionPolicyTest {
             plannedByModel = false,
             fallbackReason = null,
         )
+
+    private companion object {
+        // Names deliberately absent from the built-in registry: they stand in for tools a
+        // SolinModule contributes at runtime (plan tools, MCP tools, …).
+        const val MODULE_CONTACT_TOOL = "module_contact_context"
+        const val MODULE_SCREEN_CONTROL_TOOL = "module_screen_control"
+        const val MODULE_SCREENSHOT_TOOL = "module_screenshot_ocr"
+        const val EMPTY_OBJECT_SCHEMA_JSON =
+            """{"type":"object","properties":{},"additionalProperties":false}"""
+    }
 }

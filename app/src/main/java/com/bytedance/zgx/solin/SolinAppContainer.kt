@@ -88,6 +88,8 @@ import com.bytedance.zgx.solin.orchestration.SolinEventBus
 import com.bytedance.zgx.solin.orchestration.ToolProgressPublisher
 import com.bytedance.zgx.solin.orchestration.SystemContextContributor
 import com.bytedance.zgx.solin.orchestration.SystemPromptBuilder
+import com.bytedance.zgx.solin.orchestration.MetricSample
+import com.bytedance.zgx.solin.orchestration.TelemetryCounter
 import com.bytedance.zgx.solin.orchestration.TelemetrySink
 import com.bytedance.zgx.solin.orchestration.attachTo
 import com.bytedance.zgx.solin.runtime.OkHttpRemoteChatRuntime
@@ -181,6 +183,18 @@ class SolinAppContainer(
     private val reminderNotificationHelper: ReminderNotificationHelper
     val currentScreenshotOcrProvider: CurrentScreenshotOcrProvider
     val rawScreenshotProvider: RawScreenshotProvider
+
+    /**
+     * The module-aware tool registry — the only registry that knows about tools contributed by
+     * [SolinModuleRegistry] providers, not just the built-in specs.
+     *
+     * Published (rather than staying a local in [init]) because the runtime permission, special
+     * access, and media-projection consent gates in AgentRuntimePermissionPolicy must be asked
+     * about module tools too. A registry built from built-in specs alone answers "no permission
+     * required, no consent required" for any tool it does not know, which makes those gates
+     * silently fail open. Call sites therefore have to be able to hand the real registry in.
+     */
+    val toolRegistry: ToolRegistry
     private val actionPlanningRuntime: HybridActionPlanningRuntime
     private val observationActionPlanningRuntime: HybridActionPlanningRuntime
     private val actionExecutor: ToolExecutor
@@ -293,7 +307,7 @@ class SolinAppContainer(
                 event.toRemoteSendAuditEvent()?.let(remoteSendAuditRepository::record)
             }
         }
-        val toolRegistry = ToolRegistry(moduleRegistry.toolProviders)
+        toolRegistry = ToolRegistry(moduleRegistry.toolProviders)
         actionPlanningRuntime = HybridActionPlanningRuntime(
             cacheDir = appContext.cacheDir,
             toolRegistry = toolRegistry,
@@ -336,7 +350,24 @@ class SolinAppContainer(
             actionPlanningRuntime = actionPlanningRuntime,
             toolRegistry = toolRegistry,
             toolAuditSink = toolAuditRepository,
-            traceStore = RoomAgentTraceStore(database.agentTraceDao()),
+            traceStore = RoomAgentTraceStore(
+                traceDao = database.agentTraceDao(),
+                // Bridge the degradation latch to real telemetry: while step history is unreadable
+                // the step-derived budgets fail closed, so runs end early for a storage reason that
+                // is otherwise invisible. Only transitions are reported, not every failed read.
+                onStepHistoryDegradedChanged = { runId, degraded ->
+                    if (degraded) {
+                        runCatching {
+                            telemetrySink.record(
+                                MetricSample.CounterInc(
+                                    name = TelemetryCounter.StepHistoryDegraded,
+                                    runId = runId,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ),
             skillRuntime = CompositeSkillRuntime(
                 sources = moduleRegistry.skillSources,
                 planners = listOf(

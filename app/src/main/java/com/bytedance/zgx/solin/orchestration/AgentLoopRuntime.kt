@@ -79,6 +79,32 @@ private const val PUBLIC_EVIDENCE_CITATION_RETRY_REASON = "public_evidence_citat
 private const val MAX_VERBOSE_TRACE_THINK_TEXT_CHARS = 4_000
 
 /**
+ * Attempt cap for [AgentLoopRuntime.terminateRun]'s compare-and-set retry loop.
+ *
+ * Sized for genuine concurrent contention (a handful of racing transitions), not for a store whose
+ * views permanently disagree — in that case the loop must give up and log rather than spin.
+ */
+private const val MAX_TERMINATE_RUN_CAS_ATTEMPTS = 8
+
+/**
+ * CPU-friendly backoff between bounded compare-and-set retries.
+ *
+ * `Thread.onSpinWait()` is the right primitive but only exists from API 33, while this module ships
+ * to minSdk 28 — calling it unguarded would throw `NoSuchMethodError` on older devices. Falls back to
+ * `Thread.yield()`, which has the same intent (surrender the current scheduling slice) with weaker
+ * hardware support, and swallows failures because a backoff hint must never break termination.
+ */
+private fun spinWaitBackoff() {
+    runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            Thread.onSpinWait()
+        } else {
+            Thread.yield()
+        }
+    }
+}
+
+/**
  * Envelope for messages pushed onto the steer/queued in-memory channels. Carries the target [runId]
  * alongside the ChatMessage batch so a single pair of per-runtime Channels can route messages to
  * the correct run even when multiple runs are tracked concurrently (e.g. subagent runs).
@@ -170,6 +196,12 @@ class AgentLoopRuntime(
     private val profilesByRunId = java.util.concurrent.ConcurrentHashMap<String, AgentProfile>()
     private val scratchpad = com.bytedance.zgx.solin.memory.PerRunScratchpad()
 
+    // Wave 2 SolinEvent lifecycle bookkeeping: per-run wall-clock start time, so
+    // TurnStarted/TurnEnded/RunEnded events carry monotonic counters without disturbing the
+    // existing traceStore contract. Declared ahead of [runBudget] because the budget's wall-clock
+    // deadline reads it (a property initializer may not forward-reference a later property).
+    private val runStartedAtMillis = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private val runBudget = AgentRunBudget(
         maxRunToolSteps = maxRunToolSteps,
         maxObservationDecisions = maxObservationDecisions,
@@ -179,6 +211,13 @@ class AgentLoopRuntime(
             traceStore.steps(runId).count { step -> step is AgentStep.ObservationDecided }
         },
         sessionPlanStore = sessionPlanStore,
+        // Both counts above are derived from traceStore.steps(); when that read degrades the counts
+        // silently reset to zero, so the budget must know and fail closed instead of reopening the
+        // anti-runaway gate. See AgentTraceStore.stepHistoryDegraded.
+        stepHistoryDegraded = { runId -> traceStore.stepHistoryDegraded(runId) },
+        // runStartedAtMillis is otherwise statistics-only; feeding it to the budget turns it into the
+        // run-level wall-clock deadline (step counts alone cannot bound an untimed model generation).
+        runStartedAtMillis = { runId -> runStartedAtMillis[runId] },
     )
     private val initialToolPlanner = InitialToolPlanner(
         toolRegistry = toolRegistry,
@@ -547,10 +586,8 @@ class AgentLoopRuntime(
         },
     )
 
-    // Wave 2 SolinEvent lifecycle bookkeeping. Tracks per-run wall-clock start time and turn index
-    // so TurnStarted/TurnEnded/RunEnded events carry monotonic counters without disturbing the
-    // existing traceStore contract.
-    private val runStartedAtMillis = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    // Wave 2 SolinEvent lifecycle bookkeeping. runStartedAtMillis is declared above (the run budget
+    // reads it for the wall-clock deadline); runTurnIndex tracks the per-run monotonic turn counter.
     private val runTurnIndex = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     // Wave 3 mid-run steering: ChatMessages injected via steerRun()/steer() are queued here and
@@ -564,6 +601,19 @@ class AgentLoopRuntime(
     // Tool execution is NEVER cancelled by steer (safety-critical device actions must run to
     // completion); steer batches that arrive during ExecutingTool/RetryingTool are held on the
     // channel and injected after the current tool's result is observed, before the next model turn.
+    //
+    // RETENTION NOTE (audited): the *producer* half of this surface has NO production caller —
+    // steer(), queue(), steerRun(), and registerModelCallJob() are reached only through the
+    // AssistantOrchestrator forwarders, which SolinViewModel and the UI layer never invoke; only
+    // SteerQueueTest exercises the semantics. The *consumer* half is partially live:
+    // drainPendingMessages() is called from clearEphemeralRunState() to discard batches for a
+    // terminating run, and cancelAndClearModelCallJob() runs on cancelRun/terminateRun/close. Net
+    // effect today: nothing is ever enqueued, so the drains are no-ops.
+    //
+    // It is intentionally KEPT (not deleted) as the ChatController integration seam: deleting it
+    // would also delete its tests, i.e. an architecture decision beyond this fix batch. Do not
+    // "optimize" it away without that decision, and do not assume steer/queue is live when
+    // reasoning about run behavior.
     private val steerMessages = Channel<PendingMessageBatch>(capacity = Channel.UNLIMITED)
     private val queuedMessages = Channel<PendingMessageBatch>(capacity = Channel.UNLIMITED)
 
@@ -889,8 +939,17 @@ class AgentLoopRuntime(
         traceStore.clearPendingConfirmationsForRun(runId)
         pendingUserQuestionsByRunId.remove(runId)
         val decision = AgentObservationDecision.Cancel
+        // Bounded CAS retry, "read once, decide, then update" per iteration. The previous
+        // `while (updatedRun == null)` loop was unbounded and spun with no backoff while doing two
+        // disk reads per iteration: RoomAgentTraceStore.compareAndSetState can fail *persistently*
+        // (not just transiently) when its DB and in-memory views disagree about the current state,
+        // which turns "retry until success" into a real infinite loop that also hammers the DB.
+        // A small attempt cap plus a spin hint converts that into a diagnosable give-up: returning
+        // null leaves the run untouched, which the callers already handle as "nothing to cancel".
         var updatedRun: AgentRun? = null
-        while (updatedRun == null) {
+        var attempt = 0
+        while (updatedRun == null && attempt < MAX_TERMINATE_RUN_CAS_ATTEMPTS) {
+            attempt++
             val run = traceStore.run(runId) ?: return null
             if (run.state in terminalRunStates) return null
             updatedRun = traceStore.compareAndSetState(
@@ -898,6 +957,21 @@ class AgentLoopRuntime(
                 expectedState = run.state,
                 state = AgentRunState.Cancelled,
             )
+            if (updatedRun == null) {
+                // Back off instead of burning CPU: yield to whoever is concurrently transitioning
+                // this run. The loop is bounded above, so this can never become a busy-wait.
+                spinWaitBackoff()
+            }
+        }
+        if (updatedRun == null) {
+            runCatching {
+                Log.e(
+                    TAG,
+                    "terminateRun($runId) gave up after $MAX_TERMINATE_RUN_CAS_ATTEMPTS CAS attempts; " +
+                        "run state is contended or the trace store's persisted/live views disagree",
+                )
+            }
+            return null
         }
         traceStore.appendStep(runId, AgentStep.ObservationDecided(decision))
         eventBus.publish(
@@ -909,7 +983,7 @@ class AgentLoopRuntime(
         )
         clearEphemeralRunState(runId)
         return AgentModelObservationResult(
-            run = requireNotNull(updatedRun),
+            run = updatedRun,
             decision = decision,
             steps = traceStore.steps(runId),
         )
@@ -934,6 +1008,9 @@ class AgentLoopRuntime(
      * cancel the in-flight model call Job so the streaming loop aborts promptly and the next turn
      * starts against the new direction. Returns true if the run is active (so messages will be
      * delivered); false if the run is unknown or terminal (messages are dropped).
+     *
+     * NOTE: no production caller yet — see the RETENTION NOTE on [steerMessages]. Kept as the
+     * ChatController integration seam; covered only by SteerQueueTest today.
      *
      * Safety: when the run is currently executing/retries a tool (ExecutingTool / RetryingTool),
      * the in-flight tool Job is NOT cancelled — safety-critical device actions must run to
@@ -970,6 +1047,8 @@ class AgentLoopRuntime(
      * Normal-priority queue: enqueue [messages] to be picked up at the next drain point AFTER all
      * steer batches have been consumed. Never cancels anything. Returns true on successful
      * enqueue to an active run; false otherwise.
+     *
+     * NOTE: no production caller yet — see the RETENTION NOTE on [steerMessages].
      */
     fun queue(messages: List<ChatMessage>, runId: String? = activeRunIdForSteer()): Boolean {
         if (messages.isEmpty()) return false
@@ -989,6 +1068,9 @@ class AgentLoopRuntime(
      * Tool-execution Jobs must NOT be registered (tool execution is non-cancellable in v1 for
      * safety). Only model streaming Jobs (the `.collect { chunk -> ... }` over the local LiteRt
      * or remote chat runtime Flow) should be registered.
+     *
+     * NOTE: no production caller yet — see the RETENTION NOTE on [steerMessages]. Registration is
+     * still honoured by [cancelRun] / [terminateRun], which cancel any registered Job.
      */
     fun registerModelCallJob(runId: String, job: Job) {
         activeModelCallJobs[runId] = job
@@ -1074,6 +1156,10 @@ class AgentLoopRuntime(
      * flow through the same prepend path.
      *
      * Publishes [SolinEvent.Agent.RunSteered] once when the combined injected count is non-empty.
+     *
+     * NOTE: this drain IS called in production — from [clearEphemeralRunState], to discard batches
+     * addressed to a terminating run. But because nothing enqueues today (see the RETENTION NOTE on
+     * [steerMessages]), it is effectively a no-op there rather than a real injection point.
      *
      * Callers (typically the ViewModel immediately before building the ChatMessage list for the
      * model) should concatenate `steer + queued` messages and APPEND them to the outgoing history
@@ -1166,6 +1252,10 @@ class AgentLoopRuntime(
     // API surface so existing callers (ViewModel, tests) keep compiling without modification.
     // steerRun is the high-priority entry (equivalent to steer()); drainSteeringMessages returns
     // the concatenated steer+queued lists (matching the prior "all pending steering" contract).
+    //
+    // As of this audit these shims also have no production caller (see the RETENTION NOTE on
+    // [steerMessages]); they are kept alongside the primary API so a future ChatController can adopt
+    // either shape without a second migration.
     // -------------------------------------------------------------------------------------------
 
     /**
@@ -1277,6 +1367,7 @@ class AgentLoopRuntime(
     private fun toolStepBudgetExceeded(runId: String): Boolean = runBudget.toolStepBudgetExceeded(runId)
     private fun observationDecisionBudgetExceeded(runId: String): Boolean =
         runBudget.observationDecisionBudgetExceeded(runId)
+    private fun runDeadlineExceeded(runId: String): Boolean = runBudget.runDeadlineExceeded(runId)
     private fun augmentReasonWithStepBudgetHint(runId: String, reason: String): String =
         runBudget.augmentReasonWithStepBudgetHint(runId, reason)
 
@@ -1610,6 +1701,12 @@ class AgentLoopRuntime(
         }
         if (observationDecisionBudgetExceeded(runId)) {
             return failRunBudget(runId, OBSERVATION_DECISION_BUDGET_EXCEEDED_REASON)
+        }
+        // Time-domain guard, checked alongside the step-count budget: a local generation has no
+        // timeout, so N bounded turns can still add up to an unbounded run. Fail closed here (a safe
+        // GeneratingAnswer -> Failed boundary) rather than starting yet another turn.
+        if (runDeadlineExceeded(runId)) {
+            return failRunBudget(runId, RUN_WALL_CLOCK_DEADLINE_EXCEEDED_REASON)
         }
         // Wave 4 telemetry: record step latency for model_generation (delta since
         // step boundary was marked by the caller, with 0L fallback).

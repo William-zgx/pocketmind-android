@@ -135,6 +135,47 @@ object SolinConstants {
          * the real action proceed rather than looping.
          */
         const val AD_DISMISS_MAX_ROUNDS: Int = 2
+
+        /**
+         * Hard wall-clock lifetime of a single agent run, in milliseconds.
+         *
+         * The step budgets above bound how MANY steps a run may take, not how LONG each one may
+         * block: a local model generation has no generation timeout, and every tool step can burn
+         * its own execution timeout plus a retry. Multiplying
+         * [MAX_RUN_TOOL_STEPS] x (tool timeout + retry) by [MAX_OBSERVATION_DECISIONS] model turns
+         * therefore leaves the total run duration effectively unbounded. This deadline is the
+         * independent time-domain gate: once a run has been alive this long,
+         * [com.bytedance.zgx.solin.orchestration.AgentRunBudget.runDeadlineExceeded] fails it
+         * closed at the next observation checkpoint instead of letting it live forever.
+         *
+         * Deliberately generous (5 minutes) — a legitimate multi-step device-control run with user
+         * confirmations can easily take a minute or two, and this is a runaway guard, not a UX
+         * timeout.
+         */
+        const val MAX_RUN_WALL_CLOCK_MILLIS: Long = 5 * 60_000L
+
+        /**
+         * Maximum number of sequential action segments an explicit "do A, then B" request may be
+         * expanded into by
+         * [com.bytedance.zgx.solin.orchestration.SequentialActionObservationReplanner].
+         *
+         * Lives here rather than next to the replanner so the worst-case cost of one run (tool
+         * steps x observation decisions x sequential tail x model replans) can be audited from a
+         * single place.
+         */
+        const val MAX_SEQUENTIAL_ACTIONS: Int = 4
+
+        /**
+         * Maximum number of observation-driven replans a local action-planning model may contribute
+         * to a single run
+         * ([com.bytedance.zgx.solin.orchestration.ModelObservationReplanner] default).
+         *
+         * Counted from the trace via the replan request reason, so the budget survives process
+         * restarts. Kept at 1 by default: a model that cannot make progress in one replan is far
+         * more likely looping than converging. Composition roots may raise it explicitly for
+         * model-driven app search.
+         */
+        const val MAX_MODEL_OBSERVATION_REPLANS: Int = 1
     }
 
     /**

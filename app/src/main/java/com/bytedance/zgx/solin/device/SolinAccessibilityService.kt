@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -14,14 +16,17 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Display
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.TextView
 import androidx.annotation.RequiresApi
+import com.bytedance.zgx.solin.action.NormalizedTarget
 import com.bytedance.zgx.solin.multimodal.JPEG_QUALITY
 import com.bytedance.zgx.solin.multimodal.RawScreenshotReadResult
 import com.bytedance.zgx.solin.multimodal.compactedForVision
@@ -34,22 +39,84 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Every traversal limit and wall-clock budget this file depends on, in one place.
+ *
+ * These numbers are not independent: [UI_ACTION_FIXED_OVERHEAD_MILLIS] must dominate everything
+ * [executeUiAction] spends around the primitive (two full-tree observes plus the post-action idle
+ * wait), otherwise the outer hard timeout fires before the primitive can possibly report and every
+ * long-timeout request degrades into a spurious `Timeout`. Keeping them adjacent is what makes that
+ * arithmetic reviewable — the previous fixed `+4000` silently violated it once `ui_wait` accepted
+ * timeouts above ~6s.
+ */
 private const val MAX_SCREEN_TEXT_NODE_COUNT = 120
 private const val MAX_SCREEN_STATE_NODE_WALK = 240
 private const val MAX_SCREEN_NODE_CHILDREN = 80
+private const val MAX_SELF_OR_ANCESTOR_WALK_DEPTH = 6
+
+/**
+ * Last SDK level on which `AccessibilityNodeInfo.recycle()` still does something.
+ *
+ * API 33 deprecated it and made instances garbage-collected normally; on API 28-32 (this app's
+ * `minSdk` is 28) failing to recycle leaks pooled instances for the whole session.
+ */
+private const val LAST_MANUAL_NODE_RECYCLE_SDK = 32
 private const val SCREEN_TEXT_WALK_BUDGET_MILLIS = 1_500L
 private const val SCREEN_STATE_WALK_BUDGET_MILLIS = 3_000L
 private const val OBSERVE_HARD_TIMEOUT_MILLIS = 5_000L
-private const val UI_ACTION_HARD_TIMEOUT_MILLIS = 4_000L
+
+/** Observes bracketing a primitive in [executeUiAction]: one `before`, one `after`. */
+private const val UI_ACTION_OBSERVE_COUNT = 2
+
+/** Headroom for handler hops, binder round-trips and the gesture callback grace waits. */
+private const val UI_ACTION_TIMEOUT_SLACK_MILLIS = 1_500L
+
+/** Upper bound on the post-action idle wait, so an honoured model timeout still stays bounded. */
+private const val MAX_POST_ACTION_WAIT_MILLIS = 1_500L
+private const val UI_ACTION_FIXED_OVERHEAD_MILLIS =
+    (UI_ACTION_OBSERVE_COUNT * SCREEN_STATE_WALK_BUDGET_MILLIS) +
+        MAX_POST_ACTION_WAIT_MILLIS +
+        UI_ACTION_TIMEOUT_SLACK_MILLIS
 private const val TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS = 6_000L
-private const val TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS = 900L
+
+/**
+ * The framework rejects captures closer than ~1s apart with
+ * `ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT`; stay above that nominal second so clock granularity
+ * and scheduling jitter cannot land us just under it and abort the loop.
+ */
+private const val TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS = 1_200L
 private const val ACTIVE_WINDOW_ROOT_WAIT_MILLIS = 1_000L
 private const val DEFAULT_POST_ACTION_WAIT_MILLIS = 250L
 private const val MAX_SEARCH_ENTRY_FOCUS_ATTEMPTS = 4
 private const val MAX_SEARCH_ENTRY_FOCUS_WAIT_MILLIS = 3_000L
 private const val SEARCH_ENTRY_FOCUS_POLL_MILLIS = 80L
+
+/** A tap is a zero-length stroke; the duration only has to exceed the framework's touch slop time. */
+private const val TAP_GESTURE_STROKE_DURATION_MILLIS = 80L
+
+/** Grace added to a gesture's own duration before we stop waiting for its result callback. */
+private const val GESTURE_CALLBACK_GRACE_MILLIS = 500L
+private const val PERCENT_DENOMINATOR = 100
+
+/** Horizontal inset used to hit the text part of a search bar rather than its trailing icons. */
+private const val SEARCH_BAR_TAP_X_OFFSET_PERCENT = 35
+
+/**
+ * Vertical inset from the top of a browser result "search bar" container down into its input row.
+ * Expressed in dp because the container height scales with density — the previous raw `72` was
+ * pixels, so it landed in a different row on every screen density.
+ */
+private const val BROWSER_SEARCH_BAR_TAP_Y_OFFSET_DP = 24f
+
+/** How far below a search field, in anchor-heights, a submit control may still belong to it. */
+private const val SUBMIT_CANDIDATE_BELOW_SPAN = 3
+
+/** Symmetric horizontal reach, in anchor-heights, on each side of a search field. */
+private const val SUBMIT_CANDIDATE_HORIZONTAL_SPAN = 4
+private const val SOLIN_PASTE_CLIP_LABEL = "Solin输入"
 private val SUBMIT_SEARCH_OCR_TEXT_HINTS = listOf(
     "提交搜索",
     "搜索",
@@ -65,6 +132,102 @@ private val SUBMIT_SEARCH_OCR_TEXT_HINTS = listOf(
 ).map { value -> value.normalizedLookupKey() }
 
 private val deviceControlTask = ThreadLocal<DeviceControlTaskLease?>()
+
+/**
+ * What the framework reported about one dispatched gesture.
+ *
+ * The distinction that matters is [TimedOut] vs [Cancelled]: both mean "no confirmed touch", but only
+ * [Cancelled] (and [NotAccepted], where dispatch never started) proves nothing was delivered. A
+ * timed-out callback may still have landed, so compensating for it with a second input event risks a
+ * duplicate activation.
+ */
+internal enum class GestureOutcome {
+    /** `dispatchGesture` refused the request — no touch was ever injected. */
+    NotAccepted,
+
+    /** The framework confirmed the gesture ran to completion. */
+    Completed,
+
+    /** The framework explicitly cancelled the gesture; no touch reached the app. */
+    Cancelled,
+
+    /** No callback arrived before the grace window elapsed; delivery is unknown. */
+    TimedOut,
+    ;
+
+    val performed: Boolean get() = this == Completed
+
+    /** True only when we know no touch landed, so a compensating click cannot double-fire. */
+    val allowsFallbackClick: Boolean get() = this == NotAccepted || this == Cancelled
+}
+
+/**
+ * Result of a selection-aware backspace: the new text plus where the caret should end up.
+ *
+ * [selection] is `-1` when the caret position is unknown, meaning the caller should not attempt a
+ * restore (the platform will leave it at the end, which is the old behaviour).
+ */
+internal data class BackspaceEdit(val text: String, val selection: Int)
+
+/**
+ * Computes a backspace against [current] honouring the reported selection.
+ *
+ * Three cases, in the order a real IME handles them: a non-empty selection is deleted wholesale; a
+ * collapsed caret deletes the one character before it; an unusable/unreported selection falls back to
+ * dropping the last character. Pure so the off-by-one and boundary behaviour is unit-testable —
+ * `AccessibilityNodeInfo` reports `-1` for "no selection", and out-of-range values have been observed
+ * on stale nodes, so both must be treated as "unknown" rather than trusted into a substring call.
+ */
+internal fun backspaceEdit(current: String, selectionStart: Int, selectionEnd: Int): BackspaceEdit {
+    val validRange = 0..current.length
+    if (selectionStart !in validRange || selectionEnd !in validRange) {
+        return BackspaceEdit(text = current.dropLast(1), selection = -1)
+    }
+    val start = minOf(selectionStart, selectionEnd)
+    val end = maxOf(selectionStart, selectionEnd)
+    if (start != end) {
+        return BackspaceEdit(
+            text = current.removeRange(start, end),
+            selection = start,
+        )
+    }
+    if (start == 0) return BackspaceEdit(text = current, selection = 0)
+    return BackspaceEdit(
+        text = current.removeRange(start - 1, start),
+        selection = start - 1,
+    )
+}
+
+private fun tapPathAt(x: Int, y: Int): Path =
+    Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+
+/**
+ * Clamps a model-supplied normalized pair into the official [NormalizedTarget].
+ *
+ * Reuses `action.NormalizedTarget.toAbsolutePixels` rather than re-deriving `x * width / 1000` at each
+ * gesture site — three hand-written copies of that formula is three places for the mapping to drift
+ * from the one the rest of the pipeline documents. Clamping (not `require`) keeps the existing
+ * fail-soft behaviour for out-of-range input; the schema already bounds it upstream.
+ */
+private fun clampedNormalizedTarget(x: Int, y: Int): NormalizedTarget =
+    NormalizedTarget(
+        x = x.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+        y = y.coerceIn(MIN_NORMALIZED_COORD, MAX_NORMALIZED_COORD),
+    )
+
+/**
+ * True when the clipboard's primary clip is still the exact text Solin pasted.
+ *
+ * Compared by value rather than by clip identity because the system hands back a fresh [ClipData]
+ * instance on every read. Any failure to read is reported as "not ours", so an unreadable clipboard
+ * never causes us to overwrite it.
+ */
+private fun ClipboardManager.holdsSolinText(writtenText: String): Boolean =
+    runCatching {
+        val clip = primaryClip ?: return false
+        if (clip.itemCount != 1) return false
+        clip.getItemAt(0)?.text?.toString() == writtenText
+    }.getOrDefault(false)
 
 class SolinAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -93,9 +256,21 @@ class SolinAccessibilityService : AccessibilityService() {
         hideControlProgressOverlay()
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        // Unbind can happen without onDestroy (user toggles the service off, system rebinds later), and
+        // it is the last point where we still have a live context to hand the clipboard back.
+        drainPendingClipboardOnTeardown()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         deviceControlTasks.invalidate(this)
+        drainPendingClipboardOnTeardown()
         hideControlProgressOverlay()
+        // The callback thread outlives the service otherwise: it is only fed by takeScreenshot, so once
+        // the service is gone nothing can arrive on it and keeping it alive just leaks a thread per
+        // service instance across enable/disable cycles.
+        screenshotCallbackExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -313,7 +488,7 @@ class SolinAccessibilityService : AccessibilityService() {
             throwIfInterrupted()
             val imeAccepted = submitUiSideEffect { editableNode.performImeSearchAction() }
             if (imeAccepted) {
-                sleepForUiIdle(timeoutMillis.coerceAtMost(DEFAULT_POST_ACTION_WAIT_MILLIS))
+                sleepForUiIdle(postActionWaitMillis(timeoutMillis))
             }
             val refreshedRoot = if (imeAccepted) activeWindowRoot() ?: root else root
             val refreshedEditableNode = refreshedRoot.findNodeCandidate { candidate ->
@@ -418,13 +593,22 @@ class SolinAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * The window whose tree we act on.
+     *
+     * `isActive` outranks the window type on purpose: the type-first ordering picked whichever
+     * TYPE_APPLICATION window happened to sort first, which in split-screen or under an app-overlay is
+     * the background app — so we would read and tap the window the user is not interacting with. Active
+     * (then focused) identifies the window receiving input, and only among equals does preferring an
+     * application window over system chrome help.
+     */
     private fun activeWindowRootDirect(): AccessibilityNodeInfo? =
         windows
             .asSequence()
             .sortedWith(
-                compareByDescending<AccessibilityWindowInfo> { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-                    .thenByDescending { it.isActive }
-                    .thenByDescending { it.isFocused },
+                compareByDescending<AccessibilityWindowInfo> { it.isActive }
+                    .thenByDescending { it.isFocused }
+                    .thenByDescending { it.type == AccessibilityWindowInfo.TYPE_APPLICATION },
             )
             .mapNotNull { window -> window.root }
             .firstOrNull()
@@ -458,7 +642,7 @@ class SolinAccessibilityService : AccessibilityService() {
                 },
             )
         }
-        sleepForUiIdle(timeoutMillis.coerceAtMost(DEFAULT_POST_ACTION_WAIT_MILLIS))
+        sleepForUiIdle(postActionWaitMillis(timeoutMillis))
         val after = observeSnapshot(
             maxTextChars = DEFAULT_DEVICE_CONTROL_MAX_TEXT_CHARS,
             maxNodes = DEFAULT_DEVICE_CONTROL_MAX_NODES,
@@ -480,37 +664,55 @@ class SolinAccessibilityService : AccessibilityService() {
         Thread.sleep(bounded)
     }
 
-    private fun dispatchTapGesture(x: Int, y: Int): Boolean {
+    private fun dispatchTapGesture(x: Int, y: Int): Boolean =
+        dispatchGestureOutcome(
+            path = tapPathAt(x, y),
+            durationMillis = TAP_GESTURE_STROKE_DURATION_MILLIS,
+        ).performed
+
+    /**
+     * Dispatches one stroke and reports what the framework actually told us.
+     *
+     * `completed` is an [AtomicBoolean] rather than a plain `var`: the callback runs on a framework
+     * thread while the control thread reads it, and a non-volatile field gives no happens-before edge
+     * — the reader could observe a stale `false` after a successful gesture. The latch's own return
+     * value is kept too, because "callback said cancelled" and "callback never arrived" must not be
+     * collapsed: only the former is safe to compensate for with a second input event.
+     */
+    private fun dispatchGestureOutcome(path: Path, durationMillis: Long): GestureOutcome {
         throwIfInterrupted()
-        val path = Path().apply {
-            moveTo(x.toFloat(), y.toFloat())
-        }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0L, 80L))
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMillis))
             .build()
         val latch = CountDownLatch(1)
-        var completed = false
+        val completed = AtomicBoolean(false)
         val accepted = submitUiSideEffect {
             dispatchGesture(
                 gesture,
                 object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        completed = true
+                        completed.set(true)
                         latch.countDown()
                     }
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
-                        completed = false
+                        completed.set(false)
                         latch.countDown()
                     }
                 },
                 null,
             )
         }
-        if (!accepted) return false
-        latch.await(500L, TimeUnit.MILLISECONDS)
+        if (!accepted) return GestureOutcome.NotAccepted
+        val callbackArrived = runCatching {
+            latch.await(durationMillis + GESTURE_CALLBACK_GRACE_MILLIS, TimeUnit.MILLISECONDS)
+        }.getOrDefault(false)
         throwIfInterrupted()
-        return completed
+        return when {
+            !callbackArrived -> GestureOutcome.TimedOut
+            completed.get() -> GestureOutcome.Completed
+            else -> GestureOutcome.Cancelled
+        }
     }
 
     /** Wall-clock of the last takeScreenshot call, for the ~1/sec framework rate-limit guard. */
@@ -629,13 +831,9 @@ class SolinAccessibilityService : AccessibilityService() {
         timeoutMillis: Long,
     ): UiActionReadResult =
         executeUiAction(timeoutMillis = timeoutMillis) {
-            val clampedX = normalizedX.coerceIn(0, 1000)
-            val clampedY = normalizedY.coerceIn(0, 1000)
-            val displayMetrics = resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val screenHeight = displayMetrics.heightPixels
-            val absX = (clampedX * screenWidth) / 1000
-            val absY = (clampedY * screenHeight) / 1000
+            val (screenWidth, screenHeight) = gestureScreenSizePx()
+            val (absX, absY) = clampedNormalizedTarget(normalizedX, normalizedY)
+                .toAbsolutePixels(screenWidth, screenHeight)
             val performed = dispatchTapGesture(absX, absY)
             if (performed) {
                 UiPrimitiveResult.succeeded("已点击坐标 ($normalizedX, $normalizedY)")
@@ -647,6 +845,27 @@ class SolinAccessibilityService : AccessibilityService() {
             }
         }
 
+    /**
+     * Screen size gestures are injected against, in real display pixels.
+     *
+     * `resources.displayMetrics` is the app's own view of the display: it excludes system decor and
+     * shrinks in multi-window, so on a device with gesture navigation a normalized y=1000 landed short
+     * of the real bottom edge. Gestures are dispatched in absolute screen coordinates, so they must be
+     * derived from the display's real size. Falls back to app metrics if the real size is unavailable —
+     * the previous behaviour, never worse.
+     */
+    private fun gestureScreenSizePx(): Pair<Int, Int> {
+        val appMetrics = resources.displayMetrics
+        val fallback = appMetrics.widthPixels to appMetrics.heightPixels
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return fallback
+        val bounds = runCatching {
+            getSystemService(WindowManager::class.java)?.maximumWindowMetrics?.bounds
+        }.getOrNull() ?: return fallback
+        val width = bounds.width()
+        val height = bounds.height()
+        return if (width > 0 && height > 0) width to height else fallback
+    }
+
     private fun swipeByNormalizedCoords(
         startXNorm: Int,
         startYNorm: Int,
@@ -656,13 +875,11 @@ class SolinAccessibilityService : AccessibilityService() {
         timeoutMillis: Long,
     ): UiActionReadResult =
         executeUiAction(timeoutMillis = timeoutMillis) {
-            val displayMetrics = resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val screenHeight = displayMetrics.heightPixels
-            val startX = (startXNorm.coerceIn(0, 1000) * screenWidth) / 1000
-            val startY = (startYNorm.coerceIn(0, 1000) * screenHeight) / 1000
-            val endX = (endXNorm.coerceIn(0, 1000) * screenWidth) / 1000
-            val endY = (endYNorm.coerceIn(0, 1000) * screenHeight) / 1000
+            val (screenWidth, screenHeight) = gestureScreenSizePx()
+            val (startX, startY) = clampedNormalizedTarget(startXNorm, startYNorm)
+                .toAbsolutePixels(screenWidth, screenHeight)
+            val (endX, endY) = clampedNormalizedTarget(endXNorm, endYNorm)
+                .toAbsolutePixels(screenWidth, screenHeight)
             val performed = dispatchSwipeGesture(startX, startY, endX, endY, durationMillis)
             if (performed) {
                 UiPrimitiveResult.succeeded(
@@ -683,9 +900,9 @@ class SolinAccessibilityService : AccessibilityService() {
         timeoutMillis: Long,
     ): UiActionReadResult =
         executeUiAction(timeoutMillis = timeoutMillis) {
-            val displayMetrics = resources.displayMetrics
-            val absX = (xNorm.coerceIn(0, 1000) * displayMetrics.widthPixels) / 1000
-            val absY = (yNorm.coerceIn(0, 1000) * displayMetrics.heightPixels) / 1000
+            val (screenWidth, screenHeight) = gestureScreenSizePx()
+            val (absX, absY) = clampedNormalizedTarget(xNorm, yNorm)
+                .toAbsolutePixels(screenWidth, screenHeight)
             val performed = dispatchLongPressGesture(absX, absY, holdMillis)
             if (performed) {
                 UiPrimitiveResult.succeeded("已长按坐标 ($xNorm, $yNorm)")
@@ -719,6 +936,16 @@ class SolinAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Enter/confirm on the focused editable, with an API 28/29 fallback.
+     *
+     * `ACTION_IME_ENTER` only exists from API 30, and `minSdk` is 28 — on those two releases this
+     * primitive could never do anything at all, so `press_key(enter)` and the IME half of
+     * `submit_search` were permanently dead. The fallback clicks a submit affordance adjacent to the
+     * focused field, the same evidence [findSearchSubmitCandidate] already requires. The strict
+     * focused-safe-editable precondition above is unchanged: we still refuse to submit a form the user
+     * did not focus, and never touch a password field.
+     */
     private fun imeEnterPrimitive(): UiPrimitiveResult {
         val root = activeWindowRoot()
             ?: return UiPrimitiveResult.failed(
@@ -730,16 +957,32 @@ class SolinAccessibilityService : AccessibilityService() {
                 reason = "当前没有可提交的输入框",
                 failureKind = UiActionFailureKind.EditableNotFound,
             )
-        return if (submitUiSideEffect { editableNode.performImeSearchAction() }) {
-            UiPrimitiveResult.succeeded("已执行回车/确认")
-        } else {
-            UiPrimitiveResult.failed(
-                reason = "输入法回车动作未被接受",
-                failureKind = UiActionFailureKind.SubmitNotFound,
-            )
+        if (submitUiSideEffect { editableNode.performImeSearchAction() }) {
+            return UiPrimitiveResult.succeeded("已执行回车/确认")
         }
+        val submitCandidate = root.findSearchSubmitCandidate(editableNode)
+        if (submitCandidate != null && activateCandidate(submitCandidate)) {
+            return UiPrimitiveResult.succeeded("已点击输入框旁的提交入口（当前系统不支持输入法回车）")
+        }
+        return UiPrimitiveResult.failed(
+            reason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                "输入法回车动作未被接受"
+            } else {
+                "当前系统不支持输入法回车，且未找到输入框旁的提交入口"
+            },
+            failureKind = UiActionFailureKind.SubmitNotFound,
+        )
     }
 
+    /**
+     * Deletes one character before the cursor on the focused editable.
+     *
+     * Prefers a selection-aware edit: reading `textSelectionStart/End` lets us remove the character the
+     * cursor is actually behind and then restore the caret. The previous unconditional
+     * `SET_TEXT(dropLast(1))` always deleted the last character and slammed the caret to the end, so
+     * editing mid-string removed the wrong character and any in-flight pinyin composing text was
+     * destroyed. `SET_TEXT` remains the fallback when no usable selection is reported.
+     */
     private fun deleteLastCharPrimitive(): UiPrimitiveResult {
         val root = activeWindowRoot()
             ?: return UiPrimitiveResult.failed(
@@ -755,14 +998,29 @@ class SolinAccessibilityService : AccessibilityService() {
         if (current.isEmpty()) {
             return UiPrimitiveResult.succeeded("输入框已为空，无需删除")
         }
-        val truncated = current.substring(0, current.length - 1)
-        return if (setTextDirectly(editableNode, truncated)) {
-            UiPrimitiveResult.succeeded("已删除末尾字符")
-        } else {
-            UiPrimitiveResult.failed(
+        val edit = backspaceEdit(current, editableNode.textSelectionStart, editableNode.textSelectionEnd)
+        if (!setTextDirectly(editableNode, edit.text)) {
+            return UiPrimitiveResult.failed(
                 reason = "删除字符动作未被接受",
                 failureKind = UiActionFailureKind.NodeNotFound,
             )
+        }
+        // Best-effort caret restore: SET_TEXT leaves the cursor at the end, which would silently turn a
+        // mid-string edit into "and now everything you type goes to the end".
+        restoreSelection(editableNode, edit.selection)
+        return UiPrimitiveResult.succeeded("已删除光标前的字符")
+    }
+
+    private fun restoreSelection(editableNode: AccessibilityNodeInfo, selection: Int) {
+        if (selection < 0) return
+        val args = Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, selection)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, selection)
+        }
+        runCatching {
+            submitUiSideEffect {
+                editableNode.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, args)
+            }
         }
     }
 
@@ -788,32 +1046,7 @@ class SolinAccessibilityService : AccessibilityService() {
             MIN_UI_GESTURE_DURATION_MILLIS,
             MAX_UI_LONG_PRESS_HOLD_MILLIS,
         )
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0L, bounded))
-            .build()
-        val latch = CountDownLatch(1)
-        var completed = false
-        val accepted = submitUiSideEffect {
-            dispatchGesture(
-                gesture,
-                object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        completed = true
-                        latch.countDown()
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        completed = false
-                        latch.countDown()
-                    }
-                },
-                null,
-            )
-        }
-        if (!accepted) return false
-        latch.await(bounded + 500L, TimeUnit.MILLISECONDS)
-        throwIfInterrupted()
-        return completed
+        return dispatchGestureOutcome(path = path, durationMillis = bounded).performed
     }
 
     private fun activateCandidate(candidate: NodeCandidate): Boolean {
@@ -821,12 +1054,18 @@ class SolinAccessibilityService : AccessibilityService() {
         val clickNode = candidate.node.clickableSelfOrAncestor()
         val preferredPoint = candidate.node.searchEntryFallbackTapPoint(candidate.label)
         val gestureBounds = candidate.node.safeBounds() ?: clickNode?.safeBounds()
-        val gesturePerformed = preferredPoint
-            ?.let { (x, y) -> dispatchTapGesture(x, y) }
-            ?: gestureBounds
-                ?.let { bounds -> dispatchTapGesture(bounds.centerX, bounds.centerY) }
-            ?: false
-        return gesturePerformed || clickNode?.let { node ->
+        val tapPoint = preferredPoint ?: gestureBounds?.let { bounds -> bounds.centerX to bounds.centerY }
+        val outcome = tapPoint
+            ?.let { (x, y) -> dispatchGestureOutcome(tapPathAt(x, y), TAP_GESTURE_STROKE_DURATION_MILLIS) }
+            ?: GestureOutcome.NotAccepted
+        if (outcome.performed) return true
+        // Only compensate with ACTION_CLICK when the framework positively told us no touch landed.
+        // On TimedOut the gesture may well have been delivered and merely reported late, and a second
+        // activation there is a real double-tap — on a payment or "confirm order" button that is a
+        // duplicate irreversible action, so we would rather report failure and let the caller re-plan
+        // against a fresh observation than risk acting twice.
+        if (!outcome.allowsFallbackClick) return false
+        return clickNode?.let { node ->
             submitUiSideEffect { node.performAction(AccessibilityNodeInfo.ACTION_CLICK) }
         } == true
     }
@@ -898,8 +1137,15 @@ class SolinAccessibilityService : AccessibilityService() {
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return false
         val previousClip = runCatching { clipboard.primaryClip }.getOrNull()
         submitUiSideEffect {
-            clipboard.setPrimaryClip(ClipData.newPlainText("Solin输入", text))
+            clipboard.setPrimaryClip(ClipData.newPlainText(SOLIN_PASTE_CLIP_LABEL, text))
         }
+        // Remember what we wrote so the restore can verify it is still ours, and so lifecycle teardown
+        // can finish the job: whatever the user was typing (a search term, an address) must not be left
+        // sitting in the system clipboard for other apps to read.
+        pendingClipboardRestore = PendingClipboardRestore(
+            previousClip = previousClip,
+            writtenText = text,
+        )
         val pasted = submitUiSideEffect {
             editableNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         }
@@ -907,7 +1153,7 @@ class SolinAccessibilityService : AccessibilityService() {
         mainHandler.postDelayed(
             {
                 task?.runCleanupIfCurrent {
-                    restoreClipboardAfterPaste(clipboard, previousClip)
+                    restorePendingClipboard(clipboard)
                 }
             },
             DEFAULT_POST_ACTION_WAIT_MILLIS,
@@ -915,16 +1161,60 @@ class SolinAccessibilityService : AccessibilityService() {
         return pasted
     }
 
-    private fun restoreClipboardAfterPaste(clipboard: ClipboardManager, previousClip: ClipData?) {
+    /**
+     * Clipboard content Solin wrote and still owes a restore for.
+     *
+     * Held on the service (not captured per-callback) so [onDestroy] / [onUnbind] can drain it: the
+     * delayed restore runs through `runCleanupIfCurrent`, which deliberately skips when the service has
+     * been torn down or reconnected — exactly the cases where the pasted text would otherwise leak
+     * permanently.
+     */
+    private data class PendingClipboardRestore(
+        val previousClip: ClipData?,
+        val writtenText: String,
+    )
+
+    @Volatile
+    private var pendingClipboardRestore: PendingClipboardRestore? = null
+
+    /**
+     * Restores the pre-paste clipboard, but only while the clipboard still holds what we wrote.
+     *
+     * Between the paste and this delayed restore the user may have copied something of their own;
+     * blindly re-setting the old clip would destroy it. Comparing first means a lost restore is the
+     * worst case, never a lost user clip.
+     */
+    private fun restorePendingClipboard(clipboard: ClipboardManager) {
+        val pending = pendingClipboardRestore ?: return
+        pendingClipboardRestore = null
         runCatching {
+            if (!clipboard.holdsSolinText(pending.writtenText)) return
+            val previousClip = pending.previousClip
             if (previousClip != null) {
                 clipboard.setPrimaryClip(previousClip)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 clipboard.clearPrimaryClip()
             } else {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Solin输入", ""))
+                clipboard.setPrimaryClip(ClipData.newPlainText(SOLIN_PASTE_CLIP_LABEL, ""))
             }
         }
+    }
+
+    /**
+     * Last-resort clipboard drain for service teardown.
+     *
+     * Runs outside the task-lease guard on purpose: by the time [onDestroy] / [onUnbind] fires the
+     * lease is already invalidated, so the normal restore path would decline and the pasted text would
+     * survive the service. Still content-checked, so a clip the user created after us is untouched.
+     */
+    private fun drainPendingClipboardOnTeardown() {
+        if (pendingClipboardRestore == null) return
+        val clipboard = runCatching { getSystemService(ClipboardManager::class.java) }.getOrNull()
+        if (clipboard == null) {
+            pendingClipboardRestore = null
+            return
+        }
+        restorePendingClipboard(clipboard)
     }
 
     private fun findEditableForTextInput(
@@ -1296,7 +1586,9 @@ class SolinAccessibilityService : AccessibilityService() {
             showControlProgress(task, service, "正在截取当前屏幕")
             return runDeviceControlWithTimeout(
                 task = task,
-                timeoutMillis = TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS + UI_ACTION_HARD_TIMEOUT_MILLIS,
+                timeoutMillis = TAKE_SCREENSHOT_CAPTURE_TIMEOUT_MILLIS +
+                    TAKE_SCREENSHOT_MIN_INTERVAL_MILLIS +
+                    UI_ACTION_TIMEOUT_SLACK_MILLIS,
                 fallback = { RawScreenshotReadResult.Failed("当前屏幕截图超时") },
             ) {
                 service.takeScreenshotRaw()
@@ -1374,9 +1666,37 @@ class SolinAccessibilityService : AccessibilityService() {
             )
 
         private fun Long.uiActionHardTimeout(): Long =
-            (this + UI_ACTION_HARD_TIMEOUT_MILLIS).coerceAtMost(MAX_UI_ACTION_TIMEOUT_MILLIS)
+            uiActionHardTimeoutMillis(this)
     }
 }
+
+/**
+ * Outer watchdog budget for a UI action whose model-requested inner timeout is [requestedTimeoutMillis].
+ *
+ * Must stay strictly greater than everything [SolinAccessibilityService.executeUiAction] can spend:
+ * the pre-action idle wait (up to the requested timeout, which is what `ui_wait` asks for), the two
+ * bracketing full-tree observes, the post-action idle wait, and handler/binder slack. A fixed additive
+ * margin cannot satisfy that — with `ui_wait` accepting up to 10s, a `+4000` watchdog fired while the
+ * pre-action wait was still running, so every large timeout reported a spurious `Timeout` even though
+ * nothing had gone wrong. Pure (no Android instances) so the arithmetic is unit-testable.
+ */
+internal fun uiActionHardTimeoutMillis(requestedTimeoutMillis: Long): Long {
+    val requested = requestedTimeoutMillis
+        .coerceIn(MIN_UI_ACTION_TIMEOUT_MILLIS, MAX_UI_ACTION_TIMEOUT_MILLIS)
+    return requested + UI_ACTION_FIXED_OVERHEAD_MILLIS
+}
+
+/**
+ * How long to let the UI settle after a primitive, given the model's requested `timeoutMillis`.
+ *
+ * The schema advertises `timeoutMillis` as the caller's patience for the action, but this was
+ * previously `coerceAtMost(250)`, so a model asking for 3s never got more than 250ms and read a
+ * half-rendered `after` snapshot. Honour the request, floored at [DEFAULT_POST_ACTION_WAIT_MILLIS] so
+ * a tiny timeout still gets a usable settle window, and capped at [MAX_POST_ACTION_WAIT_MILLIS] so
+ * the wait stays inside the overhead budget [uiActionHardTimeoutMillis] reserves for it.
+ */
+internal fun postActionWaitMillis(requestedTimeoutMillis: Long): Long =
+    requestedTimeoutMillis.coerceIn(DEFAULT_POST_ACTION_WAIT_MILLIS, MAX_POST_ACTION_WAIT_MILLIS)
 
 /**
  * Maps an [AccessibilityService.TakeScreenshotCallback] error code to a fail-closed
@@ -1399,36 +1719,49 @@ internal enum class DeviceControlTaskCancellationReason {
     Failure,
 }
 
+/**
+ * Serializes device-control leases against accessibility-service lifecycle changes.
+ *
+ * The lock guards lease bookkeeping ONLY. Nothing that can block — no binder IPC, no gesture dispatch,
+ * no clipboard write — may run while it is held: those calls come from the control thread, while
+ * `onServiceConnected` / `onInterrupt` / `onDestroy` need the same lock on the main thread, so a slow
+ * IPC would stall a lifecycle callback into an ANR. Every entry point therefore follows lock → validate
+ * → mark → unlock → act.
+ */
 internal class DeviceControlTaskCoordinator {
     private val lock = Any()
     private var generation = 0L
     private var activeOwner: WeakReference<Any>? = null
     private val tasks = mutableSetOf<DeviceControlTaskLease>()
 
-    fun connect(owner: Any): Any? =
-        synchronized(lock) {
-            val previous = activeOwner?.get()
+    fun connect(owner: Any): Any? {
+        val (previous, futures) = synchronized(lock) {
+            val previousOwner = activeOwner?.get()
             generation += 1
             activeOwner = WeakReference(owner)
-            cancelTasksLocked(DeviceControlTaskCancellationReason.Lifecycle)
-            previous
+            previousOwner to cancelTasksLocked(DeviceControlTaskCancellationReason.Lifecycle)
         }
+        futures.forEach { future -> future.cancel(true) }
+        return previous
+    }
 
     fun invalidate(owner: Any) {
-        synchronized(lock) {
+        val futures = synchronized(lock) {
             if (activeOwner?.get() !== owner) return
             generation += 1
             activeOwner = null
             cancelTasksLocked(DeviceControlTaskCancellationReason.Lifecycle)
         }
+        futures.forEach { future -> future.cancel(true) }
     }
 
     fun interrupt(owner: Any) {
-        synchronized(lock) {
+        val futures = synchronized(lock) {
             if (activeOwner?.get() !== owner) return
             generation += 1
             cancelTasksLocked(DeviceControlTaskCancellationReason.Lifecycle)
         }
+        futures.forEach { future -> future.cancel(true) }
     }
 
     fun startTask(): DeviceControlTaskLease? =
@@ -1457,38 +1790,50 @@ internal class DeviceControlTaskCoordinator {
         }
     }
 
-    internal fun <T> submitUiSideEffect(task: DeviceControlTaskLease, action: () -> T): T =
+    /**
+     * Validates and marks under the lock, then runs [action] OUTSIDE it.
+     *
+     * [action] is a binder call into the accessibility framework (perform action, dispatch gesture,
+     * take screenshot) and can block for hundreds of milliseconds; holding the lock across it would
+     * make any concurrent lifecycle callback wait that long on the main thread. The mark happens before
+     * release, so a lifecycle change racing us still sees `hasSubmittedUiSideEffect` and the timeout
+     * result stays correctly non-retryable.
+     */
+    internal fun <T> submitUiSideEffect(task: DeviceControlTaskLease, action: () -> T): T {
         synchronized(lock) {
             if (!isActiveLocked(task)) throw DeviceControlTaskCancelledException()
             task.markUiSideEffectSubmittedLocked()
-            action()
         }
+        return action()
+    }
 
     internal fun runUiSideEffectIfActive(
         task: DeviceControlTaskLease,
         action: () -> Unit,
-    ): Boolean =
+    ): Boolean {
         synchronized(lock) {
             if (!isActiveLocked(task)) return false
             task.markUiSideEffectSubmittedLocked()
-            action()
-            true
         }
+        action()
+        return true
+    }
 
     internal fun runIfActive(
         task: DeviceControlTaskLease,
         action: () -> Unit,
-    ): Boolean =
+    ): Boolean {
         synchronized(lock) {
             if (!isActiveLocked(task)) return false
-            action()
-            true
         }
+        action()
+        return true
+    }
 
     internal fun runCleanupIfCurrent(
         task: DeviceControlTaskLease,
         action: () -> Unit,
-    ): Boolean =
+    ): Boolean {
         synchronized(lock) {
             if (
                 task.wasCancelledByLifecycleLocked() ||
@@ -1497,9 +1842,10 @@ internal class DeviceControlTaskCoordinator {
             ) {
                 return false
             }
-            action()
-            true
         }
+        action()
+        return true
+    }
 
     internal fun attachFuture(task: DeviceControlTaskLease, future: Future<*>) {
         val shouldCancel = synchronized(lock) {
@@ -1542,10 +1888,12 @@ internal class DeviceControlTaskCoordinator {
             activeOwner?.get() === task.owner &&
             generation == task.generation
 
-    private fun cancelTasksLocked(reason: DeviceControlTaskCancellationReason) {
+    private fun cancelTasksLocked(
+        reason: DeviceControlTaskCancellationReason,
+    ): List<Future<*>> {
         val futures = tasks.mapNotNull { task -> task.cancelLocked(reason) }
         tasks.clear()
-        futures.forEach { future -> future.cancel(true) }
+        return futures
     }
 }
 
@@ -1679,6 +2027,8 @@ private fun AccessibilityNodeInfo.toCurrentScreenTextSnapshot(
     val completed = walkScreenNodes(
         maxWalkCount = MAX_SCREEN_TEXT_NODE_COUNT,
         timeBudgetMillis = SCREEN_TEXT_WALK_BUDGET_MILLIS,
+        // AccessibilityTextCollector copies out strings only — it retains no node.
+        recycleVisitedNodes = true,
     ) { node ->
         collector.visit(node)
         !collector.isFull
@@ -1767,6 +2117,8 @@ internal fun AccessibilityNodeInfo.toScreenStateSnapshot(
     val completed = walkScreenNodes(
         maxWalkCount = MAX_SCREEN_STATE_NODE_WALK,
         timeBudgetMillis = SCREEN_STATE_WALK_BUDGET_MILLIS,
+        // ScreenStateCollector flattens each node into an immutable ScreenNode value; no node escapes.
+        recycleVisitedNodes = true,
     ) { node ->
         collector.visit(node)
         !collector.isFull
@@ -1815,7 +2167,7 @@ private class ScreenStateCollector(
             return
         }
         collectedNodes += node.toScreenNode(
-            id = "n${collectedNodes.size}_${node.fingerprint().shortStableHash()}_$snapshotSalt",
+            id = screenNodeId(index = collectedNodes.size, node = node, salt = snapshotSalt),
         )
     }
 
@@ -2033,6 +2385,22 @@ private data class NodeCandidate(
     }
 }
 
+/**
+ * The ONE transient node-id generator, shared by the observe side and every click-side lookup.
+ *
+ * Both sides must count the same thing or the ids are meaningless: observe used
+ * `collectedNodes.size` (meaningful nodes only) while the click side used a counter bumped for every
+ * traversed node including the structural ones observe skips, so the two sequences could never agree.
+ * A model that pointed at an observed `n7_…` therefore always missed, silently fell back to text
+ * matching, and could never reach an icon-only node that has no text at all. [index] is consequently
+ * defined as the ordinal among nodes passing [isMeaningfulScreenNode] — see
+ * [transientNodeIdTargetMatchScore] for the salt-tolerant comparison on the click side.
+ */
+private fun screenNodeId(index: Int, node: AccessibilityNodeInfo, salt: String?): String {
+    val base = "n${index}_${node.fingerprint().shortStableHash()}"
+    return if (salt.isNullOrBlank()) base else "${base}_$salt"
+}
+
 internal fun transientNodeIdTargetMatchScore(candidateId: String, target: String): Int? {
     val rawTarget = target.trim()
     if (rawTarget == candidateId) return 1_000
@@ -2106,16 +2474,20 @@ private fun ScreenStateReadResult.snapshotOrNull(): ScreenStateSnapshot? =
 private fun AccessibilityNodeInfo.findNodeCandidate(
     predicate: (NodeCandidate) -> Boolean,
 ): NodeCandidate? {
-    var candidateIndex = 0
+    var meaningfulIndex = 0
     var found: NodeCandidate? = null
+    // No recycling here: the returned NodeCandidate keeps its node, and callers walk its parents
+    // afterwards (clickableSelfOrAncestor). Recycling would hand back a dead node.
     walkScreenNodes(maxWalkCount = MAX_SCREEN_STATE_NODE_WALK) { node ->
-        val label = node.nodeSearchLabel()
+        // The walker visits every node, but only nodes the observe side would have published consume
+        // an index — both sides must share that basis for ids to resolve.
+        val consumesIndex = node.countsTowardScreenNodeIndex()
         val candidate = NodeCandidate(
             node = node,
-            id = "n${candidateIndex}_${node.fingerprint().shortStableHash()}",
-            label = label,
+            id = screenNodeId(index = meaningfulIndex, node = node, salt = null),
+            label = node.nodeSearchLabel(),
         )
-        candidateIndex += 1
+        if (consumesIndex) meaningfulIndex += 1
         if (predicate(candidate)) {
             found = candidate
             false
@@ -2125,9 +2497,6 @@ private fun AccessibilityNodeInfo.findNodeCandidate(
     }
     return found
 }
-
-private fun AccessibilityNodeInfo.findFocusedEditableCandidate(): NodeCandidate? =
-    findNodeCandidate { candidate -> candidate.node.isEditable && candidate.node.isFocused }
 
 private fun AccessibilityNodeInfo.findTargetCandidate(
     target: String,
@@ -2148,7 +2517,11 @@ private fun AccessibilityNodeInfo.findTransientOverlayDismissCandidate(): NodeCa
 
 private fun AccessibilityNodeInfo.looksLikeSearchBlockingOverlay(): Boolean {
     var markerCount = 0
-    walkScreenNodes(maxWalkCount = MAX_SCREEN_STATE_NODE_WALK) { node ->
+    walkScreenNodes(
+        maxWalkCount = MAX_SCREEN_STATE_NODE_WALK,
+        // Counts label matches only; nothing is retained past the visit.
+        recycleVisitedNodes = true,
+    ) { node ->
         val label = node.nodeSearchLabel().normalizedLookupKey()
         if (label.isNotBlank() && label.hasSearchBlockingOverlayMarker()) {
             markerCount += 1
@@ -2163,17 +2536,21 @@ private fun AccessibilityNodeInfo.findTargetCandidates(
     predicate: (NodeCandidate) -> Boolean = { true },
     limit: Int = 5,
 ): List<NodeCandidate> {
-    var candidateIndex = 0
+    var meaningfulIndex = 0
     val candidates = mutableListOf<Pair<NodeCandidate, Int>>()
     val profile = AppInteractionProfiles.forPackage(packageName?.toString())
     val rootBounds = safeBounds()
+    // No recycling: every scored candidate is returned to the caller, which taps or types into it.
     walkScreenNodes(maxWalkCount = MAX_SCREEN_STATE_NODE_WALK) { node ->
+        // Same counting basis as the observe side (see [screenNodeId]): structural nodes are traversed
+        // but do not consume an index.
+        val consumesIndex = node.countsTowardScreenNodeIndex()
         val candidate = NodeCandidate(
             node = node,
-            id = "n${candidateIndex}_${node.fingerprint().shortStableHash()}",
+            id = screenNodeId(index = meaningfulIndex, node = node, salt = null),
             label = node.nodeSearchLabel(),
         )
-        candidateIndex += 1
+        if (consumesIndex) meaningfulIndex += 1
         val score = candidate.targetMatchScore(
             target = target,
             profile = profile,
@@ -2242,6 +2619,14 @@ private fun String.hasSearchBlockingOverlayMarker(): Boolean =
         "弹窗",
     ).any { marker -> contains(marker.normalizedLookupKey()) }
 
+/**
+ * Whether this node is close enough to [anchorEditable] to plausibly be its submit control.
+ *
+ * The horizontal window is deliberately symmetric — it extends [SUBMIT_CANDIDATE_HORIZONTAL_SPAN]
+ * anchor-heights on BOTH sides — so it needs no RTL mirroring: a submit button sits to the right of the
+ * field in LTR and to the left in RTL, and both are accepted. Distances are expressed in anchor heights
+ * rather than pixels so the tolerance scales with text size and density.
+ */
 private fun AccessibilityNodeInfo.isSubmitCandidateNear(anchorEditable: AccessibilityNodeInfo?): Boolean {
     val anchorBounds = anchorEditable?.safeBounds() ?: return true
     val candidateBounds = safeBounds() ?: clickableSelfOrAncestor()?.safeBounds() ?: return false
@@ -2249,38 +2634,87 @@ private fun AccessibilityNodeInfo.isSubmitCandidateNear(anchorEditable: Accessib
     val sameRow = candidateBounds.centerY in
         (anchorBounds.top - anchorHeight)..(anchorBounds.bottom + anchorHeight)
     val nearBelow = candidateBounds.top in
-        anchorBounds.bottom..(anchorBounds.bottom + anchorHeight * 3)
+        anchorBounds.bottom..(anchorBounds.bottom + anchorHeight * SUBMIT_CANDIDATE_BELOW_SPAN)
+    val horizontalSlack = anchorHeight * SUBMIT_CANDIDATE_HORIZONTAL_SPAN
     val horizontallyRelated =
-        candidateBounds.left <= anchorBounds.right + anchorHeight * 4 &&
-            candidateBounds.right >= anchorBounds.left - anchorHeight * 4
+        candidateBounds.left <= anchorBounds.right + horizontalSlack &&
+            candidateBounds.right >= anchorBounds.left - horizontalSlack
     return horizontallyRelated && (sameRow || nearBelow)
 }
 
+/**
+ * Breadth-first traversal of the node tree under this root.
+ *
+ * @param recycleVisitedNodes opt-in node recycling. Below API 33 `AccessibilityNodeInfo` instances are
+ * pooled and NOT reclaimed automatically, and one `ui_tap` runs up to seven full traversals of as many
+ * as [MAX_SCREEN_STATE_NODE_WALK] nodes each, so the leak is continuous on API 28-32. It cannot be
+ * unconditional though: a visitor that keeps a reference (every `NodeCandidate`-producing lookup does)
+ * would be handed an already-recycled node and throw `IllegalStateException` on the next read. So only
+ * call sites whose visitor provably retains nothing — the pure read-out traversals — pass `true`. The
+ * root itself is never recycled: it belongs to the caller, which reuses it after the walk. Children
+ * already pulled into `pending` stay valid after their parent is recycled; each is an independent
+ * instance.
+ */
 private fun AccessibilityNodeInfo.walkScreenNodes(
     maxWalkCount: Int,
     timeBudgetMillis: Long = SCREEN_STATE_WALK_BUDGET_MILLIS,
+    recycleVisitedNodes: Boolean = false,
     visitor: (AccessibilityNodeInfo) -> Boolean,
 ): Boolean {
+    val root = this
     val pending = ArrayDeque<AccessibilityNodeInfo>()
-    pending.add(this)
+    pending.add(root)
     var walked = 0
     val deadlineMillis = System.currentTimeMillis() + timeBudgetMillis.coerceAtLeast(100L)
+    val shouldRecycle = recycleVisitedNodes && Build.VERSION.SDK_INT <= LAST_MANUAL_NODE_RECYCLE_SDK
+
+    // Recycling has to happen on every exit path, including the early returns for budget exhaustion —
+    // those are the common case on a busy screen, so leaking there would defeat the whole fix.
+    fun drain(node: AccessibilityNodeInfo?) {
+        if (!shouldRecycle) return
+        if (node != null && node !== root) runCatching { node.recycle() }
+    }
+
+    fun drainPending() {
+        if (!shouldRecycle) return
+        while (pending.isNotEmpty()) drain(pending.removeFirst())
+    }
+
     while (pending.isNotEmpty() && walked < maxWalkCount) {
-        if (System.currentTimeMillis() >= deadlineMillis) return false
+        if (System.currentTimeMillis() >= deadlineMillis) {
+            drainPending()
+            return false
+        }
         val node = pending.removeFirst()
         walked += 1
-        if (!visitor(node)) return true
+        if (!visitor(node)) {
+            // The visitor asked to stop, which for a retaining visitor means it just kept this node —
+            // hand ownership over untouched and only reclaim what is still queued.
+            drainPending()
+            return true
+        }
         val childCount = runCatching { node.childCount }
             .getOrDefault(0)
             .coerceAtMost(MAX_SCREEN_NODE_CHILDREN)
         for (index in 0 until childCount) {
-            if (System.currentTimeMillis() >= deadlineMillis) return false
+            if (System.currentTimeMillis() >= deadlineMillis) {
+                drain(node)
+                drainPending()
+                return false
+            }
             val child = runCatching { node.getChild(index) }.getOrNull() ?: continue
             pending.add(child)
-            if (pending.size + walked >= maxWalkCount) return false
+            if (pending.size + walked >= maxWalkCount) {
+                drain(node)
+                drainPending()
+                return false
+            }
         }
+        drain(node)
     }
-    return pending.isEmpty()
+    val exhausted = pending.isEmpty()
+    drainPending()
+    return exhausted
 }
 
 private fun AccessibilityNodeInfo.toScreenNode(id: String): ScreenNode =
@@ -2302,6 +2736,17 @@ private fun AccessibilityNodeInfo.isMeaningfulScreenNode(): Boolean =
         isScrollable ||
         text.normalizedNodeText().orEmpty().isNotBlank() ||
         contentDescription.normalizedNodeText().orEmpty().isNotBlank()
+
+/**
+ * Whether this node consumes a [screenNodeId] index.
+ *
+ * Mirrors exactly what [ScreenStateCollector.visit] appends to `collectedNodes`: invisible and
+ * password nodes are dropped before the meaningfulness test there, so the click side has to drop them
+ * too — otherwise the two index sequences drift apart again the moment a screen contains an offscreen
+ * or password field.
+ */
+private fun AccessibilityNodeInfo.countsTowardScreenNodeIndex(): Boolean =
+    isVisibleToUser && !isPassword && isMeaningfulScreenNode()
 
 private fun AccessibilityNodeInfo.nodeSearchLabel(): String =
     listOfNotNull(
@@ -2374,7 +2819,7 @@ private fun UiOcrGroundingHint.matchesSubmitSearchText(): Boolean {
 
 private fun AccessibilityNodeInfo.clickableSelfOrAncestor(): AccessibilityNodeInfo? {
     var current: AccessibilityNodeInfo? = this
-    repeat(6) {
+    repeat(MAX_SELF_OR_ANCESTOR_WALK_DEPTH) {
         val node = current ?: return null
         if (node.isEnabled && node.isClickable) return node
         current = node.parent
@@ -2382,18 +2827,51 @@ private fun AccessibilityNodeInfo.clickableSelfOrAncestor(): AccessibilityNodeIn
     return null
 }
 
+/**
+ * Where to tap a search bar that reports itself as neither clickable nor editable.
+ *
+ * Such containers only react to a touch inside their text region, so we aim at an inset rather than the
+ * geometric centre (which on browser omniboxes lands on the reload/menu icons). The inset is mirrored
+ * for RTL layouts: in Arabic/Hebrew the text starts at the right edge, so a fixed left inset would aim
+ * at the trailing icons instead of the text — the same bug the offset exists to avoid.
+ */
 private fun AccessibilityNodeInfo.searchEntryFallbackTapPoint(label: String): Pair<Int, Int>? {
     val bounds = safeBounds() ?: return null
     val normalizedLabel = label.normalizedLookupKey()
     if (isBrowserResultSearchBarLabel(normalizedLabel)) {
-        val xOffset = (bounds.width() * 35 / 100).coerceIn(1, (bounds.width() - 1).coerceAtLeast(1))
-        val yOffset = 72.coerceAtMost((bounds.height() - 1).coerceAtLeast(1))
-        return (bounds.left + xOffset) to (bounds.top + yOffset)
+        val yOffset = browserSearchBarTapYOffsetPx()
+            .coerceAtMost((bounds.height() - 1).coerceAtLeast(1))
+        return bounds.searchBarTapX() to (bounds.top + yOffset)
     }
     if (!isNonActionableSearchBarLabel(normalizedLabel, isClickable, isEditable)) return null
-    val xOffset = (bounds.width() * 35 / 100).coerceIn(1, (bounds.width() - 1).coerceAtLeast(1))
-    return (bounds.left + xOffset) to bounds.centerY
+    return bounds.searchBarTapX() to bounds.centerY
 }
+
+/**
+ * Horizontal tap coordinate inside a search bar, [SEARCH_BAR_TAP_X_OFFSET_PERCENT] in from the edge
+ * where its text begins — left for LTR, right for RTL.
+ */
+private fun ScreenBounds.searchBarTapX(): Int {
+    val width = width()
+    val offset = (width * SEARCH_BAR_TAP_X_OFFSET_PERCENT / PERCENT_DENOMINATOR)
+        .coerceIn(1, (width - 1).coerceAtLeast(1))
+    return if (isRtlLayout()) right - offset else left + offset
+}
+
+/**
+ * Whether the device's default locale lays text out right-to-left.
+ *
+ * Derived from the locale rather than a node property because [AccessibilityNodeInfo] exposes no layout
+ * direction; the default locale is what the app hierarchy resolves its own direction from in practice.
+ */
+private fun isRtlLayout(): Boolean =
+    TextUtils.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_RTL
+
+/** Density-correct px for [BROWSER_SEARCH_BAR_TAP_Y_OFFSET_DP]. */
+private fun browserSearchBarTapYOffsetPx(): Int =
+    (BROWSER_SEARCH_BAR_TAP_Y_OFFSET_DP * Resources.getSystem().displayMetrics.density)
+        .toInt()
+        .coerceAtLeast(1)
 
 private fun isNonActionableSearchBarLabel(
     normalizedLabel: String,
@@ -2419,7 +2897,7 @@ private fun AccessibilityNodeInfo.focusedSafeEditable(): AccessibilityNodeInfo? 
 
 private fun AccessibilityNodeInfo.scrollableSelfOrAncestor(): AccessibilityNodeInfo? {
     var current: AccessibilityNodeInfo? = this
-    repeat(6) {
+    repeat(MAX_SELF_OR_ANCESTOR_WALK_DEPTH) {
         val node = current ?: return null
         if (node.isEnabled && node.isScrollable) return node
         current = node.parent
@@ -2469,14 +2947,3 @@ private fun String.hasSearchEntryStrongEvidence(): Boolean =
         contains("searchbox") ||
         contains("searchfield") ||
         contains("omnibox")
-
-private fun String?.looksLikeSearchOrEditableTarget(): Boolean {
-    val normalized = orEmpty().lowercase(Locale.ROOT)
-    return UiTargetResolver.kindForTarget(normalized)?.let { kind ->
-        kind == UiTargetKind.SearchEntry || kind == UiTargetKind.EditableField
-    } == true ||
-        normalized.hasGenericSearchEvidence() ||
-        normalized.contains("输入") ||
-        normalized.contains("edit") ||
-        normalized.contains("地址")
-}

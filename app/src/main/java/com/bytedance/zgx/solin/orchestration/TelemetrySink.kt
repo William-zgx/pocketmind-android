@@ -55,6 +55,16 @@ enum class TelemetryCounter {
     AuditEvents,
     /** Incremented for each [SolinEvent.Safety] event (count only; no payload). */
     SafetyEvents,
+
+    /**
+     * Incremented when persisted step history becomes unreadable for a run, so the step-derived
+     * budgets can no longer be trusted.
+     *
+     * Worth its own counter because the step budget is the hard stop against runaway loops: while
+     * this is degraded the budget checks fail closed, which is safe but ends runs early. A rising
+     * count means runs are being cut short by a storage problem, not by their own step usage.
+     */
+    StepHistoryDegraded,
 }
 
 // ---------------------------------------------------------------------------

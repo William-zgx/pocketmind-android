@@ -27,6 +27,28 @@ data class ToolSpec(
     val tags: Set<ToolCapabilityTag> = emptySet(),
     val androidRuntimePermissions: List<AndroidRuntimePermissionSpec> = emptyList(),
     val executionMode: ToolExecutionMode = ToolExecutionMode.Sequential,
+    /**
+     * Mutually exclusive argument groups: for every inner set, a valid request must supply
+     * **exactly one** of those argument names — never zero, never two or more. Non-blank
+     * presence is what counts, so a blank value reads as "not supplied".
+     *
+     * NOT the JSON Schema `oneOf` keyword. `oneOf` means "the value validates against exactly
+     * one subschema"; this means "these sibling arguments are mutually exclusive and one of
+     * them is mandatory". Read it as *required-and-mutually-exclusive*, i.e. XOR over presence.
+     *
+     * WHY it lives on the spec instead of in the schema: the schema dialect accepted by
+     * [ToolArgumentValidator] deliberately rejects root-level `oneOf` (see the closed-dialect
+     * checks in ToolSchemaValidation), and members of such a group cannot go into the schema's
+     * `required` list either — each one is individually optional. Before this field existed the
+     * rule was hard-coded as a per-tool `when` branch inside the registry, which meant every new
+     * XOR pair had to edit shared validation code. Declaring it here keeps the invariant next to
+     * the tool and lets [ToolRegistry.validate] enforce it table-driven.
+     *
+     * Fail-closed contract: every name must be declared in [inputSchemaJson] properties and must
+     * not appear in the schema's `required` list; a group must name at least two arguments.
+     * Violations fail [ToolRegistry] construction rather than silently skipping the check.
+     */
+    val exactlyOneOf: Set<Set<String>> = emptySet(),
 )
 
 fun interface ToolProvider {

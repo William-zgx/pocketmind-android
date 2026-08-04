@@ -560,7 +560,12 @@ internal class ToolObservationCoordinator(
         } else {
             NextObservationPlan.None
         }
-        val decision = observationDecision(
+        // [baseDecision] is the decision derived purely from the observed result. It is deliberately
+        // NOT used past the [effectiveDecision] computation below: shouldFinish / shouldTakeOver /
+        // post-launch continuation can override it, and mixing the two produced a real state-machine
+        // split (trace + run state followed the override while the side effects and the returned
+        // value followed the base). Named "base" so a later edit cannot reach for it by habit.
+        val baseDecision = observationDecision(
             request = request,
             result = observedResult,
             retryRequest = retryRequest,
@@ -575,7 +580,7 @@ internal class ToolObservationCoordinator(
         // instead of parking at AwaitingExternalOutcome. Only overrides a Complete decision (open_app
         // produces no further plan on its own); every downstream UI action still passes
         // dangerousUiActionPreflight + expectedForegroundPackagePreflight + the 5-step checkpoint.
-        val postLaunchContinuation = if (decision == AgentObservationDecision.Complete && !shouldFinish) {
+        val postLaunchContinuation = if (baseDecision == AgentObservationDecision.Complete && !shouldFinish) {
             (toolPlanCoordinator.planPostLaunchInAppContinuation(observingRun, request, safeResult)
                 as? NextObservationPlan.Planned)
                 ?.let { planned ->
@@ -591,7 +596,7 @@ internal class ToolObservationCoordinator(
                 AgentObservationDecision.Complete
             }
             postLaunchContinuation != null -> postLaunchContinuation
-            else -> decision
+            else -> baseDecision
         }
         when (effectiveDecision) {
             is AgentObservationDecision.RetryTool -> traceStore.appendStep(
@@ -664,6 +669,11 @@ internal class ToolObservationCoordinator(
         // (i.e. not the initial runOnce plan). Append UserQuestionAsked step + publish event
         // + remember pending state BEFORE updating run state so subscribers see the step
         // before the AwaitingUserAnswer state transition.
+        //
+        // The result is reused by the pending-confirmation branch below: an ask_user plan parks in
+        // AwaitingUserAnswer and must NOT also persist a pending confirmation snapshot. Previously an
+        // inner `val` of the same name recomputed this from the base decision, so the outer value was
+        // dead and the two branches could disagree.
         var parkedForAskUser = false
         if (effectiveDecision is AgentObservationDecision.PlanNextTool &&
             effectiveDecision.plan.nextExecutionState() == AgentRunState.AwaitingUserAnswer
@@ -703,25 +713,47 @@ internal class ToolObservationCoordinator(
         if (finalState in host.terminalRunStates) {
             host.clearEphemeralRunState(runId)
         }
-        if (decision is AgentObservationDecision.ContinueWithModel) {
+        // Side effects and the returned decision MUST follow [effectiveDecision], the same value that
+        // drove the trace step and the state transition above. Using the pre-override base decision
+        // here split the state machine in both directions:
+        //  - post-launch continuation (base=Complete, effective=PlanNextTool): the run moved to
+        //    AwaitingUserConfirmation but savePendingConfirmation never ran, so after a process
+        //    restart RoomAgentTraceStore.failStaleInFlightRuns' awaitingWithoutPendingRuns check saw
+        //    an awaiting run with no pending row and failed it as unrestorable — and in-process the UI
+        //    was handed Complete for a run that is not in a terminal state.
+        //  - shouldFinish / shouldTakeOver (base=ContinueWithModel or PlanNextTool,
+        //    effective=Complete): the run completed, yet the remote tool scope was widened / a pending
+        //    confirmation was persisted for a plan that will never execute.
+        // Both directions are now consistent, and the confirmation branch stays fail-closed (a pending
+        // snapshot is written exactly when the run actually parks for confirmation).
+        if (effectiveDecision is AgentObservationDecision.ContinueWithModel) {
             host.setRemoteToolScope(runId, continuationRemoteToolScope)
         }
-        if (decision is AgentObservationDecision.PlanNextTool) {
-            val parkedForAskUser = decision.plan.nextExecutionState() == AgentRunState.AwaitingUserAnswer
-            if (!parkedForAskUser && decision.plan.requiresUserConfirmation()) {
-                traceStore.savePendingConfirmation(host.toPendingSnapshot(decision.plan, updatedRun))
+        if (effectiveDecision is AgentObservationDecision.PlanNextTool) {
+            if (!parkedForAskUser && effectiveDecision.plan.requiresUserConfirmation()) {
+                traceStore.savePendingConfirmation(host.toPendingSnapshot(effectiveDecision.plan, updatedRun))
             }
         }
         return AgentObservationResult(
             run = updatedRun,
             result = observedResult,
             assistantMessage = assistantMessage,
-            decision = decision,
+            decision = effectiveDecision,
             recoveryAction = recoveryAction,
+            // Deliberately NOT gated on the decision: a PlanNextTool decision legitimately carries a
+            // continuation prompt (see the `continuationPrompt == null || canPlanNextToolBeforeContinuation`
+            // gate above), and ToolExecutionController consumes the next-tool plan first, so the prompt
+            // is only read when no plan took precedence. Gating it here would silently drop
+            // local-evidence continuations that today work.
             continuationPromptForModel = continuationPrompt,
             continuationRequiresLocalModel = continuationRequiresLocalModel,
             continuationRemoteToolScope = continuationRemoteToolScope,
-            retryRequest = retryRequest,
+            // ToolExecutionController re-executes retryRequest in a loop, so it must agree with the
+            // decision that actually took effect. It always does today (an override only fires on a
+            // Succeeded result, and a retry only on a retryable Failed one), but surfacing a retry
+            // alongside a Complete/terminal decision would re-run a tool on a finished run — so the
+            // agreement is enforced here rather than assumed.
+            retryRequest = retryRequest.takeIf { effectiveDecision is AgentObservationDecision.RetryTool },
             retryAttempt = retryAttempt,
             steps = traceStore.steps(runId),
         )

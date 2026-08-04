@@ -101,6 +101,21 @@ interface AgentTraceStore {
     fun appendVerboseTrace(runId: String, entry: VerboseTraceEntry)
     fun verboseTrace(runId: String): List<VerboseTraceEntry>
     fun steps(runId: String): List<AgentStep>
+
+    /**
+     * True when persisted step history for [runId] could not be read, so step-derived budgets are
+     * unreliable.
+     *
+     * Every anti-runaway gate in [AgentRunBudget] (tool-step budget, observation-decision budget,
+     * retry attempt counting) is derived from [steps]. A store that silently degrades to a partial
+     * or empty step list therefore silently resets those counters — a DB hiccup would turn the
+     * hard loop limits off exactly when a misbehaving run needs them most. Exposing the degradation
+     * lets the budget fail closed instead of guessing.
+     *
+     * Intentionally abstract, with no default: a fail-open default (`false`) is precisely the bug
+     * this method exists to prevent, so every implementation must state its own answer.
+     */
+    fun stepHistoryDegraded(runId: String): Boolean
     fun stepSummaries(runId: String): List<AgentTraceStepSummary>
     fun recentRunSummaries(limit: Int = 5, stepLimit: Int = 20): List<AgentTraceRunSummary>
     fun savePendingConfirmation(snapshot: PendingToolConfirmationSnapshot)
@@ -206,6 +221,9 @@ class InMemoryAgentTraceStore(
     override fun steps(runId: String): List<AgentStep> =
         runSteps[runId].orEmpty().toList()
 
+    /** In-memory steps cannot fail to read: the list IS the source of truth, so never degraded. */
+    override fun stepHistoryDegraded(runId: String): Boolean = false
+
     override fun stepSummaries(runId: String): List<AgentTraceStepSummary> =
         runStepSummaries[runId].orEmpty().toList()
 
@@ -306,6 +324,13 @@ class RoomAgentTraceStore(
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
     private val runIdFactory: () -> String = { "run-${UUID.randomUUID()}" },
     private val toolRegistry: ToolRegistry = ToolRegistry(),
+    /**
+     * Telemetry hook invoked once per transition of a run's step-history readability (true when a
+     * persisted read just started failing, false when it recovered). Kept as a plain callback so
+     * this store keeps its narrow dependency surface; the composition root can bridge it to the
+     * real [TelemetrySink]. Never receives step payload — only the run id and the flag.
+     */
+    private val onStepHistoryDegradedChanged: (runId: String, degraded: Boolean) -> Unit = { _, _ -> },
 ) : AgentTraceStore {
     private data class LiveStepEntry(
         val step: AgentStep,
@@ -324,6 +349,13 @@ class RoomAgentTraceStore(
     private val livePendingConfirmations = ConcurrentHashMap<String, PendingToolConfirmationSnapshot>()
     private val liveNextActionInputs = ConcurrentHashMap<String, String>()
     private val liveContinuationCursors = ConcurrentHashMap<String, AgentContinuationCursor>()
+
+    /**
+     * Per-run flag set when [mergedStepEntries] could not read persisted steps. Kept per-run (not
+     * global) so one broken run cannot fail-close unrelated healthy runs, and cleared as soon as a
+     * read succeeds again so a transient DB hiccup does not permanently disable a session.
+     */
+    private val stepHistoryDegradedRunIds = ConcurrentHashMap<String, Boolean>()
 
     override fun createRun(input: String, sessionId: String?): AgentRun {
         val now = clockMillis()
@@ -524,6 +556,9 @@ class RoomAgentTraceStore(
     override fun steps(runId: String): List<AgentStep> =
         mergedStepEntries(runId).map { entry -> entry.step }
 
+    override fun stepHistoryDegraded(runId: String): Boolean =
+        stepHistoryDegradedRunIds[runId] == true
+
     override fun stepSummaries(runId: String): List<AgentTraceStepSummary> =
         mergedStepEntries(runId).mapIndexed { index, entry ->
             entry.persisted?.copy(position = index)?.toSummary()
@@ -668,6 +703,7 @@ class RoomAgentTraceStore(
             livePendingConfirmations.remove(runId)
             liveNextActionInputs.remove(runId)
             liveContinuationCursors.remove(runId)
+            stepHistoryDegradedRunIds.remove(runId)
         }
         return deletedCount
     }
@@ -845,7 +881,26 @@ class RoomAgentTraceStore(
     }
 
     private fun mergedStepEntries(runId: String): List<MergedStepEntry> {
-        val persisted = runCatching { traceDao.steps(runId) }.getOrDefault(emptyList())
+        // A failed persisted read used to be swallowed into emptyList(), which silently zeroed every
+        // step-derived budget (tool steps, observation decisions, retry attempts) — i.e. a DB hiccup
+        // disabled the anti-runaway gates. We still degrade to live-only entries so the active run
+        // stays usable, but the failure is now logged, reported once, and latched per-run so
+        // AgentRunBudget can fail closed instead of treating the truncated history as authoritative.
+        val persisted = runCatching { traceDao.steps(runId) }
+            .onSuccess { markStepHistoryDegraded(runId, degraded = false) }
+            .onFailure { throwable ->
+                markStepHistoryDegraded(runId, degraded = true)
+                // Log is wrapped: android.util.Log is unmocked on the JVM unit-test path, and an
+                // unavailable logger must not escalate a degraded read into a thrown exception.
+                runCatching {
+                    android.util.Log.e(
+                        "RoomAgentTraceStore",
+                        "steps($runId) read failed; step-derived budgets degrade to fail-closed",
+                        throwable,
+                    )
+                }
+            }
+            .getOrDefault(emptyList())
         val unmatchedLive = liveSteps[runId]
             ?.mapIndexed { sequence, entry -> IndexedLiveStepEntry(sequence, entry) }
             .orEmpty()
@@ -877,6 +932,22 @@ class RoomAgentTraceStore(
         val sequence: Int,
         val entry: LiveStepEntry,
     )
+
+    /**
+     * Latch or clear the per-run degradation flag, reporting telemetry only on an actual transition
+     * so a run that reads steps dozens of times per turn cannot spam the sink. Telemetry itself is
+     * wrapped so a misbehaving sink can never turn an observability hook into a store failure.
+     */
+    private fun markStepHistoryDegraded(runId: String, degraded: Boolean) {
+        val previous = if (degraded) {
+            stepHistoryDegradedRunIds.put(runId, true)
+        } else {
+            stepHistoryDegradedRunIds.remove(runId)
+        }
+        val wasDegraded = previous == true
+        if (wasDegraded == degraded) return
+        runCatching { onStepHistoryDegradedChanged(runId, degraded) }
+    }
 
     private fun LiveStepEntry.toMergedStepEntry(): MergedStepEntry = MergedStepEntry(
         step = step,

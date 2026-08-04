@@ -122,6 +122,7 @@ import com.bytedance.zgx.solin.RemoteSendDisclosurePolicy
 import com.bytedance.zgx.solin.RunTimelineItemUiSummary
 import com.bytedance.zgx.solin.RunDataReceiptUiSummary
 import com.bytedance.zgx.solin.R
+import com.bytedance.zgx.solin.RuntimePermissionRequirement
 import com.bytedance.zgx.solin.SpecialAccessRequirement
 import com.bytedance.zgx.solin.background.PeriodicCheckScheduleRequest
 import com.bytedance.zgx.solin.label
@@ -172,6 +173,11 @@ fun SolinScreen(
     onSetPeriodicCheckPolicy: (PeriodicCheckScheduleRequest) -> Unit,
     onDisablePeriodicCheckPolicy: () -> Unit,
     onOpenSpecialAccessSettings: (SpecialAccessRequirement) -> Unit,
+    // Resolved by the caller, which owns the module-aware tool registry: a registry that does not
+    // know a tool answers "nothing required", so resolving these inside the UI layer risks a
+    // confirmation sheet that understates what the action will do. See ActionDraftSheet's KDoc.
+    resolveRuntimePermissionRequirements: (PendingAgentConfirmation) -> List<RuntimePermissionRequirement>,
+    resolveSpecialAccessRequirements: (PendingAgentConfirmation) -> List<SpecialAccessRequirement>,
     onConfirmAgentConfirmation: (PendingAgentConfirmation) -> Unit,
     onDismissAgentConfirmation: (PendingAgentConfirmation?) -> Unit,
     onRecordExternalOutcome: (PendingExternalOutcomeConfirmation, AgentExternalOutcome) -> Unit,
@@ -504,6 +510,8 @@ fun SolinScreen(
                     ActionDraftSheet(
                         confirmation = confirmation,
                         grantedSpecialAccessIds = state.grantedSpecialAccessIds,
+                        runtimePermissionRequirements = resolveRuntimePermissionRequirements(confirmation),
+                        specialAccessRequirements = resolveSpecialAccessRequirements(confirmation),
                         onOpenSpecialAccessSettings = onOpenSpecialAccessSettings,
                         onConfirm = { onConfirmAgentConfirmation(confirmation) },
                         onDismiss = { onDismissAgentConfirmation(confirmation) },

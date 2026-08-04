@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
         val deniedPermissions = confirmation.deniedRuntimePermissionsAfterGrantResult(
             grantResults = grantResults,
             hasRuntimePermission = ::hasRuntimePermission,
+            toolRegistry = appContainer.toolRegistry,
         )
         if (deniedPermissions.isEmpty()) {
             confirmAgentConfirmationWithPermissions(confirmation)
@@ -336,6 +337,16 @@ class MainActivity : ComponentActivity() {
                         viewModel.launchPersistenceWork(viewModel::disablePeriodicCheckPolicy)
                     },
                     onOpenSpecialAccessSettings = ::openSpecialAccessSettings,
+                    resolveRuntimePermissionRequirements = { confirmation ->
+                        confirmation.runtimePermissionRequirementsFor(
+                            toolRegistry = appContainer.toolRegistry,
+                        )
+                    },
+                    resolveSpecialAccessRequirements = { confirmation ->
+                        confirmation.specialAccessRequirementsFor(
+                            toolRegistry = appContainer.toolRegistry,
+                        )
+                    },
                     onConfirmAgentConfirmation = ::confirmAgentConfirmationWithPermissions,
                     onDismissAgentConfirmation = { confirmation ->
                         viewModel.launchPersistenceWork { viewModel.dismissAgentConfirmation(confirmation) }
@@ -466,6 +477,7 @@ class MainActivity : ComponentActivity() {
         pendingSpecialAccessRequirement = restoredPendingSpecialAccessRequirement(
             requirementId = savedInstanceState?.getString(KEY_PENDING_SPECIAL_ACCESS_REQUIREMENT_ID),
             pendingConfirmation = viewModel.uiState.value.pendingConfirmation,
+            toolRegistry = appContainer.toolRegistry,
         )
     }
 
@@ -648,20 +660,20 @@ class MainActivity : ComponentActivity() {
             pendingMediaProjectionConfirmation != null ||
             pendingSpecialAccessRequirement != null
         ) return
-        val missingPermissions = confirmation.runtimePermissionsFor()
+        val missingPermissions = confirmation.runtimePermissionsFor(toolRegistry = appContainer.toolRegistry)
             .filterNot(::hasRuntimePermission)
         if (missingPermissions.isNotEmpty()) {
             pendingRuntimePermissionConfirmation = confirmation
             runtimePermissionLauncher.launch(missingPermissions.toTypedArray())
             return
         }
-        val missingSpecialAccess = confirmation.specialAccessRequirementsFor()
+        val missingSpecialAccess = confirmation.specialAccessRequirementsFor(toolRegistry = appContainer.toolRegistry)
             .filterNot { requirement -> hasSpecialAccess(requirement.id) }
         if (missingSpecialAccess.isNotEmpty()) {
             openSpecialAccessSettings(missingSpecialAccess.first())
             return
         }
-        if (confirmation.requiresCurrentScreenshotOcrConsent()) {
+        if (confirmation.requiresCurrentScreenshotOcrConsent(toolRegistry = appContainer.toolRegistry)) {
             requestCurrentScreenshotOcrConsent(confirmation)
             return
         }
@@ -713,12 +725,12 @@ class MainActivity : ComponentActivity() {
         val current = viewModel.uiState.value.pendingConfirmation
         val remembered = pendingRuntimePermissionConfirmation
         if (current != null &&
-            current.requiresRuntimePermissionResult(resultPermissions)
+            current.requiresRuntimePermissionResult(resultPermissions, toolRegistry = appContainer.toolRegistry)
         ) {
             return current
         }
         return remembered?.takeIf { pending ->
-            current == null && pending.requiresRuntimePermissionResult(resultPermissions)
+            current == null && pending.requiresRuntimePermissionResult(resultPermissions, toolRegistry = appContainer.toolRegistry)
         }
     }
 
@@ -727,13 +739,13 @@ class MainActivity : ComponentActivity() {
     ) {
         val current = viewModel.uiState.value.pendingConfirmation
             ?.takeIf { pending ->
-                pending.requiresRuntimePermissionResult(resultPermissions) ||
-                    pending.runtimePermissionsFor().isNotEmpty()
+                pending.requiresRuntimePermissionResult(resultPermissions, toolRegistry = appContainer.toolRegistry) ||
+                    pending.runtimePermissionsFor(toolRegistry = appContainer.toolRegistry).isNotEmpty()
             }
             ?: return
-        val deniedPermissions = current.runtimePermissionsFor()
+        val deniedPermissions = current.runtimePermissionsFor(toolRegistry = appContainer.toolRegistry)
             .filterNot(::hasRuntimePermission)
-            .ifEmpty { current.runtimePermissionsFor() }
+            .ifEmpty { current.runtimePermissionsFor(toolRegistry = appContainer.toolRegistry) }
         viewModel.launchPersistenceWork {
             viewModel.rejectAgentConfirmationForRuntimePermissionDenial(
                 confirmation = current,
@@ -745,17 +757,17 @@ class MainActivity : ComponentActivity() {
     private fun pendingMediaProjectionConfirmationForResult(): PendingAgentConfirmation? {
         val current = viewModel.uiState.value.pendingConfirmation
         val remembered = pendingMediaProjectionConfirmation
-        if (current != null && current.requiresCurrentScreenshotOcrConsent()) {
+        if (current != null && current.requiresCurrentScreenshotOcrConsent(toolRegistry = appContainer.toolRegistry)) {
             return current
         }
         return remembered?.takeIf { pending ->
-            current == null && pending.requiresCurrentScreenshotOcrConsent()
+            current == null && pending.requiresCurrentScreenshotOcrConsent(toolRegistry = appContainer.toolRegistry)
         }
     }
 
     private fun rejectCurrentMediaProjectionPendingAfterUnmatchedResult() {
         val current = viewModel.uiState.value.pendingConfirmation
-            ?.takeIf { it.requiresCurrentScreenshotOcrConsent() }
+            ?.takeIf { it.requiresCurrentScreenshotOcrConsent(toolRegistry = appContainer.toolRegistry) }
             ?: return
         viewModel.launchPersistenceWork {
             viewModel.rejectAgentConfirmationForMediaProjectionDenial(current)

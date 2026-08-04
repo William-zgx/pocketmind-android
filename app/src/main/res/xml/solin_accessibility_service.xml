@@ -1,4 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  notificationTimeout is raised from 100ms because onAccessibilityEvent is an empty implementation:
+  nothing reads these callbacks, so there is no latency requirement to meet, and a longer window
+  coalesces the bursts that fire during scrolls and transitions. This throttles delivery only — it
+  does not change which events are declared, and rootInActiveWindow / getWindows() are active
+  queries that do not depend on it.
+
+  accessibilityEventTypes stays broad even though nothing consumes the callbacks. Narrowing it to
+  typeWindowStateChanged alone was tried and reverted: the declared event set is also what keeps the
+  framework's cached window state fresh for the active-window lookup, and whether the narrower set
+  is sufficient cannot be settled off-device. AndroidManifestTest pins the full set on purpose.
+  Revisiting this needs emulator/device evidence per docs/phone_acceptance.md that observe still
+  reads a current tree after scrolls and app switches — the failure mode is a stale UI snapshot,
+  which shows up as the agent tapping what used to be on screen.
+
+  Capability flags (gestures, window content, screenshot, retrieveInteractiveWindows) are what the
+  device-control tools require; flagRetrieveInteractiveWindows in particular is what makes
+  getWindows() return the non-active windows the split-screen ordering depends on.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
@@ -7,4 +26,4 @@
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
     android:description="@string/accessibility_service_description"
-    android:notificationTimeout="100" />
+    android:notificationTimeout="500" />

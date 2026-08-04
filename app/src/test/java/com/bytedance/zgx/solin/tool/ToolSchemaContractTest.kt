@@ -298,6 +298,221 @@ class ToolSchemaContractTest {
         )
     }
 
+    /**
+     * schedule_reminder's delayMinutes-XOR-triggerAtMillis rule used to be a hard-coded
+     * `when (toolName)` branch in ToolRegistry; it is now declared as [ToolSpec.exactlyOneOf].
+     * These assertions pin the observable behaviour (reject two, reject zero, accept one) and
+     * the rejection wording, so the declarative rewrite cannot silently degrade the reason the
+     * model sees when it retries.
+     */
+    @Test
+    fun exactlyOneOfDeclarationsAreEnforcedForEveryDeclaringTool() {
+        val declaringSpecs = registry.specs().filter { spec -> spec.exactlyOneOf.isNotEmpty() }
+        assertTrue(
+            "at least one built-in tool must declare exactlyOneOf; otherwise this test is vacuous",
+            declaringSpecs.isNotEmpty(),
+        )
+
+        declaringSpecs.forEach { spec ->
+            val schema = JSONObject(spec.inputSchemaJson)
+            val properties = schema.optJSONObject("properties") ?: JSONObject()
+            val requiredArguments = schema.optStringSet("required").associateWith { propertyName ->
+                validValueFor(properties.getJSONObject(propertyName))
+            }
+
+            spec.exactlyOneOf.forEach { group ->
+                val groupValues = group.associateWith { name ->
+                    validValueFor(properties.getJSONObject(name))
+                }
+                // Satisfy every OTHER group so the assertions below can only be reacting to the
+                // group under test — otherwise a sibling group's rejection would mask it.
+                // Filtered rather than `- group`: on a Set<Set<String>> the minus operator resolves
+                // to "remove one element", which types the lambda parameter as String.
+                val otherGroupsSatisfied = spec.exactlyOneOf
+                    .filterNot { otherGroup -> otherGroup == group }
+                    .associate { otherGroup ->
+                        val chosen = otherGroup.sorted().first()
+                        chosen to validValueFor(properties.getJSONObject(chosen))
+                    }
+                val baseArguments = requiredArguments + otherGroupsSatisfied
+
+                // Zero supplied: the group is mandatory, not merely exclusive.
+                val noneRejection = registry.validate(
+                    toolRequest(
+                        id = "exactly-one-none-${spec.name}",
+                        toolName = spec.name,
+                        arguments = baseArguments,
+                        reason = "schema contract",
+                    ),
+                )
+                assertNotNull("${spec.name} should reject zero of ${group.sorted()}", noneRejection)
+                requireNotNull(noneRejection)
+                assertTrue(
+                    "${spec.name} zero-argument rejection must say exactly one: ${noneRejection.summary}",
+                    noneRejection.summary.contains("exactly one"),
+                )
+
+                // All supplied: mutually exclusive, so more than one is also invalid.
+                val allRejection = registry.validate(
+                    toolRequest(
+                        id = "exactly-one-all-${spec.name}",
+                        toolName = spec.name,
+                        arguments = baseArguments + groupValues,
+                        reason = "schema contract",
+                    ),
+                )
+                assertNotNull("${spec.name} should reject all of ${group.sorted()}", allRejection)
+                requireNotNull(allRejection)
+                assertTrue(
+                    "${spec.name} multi-argument rejection must say exactly one: ${allRejection.summary}",
+                    allRejection.summary.contains("exactly one"),
+                )
+                group.forEach { name ->
+                    assertTrue(
+                        "${spec.name} rejection must name the alternative $name: ${allRejection.summary}",
+                        allRejection.summary.contains(name),
+                    )
+                }
+
+                // Exactly one supplied: accepted, for each member in turn.
+                group.forEach { name ->
+                    assertNull(
+                        "${spec.name} should accept exactly one of ${group.sorted()}, namely $name",
+                        registry.validate(
+                            toolRequest(
+                                id = "exactly-one-$name-${spec.name}",
+                                toolName = spec.name,
+                                arguments = baseArguments + (name to groupValues.getValue(name)),
+                                reason = "schema contract",
+                            ),
+                        ),
+                    )
+                }
+
+                // Blank counts as "not supplied", so blank members can never satisfy the group.
+                // (Typed members may also be rejected by the property validator first; either
+                // way the request must not be accepted.)
+                val blankOnlyRejection = registry.validate(
+                    toolRequest(
+                        id = "exactly-one-blank-${spec.name}",
+                        toolName = spec.name,
+                        arguments = baseArguments + group.associateWith { " " },
+                        reason = "schema contract",
+                    ),
+                )
+                assertNotNull("${spec.name} should reject blank-only ${group.sorted()}", blankOnlyRejection)
+            }
+        }
+    }
+
+    @Test
+    fun scheduleReminderExactlyOneOfMessageMatchesTheLegacyHardCodedWording() {
+        val spec = registry.builtInSpec(MobileActionFunctions.SCHEDULE_REMINDER)
+        assertEquals(setOf(setOf("delayMinutes", "triggerAtMillis")), spec.exactlyOneOf)
+
+        val expectedSummary =
+            "Tool ${MobileActionFunctions.SCHEDULE_REMINDER} requires exactly one of " +
+                "delayMinutes or triggerAtMillis"
+
+        val duplicateTiming = registry.validate(
+            toolRequest(
+                id = "schedule-reminder-duplicate-timing",
+                toolName = MobileActionFunctions.SCHEDULE_REMINDER,
+                arguments = mapOf(
+                    "title" to "喝水",
+                    "delayMinutes" to "15",
+                    "triggerAtMillis" to "1781481600000",
+                ),
+                reason = "schema contract",
+            ),
+        )
+        requireNotNull(duplicateTiming)
+        assertEquals(expectedSummary, duplicateTiming.summary)
+        assertEquals(ToolStatus.Rejected, duplicateTiming.status)
+        assertEquals(ToolErrorCode.InvalidRequest, duplicateTiming.error?.code)
+
+        val missingTiming = registry.validate(
+            toolRequest(
+                id = "schedule-reminder-missing-timing",
+                toolName = MobileActionFunctions.SCHEDULE_REMINDER,
+                arguments = mapOf("title" to "喝水"),
+                reason = "schema contract",
+            ),
+        )
+        requireNotNull(missingTiming)
+        assertEquals(expectedSummary, missingTiming.summary)
+        assertEquals(ToolStatus.Rejected, missingTiming.status)
+        assertEquals(ToolErrorCode.InvalidRequest, missingTiming.error?.code)
+    }
+
+    /**
+     * Fail-closed: an exactlyOneOf declaration that cannot be enforced must break registry
+     * construction, not degrade into a silently missing gate (or a permanently uncallable tool).
+     */
+    @Test
+    fun registryConstructionRejectsUnenforceableExactlyOneOfDeclarations() {
+        val twoOptionalArgumentsSchemaJson =
+            """
+                {
+                  "type": "object",
+                  "properties": {
+                    "first": {"type": "string", "minLength": 1},
+                    "second": {"type": "string", "minLength": 1}
+                  },
+                  "additionalProperties": false
+                }
+            """.trimIndent()
+        val oneRequiredArgumentSchemaJson =
+            """
+                {
+                  "type": "object",
+                  "required": ["first"],
+                  "properties": {
+                    "first": {"type": "string", "minLength": 1},
+                    "second": {"type": "string", "minLength": 1}
+                  },
+                  "additionalProperties": false
+                }
+            """.trimIndent()
+
+        listOf(
+            Triple(
+                "undeclared exactlyOneOf argument",
+                twoOptionalArgumentsSchemaJson,
+                setOf(setOf("first", "typo")),
+            ),
+            Triple(
+                "single-member exactlyOneOf group",
+                twoOptionalArgumentsSchemaJson,
+                setOf(setOf("first")),
+            ),
+            Triple(
+                "schema-required exactlyOneOf argument",
+                oneRequiredArgumentSchemaJson,
+                setOf(setOf("first", "second")),
+            ),
+        ).forEach { (label, inputSchemaJson, exactlyOneOf) ->
+            val error = runCatching {
+                ToolRegistry(
+                    ToolProvider {
+                        listOf(
+                            schemaContractSpec(
+                                name = "invalid_exactly_one_of_contract",
+                                inputSchemaJson = inputSchemaJson,
+                            ).copy(exactlyOneOf = exactlyOneOf),
+                        )
+                    },
+                )
+            }.exceptionOrNull()
+
+            assertNotNull("$label should fail registry construction", error)
+            assertTrue(
+                "$label should fail on the exactlyOneOf contract: ${error?.message}",
+                error?.message.orEmpty().contains("exactlyOneOf"),
+            )
+        }
+    }
+
     @Test
     fun stringPatternsDeclaredInSchemasAreEnforcedByRegistry() {
         registry.specs().forEach { spec ->
@@ -588,12 +803,15 @@ class ToolSchemaContractTest {
         val requiredArguments = schema.optStringSet("required").associateWith { propertyName ->
             validValueFor(properties.getJSONObject(propertyName))
         }
-        return when (spec.name) {
-            MobileActionFunctions.SCHEDULE_REMINDER ->
-                requiredArguments + ("delayMinutes" to validValueFor(properties.getJSONObject("delayMinutes")))
-
-            else -> requiredArguments
+        // Members of an exactlyOneOf group are individually optional in the schema, so the
+        // schema-derived "required" set alone would be rejected by the mutual-exclusion
+        // invariant. Supply exactly one member per group — spec-driven, so a newly declared
+        // group is covered here without touching this helper.
+        val exclusiveArguments = spec.exactlyOneOf.associate { group ->
+            val chosen = group.sorted().first()
+            chosen to validValueFor(properties.getJSONObject(chosen))
         }
+        return requiredArguments + exclusiveArguments
     }
 
     private fun minimalValidOutputDataFor(

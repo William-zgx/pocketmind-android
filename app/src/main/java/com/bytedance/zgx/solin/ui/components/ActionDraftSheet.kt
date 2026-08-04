@@ -26,10 +26,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bytedance.zgx.solin.PendingAgentConfirmation
+import com.bytedance.zgx.solin.RuntimePermissionRequirement
 import com.bytedance.zgx.solin.SpecialAccessRequirement
 import com.bytedance.zgx.solin.action.MobileActionFunctions
-import com.bytedance.zgx.solin.runtimePermissionRequirementsFor
-import com.bytedance.zgx.solin.specialAccessRequirementsFor
 import com.bytedance.zgx.solin.ui.theme.LocalSolinColors
 import java.net.URI
 import java.util.Locale
@@ -50,17 +49,28 @@ internal data class ActionParameterDisplayRow(
     val preferCompact: Boolean = false,
 )
 
+/**
+ * Confirmation sheet for a pending tool draft.
+ *
+ * The permission and special-access requirements are passed in already resolved rather than
+ * derived here: resolving them needs the module-aware tool registry, and a registry that does
+ * not know a tool reports "nothing required", which would render a confirmation sheet that
+ * silently understates what the action is about to do. Keeping that lookup at the composition
+ * root (where the container's registry is reachable) means this composable cannot accidentally
+ * resolve them against a built-in-only registry — same reason [grantedSpecialAccessIds] is
+ * hoisted instead of queried here.
+ */
 @Composable
 internal fun ActionDraftSheet(
     confirmation: PendingAgentConfirmation,
     grantedSpecialAccessIds: Set<String>,
+    runtimePermissionRequirements: List<RuntimePermissionRequirement>,
+    specialAccessRequirements: List<SpecialAccessRequirement>,
     onOpenSpecialAccessSettings: (SpecialAccessRequirement) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val draft = confirmation.draft
-    val runtimePermissionRequirements = confirmation.runtimePermissionRequirementsFor()
-    val specialAccessRequirements = confirmation.specialAccessRequirementsFor()
     val missingSpecialAccessRequirements = specialAccessRequirements
         .filterNot { requirement -> requirement.id in grantedSpecialAccessIds }
     TrustSheetSurface(

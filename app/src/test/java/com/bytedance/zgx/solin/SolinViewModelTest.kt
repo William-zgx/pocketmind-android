@@ -936,7 +936,7 @@ class SolinViewModelTest {
         )
         assertEquals(
             listOf(Manifest.permission.READ_CALENDAR),
-            confirmation.runtimePermissionRequirementsFor().flatMap { it.permissions },
+            confirmation.runtimePermissionRequirementsFor(toolRegistry = ToolRegistry()).flatMap { it.permissions },
         )
         assertEquals("动作草稿待确认 · 规则回退", confirmedState.statusText)
         assertTrue(remoteRuntime.calls.isEmpty())
@@ -6106,7 +6106,7 @@ class SolinViewModelTest {
 
         viewModel.rejectAgentConfirmationForSpecialAccessDenial(
             confirmation = confirmation,
-            deniedRequirements = confirmation.specialAccessRequirementsFor(),
+            deniedRequirements = confirmation.specialAccessRequirementsFor(toolRegistry = ToolRegistry()),
         )
         advanceUntilIdle()
 

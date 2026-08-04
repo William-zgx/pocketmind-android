@@ -63,6 +63,28 @@ class ModelObservationReplannerDiagnosticTest {
         assertTrue(diagnostics.all { it.reason == "missing_call_tool_output" })
     }
 
+    @Test
+    fun diagnosticsAreBoundedToAFixedRetentionWindow() {
+        // The diagnostics buffer used to be an unbounded CopyOnWriteArrayList on a process-scoped
+        // replanner: it grew for the lifetime of the process (memory leak across a long session) and
+        // degraded quadratically, since each COW add copies the whole array. It must now be a fixed
+        // ring buffer, while keeping diagnosticSnapshots() usable for existing callers.
+        val replanner = ModelObservationReplanner(
+            actionPlanningRuntime = DiagnosticRuntime(),
+            actionModelPathProvider = { "/tmp/action-model.litertlm" },
+            // 0 disables replanning, so each planNext records exactly one "model_replan_disabled"
+            // diagnostic — a deterministic, cheap way to append far more than the window holds.
+            maxModelReplans = 0,
+        )
+
+        repeat(RETENTION_WINDOW * 3) { replanner.planNext(diagnosticContext()) }
+
+        val diagnostics = replanner.diagnosticSnapshots()
+        assertEquals(RETENTION_WINDOW, diagnostics.size)
+        assertTrue(diagnostics.all { it.reason == "model_replan_disabled" })
+        assertEquals("model_replan_disabled", replanner.lastDiagnosticSnapshot()?.reason)
+    }
+
     private class DiagnosticRuntime : ActionPlanningRuntime {
         override fun isLikelyAction(input: String): Boolean = false
 
@@ -76,6 +98,29 @@ class ModelObservationReplannerDiagnosticTest {
                 modelFailureReason = "missing_call_tool_output",
             )
     }
+
+    private fun diagnosticContext(): AgentObservationReplanContext =
+        AgentObservationReplanContext(
+            run = AgentRun(
+                id = "run-diagnostic-window",
+                input = "打开淘宝搜索海河牛奶",
+                state = AgentRunState.Observing,
+                createdAtMillis = 1L,
+                updatedAtMillis = 1L,
+            ),
+            previousRequest = ToolRequest(toolName = MobileActionFunctions.OBSERVE_CURRENT_SCREEN),
+            observedResult = ToolResult(
+                requestId = "observe",
+                status = ToolStatus.Succeeded,
+                summary = "observed",
+                data = mapOf(
+                    "privacy" to MessagePrivacy.LocalOnly.name,
+                    "requiresLocalModel" to true.toString(),
+                    "screenObservationJson" to observationJson(),
+                ),
+            ),
+            priorRequests = emptyList(),
+        )
 
     private fun observationJson(): String =
         """
@@ -107,4 +152,9 @@ class ModelObservationReplannerDiagnosticTest {
           }]
         }
         """.trimIndent()
+
+    private companion object {
+        /** Mirrors MAX_RETAINED_DIAGNOSTICS in AgentObservationReplanner (private there by design). */
+        const val RETENTION_WINDOW = 32
+    }
 }

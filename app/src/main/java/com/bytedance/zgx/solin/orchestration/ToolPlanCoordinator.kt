@@ -306,7 +306,7 @@ internal class ToolPlanCoordinator(
         // steps + audit for a plan the caller then discards via `as? Planned`, leaving phantom
         // rejected/failed steps on a run that actually completes as open-then-stop). Bail early so the
         // caller falls through cleanly to the normal Complete/AwaitingExternalOutcome outcome.
-        if (runBudget.toolStepBudgetExceeded(run.id)) return null
+        if (runBudget.toolStepBudgetExceeded(run.id) || runBudget.runDeadlineExceeded(run.id)) return null
         // open_app success results emit the package under "targetPackage" (ActionExecutor
         // externalActivityData -> safeData). Older/injected-starter paths use "packageName" /
         // "targetPackageName", so fall back to those. Reading the wrong key silently disables the
@@ -666,7 +666,10 @@ internal class ToolPlanCoordinator(
         fallbackReason: String?,
         skillPlan: SkillPlan?,
     ): NextObservationPlan {
-        if (runBudget.toolStepBudgetExceeded(runId)) {
+        // Both budgets, not just the step count: a run that keeps replanning tools without ever
+        // reaching observeModelResult (where the wall-clock guard also lives) would otherwise have
+        // no time bound at all, since local generation has no timeout of its own.
+        if (runBudget.toolStepBudgetExceeded(runId) || runBudget.runDeadlineExceeded(runId)) {
             return failNextPlanBudget(runId, request)
         }
         if (host.toolRequestFor(runId, request.id) != null) {
@@ -741,7 +744,15 @@ internal class ToolPlanCoordinator(
         runId: String,
         request: ToolRequest,
     ): NextObservationPlan {
-        val hintReason = runBudget.augmentReasonWithStepBudgetHint(runId, TOOL_STEP_BUDGET_EXCEEDED_REASON)
+        // Attribute the failure to whichever budget actually tripped: reporting "step budget
+        // exceeded" for a run that ran out of wall-clock time sends whoever reads the trace or the
+        // assistant-facing summary looking for a step-count problem that isn't there. The step-count
+        // hint is only meaningful for the step budget, so it is appended only in that branch.
+        val hintReason = if (runBudget.toolStepBudgetExceeded(runId)) {
+            runBudget.augmentReasonWithStepBudgetHint(runId, TOOL_STEP_BUDGET_EXCEEDED_REASON)
+        } else {
+            RUN_WALL_CLOCK_DEADLINE_EXCEEDED_REASON
+        }
         val rejected = request.rejected(hintReason)
         traceStore.appendStep(runId, AgentStep.ModelPlanned(AgentPlan.RejectedTool(rejected)))
         traceStore.appendStep(runId, AgentStep.ToolRejected(rejected))

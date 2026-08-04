@@ -638,6 +638,14 @@ internal fun String.schemaPropertyNames(): Set<String> {
         .orEmpty()
 }
 
+/**
+ * The schema's `required` argument names. Used by the registry to prove that a
+ * [ToolSpec.exactlyOneOf] member is *not* schema-required — a required member would make the
+ * "exactly one" rule unsatisfiable for its siblings.
+ */
+internal fun String.schemaRequiredPropertyNames(): Set<String> =
+    JSONObject(this).optStringSet("required")
+
 private fun JSONObject.keysSet(): Set<String> {
     val result = linkedSetOf<String>()
     val iterator = keys()

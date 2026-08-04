@@ -2819,6 +2819,75 @@ class AgentTraceStoreTest {
         assertEquals(1, dao.skillRunCheckpointsForRun(keptRun.id).size)
     }
 
+    @Test
+    fun inMemoryStoreNeverReportsDegradedStepHistory() {
+        // Contract C3: the in-memory list IS the source of truth, so a read can never fail.
+        val store = InMemoryAgentTraceStore(clockMillis = { 1_000L })
+        val run = store.createRun("degradation baseline")
+
+        store.appendStep(run.id, AgentStep.AssistantResponded("ok"))
+
+        assertFalse(store.stepHistoryDegraded(run.id))
+        assertFalse(store.stepHistoryDegraded("unknown-run"))
+    }
+
+    @Test
+    fun roomStoreFlagsDegradedStepHistoryWhenThePersistedReadFailsAndClearsItOnRecovery() {
+        // Contract C3: `runCatching { traceDao.steps() }.getOrDefault(emptyList())` used to swallow a
+        // failed read, which silently zeroed every step-derived budget (tool steps, observation
+        // decisions, retry counts) — i.e. a DB hiccup turned off the anti-runaway gates. The store must
+        // surface the degradation per-run so AgentRunBudget can fail closed, and clear it on recovery
+        // so one transient failure does not permanently disable the session.
+        var now = 3_000L
+        val dao = FakeAgentTraceDao()
+        val store = RoomAgentTraceStore(
+            traceDao = dao,
+            clockMillis = { now++ },
+            runIdFactory = { "run-degraded" },
+        )
+        val run = store.createRun("degradation", sessionId = "session-degraded")
+        store.appendStep(run.id, AgentStep.AssistantResponded("live step"))
+        assertFalse(store.stepHistoryDegraded(run.id))
+
+        dao.failStepReads = true
+        // Live entries still come through so the active run stays usable...
+        assertEquals(1, store.steps(run.id).size)
+        // ...but the run is now flagged, and only that run.
+        assertTrue(store.stepHistoryDegraded(run.id))
+        assertFalse(store.stepHistoryDegraded("run-other"))
+
+        dao.failStepReads = false
+        store.steps(run.id)
+
+        assertFalse(store.stepHistoryDegraded(run.id))
+    }
+
+    @Test
+    fun roomStoreReportsStepHistoryDegradationTransitionsExactlyOnce() {
+        // Telemetry must fire on transitions only: steps() is called many times per turn, and a
+        // per-call report would flood the sink during an outage.
+        var now = 4_000L
+        val dao = FakeAgentTraceDao()
+        val transitions = mutableListOf<Pair<String, Boolean>>()
+        val store = RoomAgentTraceStore(
+            traceDao = dao,
+            clockMillis = { now++ },
+            runIdFactory = { "run-degraded-telemetry" },
+            onStepHistoryDegradedChanged = { runId, degraded -> transitions += runId to degraded },
+        )
+        val run = store.createRun("degradation telemetry")
+        store.appendStep(run.id, AgentStep.AssistantResponded("live step"))
+        store.steps(run.id)
+        assertTrue(transitions.isEmpty())
+
+        dao.failStepReads = true
+        repeat(3) { store.steps(run.id) }
+        dao.failStepReads = false
+        repeat(3) { store.steps(run.id) }
+
+        assertEquals(listOf(run.id to true, run.id to false), transitions)
+    }
+
     private data class PendingAllowlistCase(
         val toolName: String,
         val arguments: Map<String, String>,
@@ -2869,6 +2938,9 @@ class AgentTraceStoreTest {
         private val skillRunCheckpoints = linkedMapOf<Pair<String, String>, AgentSkillRunCheckpointEntity>()
         var failNextStepInsert = false
         var afterStepInserted: ((AgentStepEntity) -> Unit)? = null
+
+        /** When true, [steps] throws — simulating a DB read failure for the C3 degradation contract. */
+        var failStepReads = false
 
         override fun run(runId: String): AgentRunEntity? =
             runs[runId]
@@ -2942,10 +3014,12 @@ class AgentTraceStoreTest {
             afterStepInserted?.invoke(step)
         }
 
-        override fun steps(runId: String): List<AgentStepEntity> =
-            steps
+        override fun steps(runId: String): List<AgentStepEntity> {
+            if (failStepReads) error("injected step read failure")
+            return steps
                 .filter { step -> step.runId == runId }
                 .sortedBy { step -> step.position }
+        }
 
         override fun deleteStepsForSession(sessionId: String): Int {
             val runIdSet = runIdsForSession(sessionId).toSet()

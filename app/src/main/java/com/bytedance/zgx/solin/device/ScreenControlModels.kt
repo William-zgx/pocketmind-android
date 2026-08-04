@@ -4,6 +4,17 @@ const val DEVICE_CONTROL_SOURCE_ACCESSIBILITY = "accessibility_active_window"
 const val DEVICE_CONTROL_METADATA_POLICY =
     "accessibility_control_local_only_transient_node_ids_no_pixels_persisted"
 
+/**
+ * Privacy policy advertised by screen-*text* reads (as opposed to screen *control* results above).
+ *
+ * Declared here beside its control-path sibling so the tool output schemas
+ * (tool/ToolSchemasUi.kt) and the emitting call sites (tool/ToolExecutor.kt) interpolate one
+ * shared constant. It previously existed only as a repeated string literal, which is exactly how
+ * an advertised schema and the metadata actually emitted drift apart.
+ */
+const val CURRENT_SCREEN_TEXT_LOCAL_ONLY_POLICY =
+    "accessibility_text_local_only_no_node_ids_bounds_or_hierarchy_persisted"
+
 const val DEFAULT_DEVICE_CONTROL_MAX_TEXT_CHARS = 2_000
 const val MAX_DEVICE_CONTROL_TEXT_CHARS = 4_000
 const val DEFAULT_DEVICE_CONTROL_MAX_NODES = 50

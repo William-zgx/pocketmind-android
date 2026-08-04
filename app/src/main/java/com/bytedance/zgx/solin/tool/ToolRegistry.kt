@@ -1,7 +1,6 @@
 package com.bytedance.zgx.solin.tool
 
 import com.bytedance.zgx.solin.MessagePrivacy
-import com.bytedance.zgx.solin.action.AppDeepTargets
 import com.bytedance.zgx.solin.action.MobileActionFunctions
 import com.bytedance.zgx.solin.action.SystemSettingsTargets
 import com.bytedance.zgx.solin.multimodal.CurrentScreenshotOcrContract
@@ -17,15 +16,28 @@ class ToolRegistry private constructor(
 
     private val definitionsByName: Map<String, ToolDefinition> = definitions.associateBy { it.spec.name }
     private val orderedSpecs: List<ToolSpec> = definitions.map { it.spec }
-    private val undoPolicies: MutableMap<String, UndoPolicy> = mutableMapOf()
+
+    /**
+     * Undo policies, built once at construction and never mutated afterwards.
+     *
+     * WHY immutable: a ToolRegistry instance is shared across threads — the parallel tool
+     * batch runs on `Dispatchers.IO` while [undoPolicyFor] is read from the executor and
+     * audit paths. The previous `MutableMap` plus a public `registerUndoPolicy` mutator
+     * left an unsynchronized write path open on a concurrently-read map. In practice all
+     * writes happened during `init` (no caller ever invoked the mutator), so this is a
+     * contract fix, not a live-bug fix: the safety property is now enforced by the type
+     * instead of by convention. If a SolinModule ever needs to contribute undo policies,
+     * add them as a constructor parameter merged here — do not reintroduce a setter.
+     */
+    private val undoPolicies: Map<String, UndoPolicy> = defaultUndoPolicies()
 
     init {
         require(definitionsByName.size == definitions.size) { "Tool names must be unique." }
         definitions.forEach { definition ->
             definition.argumentValidator
             validateRuntimePermissionDescriptorContract(definition.spec)
+            validateExactlyOneOfContract(definition.spec)
         }
-        registerDefaultUndoPolicies()
     }
 
     constructor() : this(BuiltInToolProvider)
@@ -52,19 +64,15 @@ class ToolRegistry private constructor(
 
     fun undoPolicyFor(toolName: String): UndoPolicy? = undoPolicies[toolName]
 
-    fun registerUndoPolicy(toolName: String, policy: UndoPolicy) {
-        undoPolicies[toolName] = policy
-    }
-
-    private fun registerDefaultUndoPolicies() {
+    private fun defaultUndoPolicies(): Map<String, UndoPolicy> {
         val externalHandoff = UndoPolicy { _, _ ->
             UndoPlan.ExternalHandoff("performed externally; handoff to user")
         }
         val notApplicable = UndoPolicy { _, _ -> UndoPlan.NotApplicable }
         val notUndoableUi = UndoPolicy { _, _ -> UndoPlan.NotUndoable("irreversible UI action") }
 
-        // External handoff tools (user completes action outside Solin)
-        listOf(
+        // External handoff tools (user completes action outside Solin), including human takeover.
+        val externalHandoffTools = listOf(
             MobileActionFunctions.SHARE_TEXT,
             MobileActionFunctions.COMPOSE_EMAIL,
             MobileActionFunctions.CREATE_CALENDAR_EVENT,
@@ -85,10 +93,11 @@ class ToolRegistry private constructor(
             MobileActionFunctions.SCHEDULE_REMINDER,
             MobileActionFunctions.CONFIGURE_PERIODIC_CHECK,
             MobileActionFunctions.CANCEL_REMINDER,
-        ).forEach { registerUndoPolicy(it, externalHandoff) }
+            MobileActionFunctions.TAKE_OVER,
+        )
 
         // Read-only / observation tools — undo not applicable
-        listOf(
+        val notApplicableTools = listOf(
             MobileActionFunctions.QUERY_CONTACTS,
             MobileActionFunctions.QUERY_CALENDAR_AVAILABILITY,
             MobileActionFunctions.QUERY_FOREGROUND_APP,
@@ -104,15 +113,10 @@ class ToolRegistry private constructor(
             MobileActionFunctions.FINISH,
             // plan_read is not a MobileActionFunctions constant; registered by literal
             "plan_read",
-        ).forEach { registerUndoPolicy(it, notApplicable) }
-
-        // Human takeover — user completes externally
-        listOf(
-            MobileActionFunctions.TAKE_OVER,
-        ).forEach { registerUndoPolicy(it, externalHandoff) }
+        )
 
         // Irreversible UI actions
-        listOf(
+        val notUndoableUiTools = listOf(
             MobileActionFunctions.UI_TAP,
             MobileActionFunctions.UI_TYPE_TEXT,
             MobileActionFunctions.UI_SCROLL,
@@ -123,7 +127,11 @@ class ToolRegistry private constructor(
             MobileActionFunctions.UI_PRESS_BACK,
             MobileActionFunctions.UI_WAIT,
             MobileActionFunctions.CAPTURE_CURRENT_SCREENSHOT_OCR,
-        ).forEach { registerUndoPolicy(it, notUndoableUi) }
+        )
+
+        return externalHandoffTools.associateWith { externalHandoff } +
+            notApplicableTools.associateWith { notApplicable } +
+            notUndoableUiTools.associateWith { notUndoableUi }
     }
 
     fun toolNamesWithTag(tag: ToolCapabilityTag): Set<String> =
@@ -214,7 +222,7 @@ class ToolRegistry private constructor(
                     preserveSummary = true,
                 )
         }
-        toolSpecificArgumentInvariant(request)?.let { reason ->
+        toolSpecificArgumentInvariant(definition.spec, request)?.let { reason ->
             return request.rejected(reason)
                 .sanitizedPrivateNonSucceededResult(
                     request = request,
@@ -397,20 +405,73 @@ private fun validateRuntimePermissionDescriptorContract(spec: ToolSpec) {
 }
 
 
-private fun toolSpecificArgumentInvariant(request: ToolRequest): String? =
-    when (request.toolName) {
-        MobileActionFunctions.SCHEDULE_REMINDER -> {
-            val hasDelay = !request.arguments["delayMinutes"].isNullOrBlank()
-            val hasTriggerAt = !request.arguments["triggerAtMillis"].isNullOrBlank()
-            if (hasDelay == hasTriggerAt) {
-                "Tool ${request.toolName} requires exactly one of delayMinutes or triggerAtMillis"
-            } else {
-                null
-            }
+/**
+ * Fails registry construction when a [ToolSpec.exactlyOneOf] group cannot possibly be enforced.
+ *
+ * WHY this is a construction-time `require` and not a lenient runtime skip: the whole point of
+ * moving the XOR rule out of a hard-coded `when` is that the declaration is now the only place
+ * the invariant lives. A typo'd or renamed argument name would make the group vacuous — every
+ * request would report "supplied 0 of 1" and the tool would become permanently uncallable, or
+ * (if we skipped unknown names) the mutual-exclusion gate would silently disappear. Both are
+ * bad; failing loudly at construction keeps this fail-closed and catches the mistake in tests
+ * rather than in front of the model.
+ */
+private fun validateExactlyOneOfContract(spec: ToolSpec) {
+    if (spec.exactlyOneOf.isEmpty()) return
+    val argumentNames = spec.inputSchemaJson.schemaPropertyNames()
+    val requiredNames = spec.inputSchemaJson.schemaRequiredPropertyNames()
+    spec.exactlyOneOf.forEach { group ->
+        require(group.size >= 2) {
+            "Tool ${spec.name} exactlyOneOf group must name at least two mutually exclusive arguments: " +
+                group.sorted().joinToString()
         }
-
-        else -> null
+        val undeclared = group - argumentNames
+        require(undeclared.isEmpty()) {
+            "Tool ${spec.name} exactlyOneOf argument(s) not declared in input schema: " +
+                undeclared.sorted().joinToString()
+        }
+        // A schema-required member would force itself to always be present, so no sibling could
+        // ever be the "exactly one" — the group would degrade into "only this argument".
+        val alsoRequired = group.intersect(requiredNames)
+        require(alsoRequired.isEmpty()) {
+            "Tool ${spec.name} exactlyOneOf argument(s) must not be schema-required: " +
+                alsoRequired.sorted().joinToString()
+        }
     }
+}
+
+/**
+ * Enforces declarative argument invariants that the closed JSON Schema dialect cannot express.
+ *
+ * Currently only [ToolSpec.exactlyOneOf]. This used to be a `when (request.toolName)` with one
+ * hard-coded branch per tool; keep it table-driven so a new mutual-exclusion rule is a spec
+ * declaration, not an edit to shared validation code.
+ */
+private fun toolSpecificArgumentInvariant(spec: ToolSpec, request: ToolRequest): String? {
+    spec.exactlyOneOf.forEach { group ->
+        val supplied = group.count { name -> !request.arguments[name].isNullOrBlank() }
+        if (supplied != 1) {
+            return "Tool ${request.toolName} requires exactly one of ${group.humanReadableAlternatives()}"
+        }
+    }
+    return null
+}
+
+/**
+ * Renders a mutually exclusive argument group the way the previous hard-coded message did:
+ * "delayMinutes or triggerAtMillis". Sorted so the rejection reason is stable regardless of
+ * declaration order — this string is surfaced to the model, which retries against it.
+ */
+private fun Set<String>.humanReadableAlternatives(): String {
+    val names = sorted()
+    // Groups are guaranteed to hold >= 2 names by validateExactlyOneOfContract; the smaller
+    // cases only exist so message rendering can never itself throw.
+    return when (names.size) {
+        0 -> "(no alternatives declared)"
+        1 -> names.single()
+        else -> names.dropLast(1).joinToString(", ") + " or " + names.last()
+    }
+}
 
 private fun privateOutputResultInvariant(
     spec: ToolSpec,
@@ -607,6 +668,27 @@ private object BuiltInToolProvider : ToolProvider {
 }
 
 /**
+ * The single canonical built-in-only [ToolRegistry] instance.
+ *
+ * WHY this exists: constructing a `ToolRegistry()` is NOT cheap — the constructor parses
+ * ~90 JSON input/output schemas and compiles their `pattern` regexes
+ * (`ToolArgumentValidator.fromSchema` / `ToolResultDataValidator.fromSchema`). Several
+ * call sites used `= ToolRegistry()` as a default parameter value, so every invocation
+ * rebuilt the whole table. On the confirmation-sheet path that ran per recomposition, on
+ * the main thread. A [ToolRegistry] is immutable after construction, so one shared
+ * instance is safe to publish and read from any thread.
+ *
+ * WHAT THIS IS NOT: it contains ONLY built-in tools. It does NOT know about tools
+ * contributed by a [com.bytedance.zgx.solin.module.SolinModule] (plan tools, MCP tools,
+ * …). Any caller whose decision depends on module tools — permission gating, special
+ * access gating, consent gating, risk/confirmation policy — MUST be handed the
+ * module-aware registry built in `SolinAppContainer` instead of falling back here.
+ * Falling back silently yields "unknown tool", and an unknown tool produces NO permission
+ * or consent requirement, which is fail-OPEN for that gate.
+ */
+val defaultBuiltInToolRegistry: ToolRegistry by lazy { ToolRegistry() }
+
+/**
  * Built-in tools exposed as a SolinModule. Always registered first; user modules
  * append or override via ToolHandler.
  */
@@ -617,1533 +699,71 @@ class BuiltInToolsModule : com.bytedance.zgx.solin.module.SolinModule {
     }
 }
 
-private val emptyObjectSchemaJson = """
-    {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val systemSettingsSchemaJson = """
-    {
-      "type": "object",
-      "required": ["target"],
-      "properties": {
-        "target": {
-          "type": "string",
-          "enum": [
-            "${SystemSettingsTargets.GENERAL}",
-            "${SystemSettingsTargets.BLUETOOTH}",
-            "${SystemSettingsTargets.LOCATION}",
-            "${SystemSettingsTargets.NOTIFICATION}",
-            "${SystemSettingsTargets.DISPLAY}",
-            "${SystemSettingsTargets.SOUND}",
-            "${SystemSettingsTargets.BATTERY_SAVER}",
-            "${SystemSettingsTargets.NETWORK}",
-            "${SystemSettingsTargets.AIRPLANE_MODE}",
-            "${SystemSettingsTargets.INPUT_METHOD}",
-            "${SystemSettingsTargets.ACCESSIBILITY}"
-          ]
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private const val CURRENT_SCREEN_TEXT_SOURCE = "accessibility_active_window"
-private const val CURRENT_SCREEN_TEXT_METADATA_POLICY =
-    "accessibility_text_local_only_no_node_ids_bounds_or_hierarchy_persisted"
-private const val DEVICE_CONTROL_SOURCE = "accessibility_active_window"
-private const val DEVICE_CONTROL_METADATA_POLICY =
-    "accessibility_control_local_only_transient_node_ids_no_pixels_persisted"
-private val currentScreenshotOcrSchemaJson = CurrentScreenshotOcrContract.INPUT_SCHEMA_JSON.trimIndent()
 
-private val querySchemaJson = """
-    {
-      "type": "object",
-      "required": ["query"],
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "搜索关键词，不要直接复制用户原文；保留实体、主题、限定词，去掉“请帮我/是什么/有哪些”等寒暄和疑问词。",
-          "minLength": 1
-        },
-        "searchMode": {
-          "type": "string",
-          "enum": ["general", "local"]
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val webSearchInputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["query"],
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "模型理解后的搜索关键词，不要直接复制用户原文；保留实体、主题、限定词和必要时效词，去掉“请帮我/是什么/有哪些”等寒暄和疑问词；比较或多主体问题优先拆成多次独立 web_search。",
-          "minLength": 1
-        },
-        "searchMode": {
-          "type": "string",
-          "enum": ["general", "weather_current"]
-        },
-        "freshness": {
-          "type": "string",
-          "description": "搜索时效。查询含最新/目前/当前/现在/今日/热门/排行/latest/current/recent/trending/hottest 或当前年份等当前性语义时应使用 current；缺省时宿主也会按 query 推断。",
-          "enum": ["any_time", "current"]
-        },
-        "maxResults": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val webSearchOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "privacy", "requiresLocalModel", "query", "source", "summaryText", "resultsJson"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["RemoteEligible"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "query": {"type": "string", "minLength": 1},
-        "source": {
-          "type": "string",
-          "enum": ["open_meteo", "duckduckgo", "duckduckgo_html", "duckduckgo_lite"]
-        },
-        "searchMode": {
-          "type": "string",
-          "enum": ["general", "weather_current"]
-        },
-        "retrievedAt": {
-          "type": "string",
-          "minLength": 1
-        },
-        "freshness": {
-          "type": "string",
-          "enum": ["any_time", "current"]
-        },
-        "maxResults": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5
-        },
-        "summaryText": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1203
-        },
-        "resultsJson": {
-          "type": "string",
-          "contentMediaType": "application/json",
-          "minLength": 1,
-          "maxLength": 4003
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val emailDraftSchemaJson = """
-    {
-      "type": "object",
-      "required": ["body"],
-      "properties": {
-        "subject": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val calendarDraftSchemaJson = """
-    {
-      "type": "object",
-      "required": ["title"],
-      "properties": {
-        "title": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val contactDraftSchemaJson = """
-    {
-      "type": "object",
-      "required": ["name"],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "email": {
-          "type": "string"
-        },
-        "phone": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val contactQuerySchemaJson = """
-    {
-      "type": "object",
-      "required": ["query"],
-      "properties": {
-        "query": {
-          "type": "string",
-          "minLength": 1
-        },
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val reminderSchemaJson = """
-    {
-      "type": "object",
-      "required": ["title"],
-      "properties": {
-        "title": {
-          "type": "string",
-          "minLength": 1
-        },
-        "body": {
-          "type": "string"
-        },
-        "delayMinutes": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "triggerAtMillis": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val systemAlarmSchemaJson = """
-    {
-      "type": "object",
-      "required": ["hour", "minutes"],
-      "properties": {
-        "hour": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 23
-        },
-        "minutes": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 59
-        },
-        "message": {
-          "type": "string",
-          "maxLength": 120
-        },
-        "recurrence": {
-          "type": "string",
-          "enum": ["once", "daily"]
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val systemTimerSchemaJson = """
-    {
-      "type": "object",
-      "required": ["lengthSeconds"],
-      "properties": {
-        "lengthSeconds": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 86400
-        },
-        "message": {
-          "type": "string",
-          "maxLength": 120
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val periodicCheckSchemaJson = """
-    {
-      "type": "object",
-      "required": ["enabled"],
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "true to enable the local reminder periodic check, false to disable it."
-        },
-        "intervalMinutes": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 1440
-        },
-        "minNotificationSpacingMinutes": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 1440
-        },
-        "overdueGraceMinutes": {
-          "type": "integer",
-          "minimum": 5,
-          "maximum": 10080
-        },
-        "requiresBatteryNotLow": {
-          "type": "boolean"
-        },
-        "requiresCharging": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val backgroundTasksQuerySchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "scope": {
-          "type": "string",
-          "description": "查询范围：active=已安排/运行中的后台任务，history=最近完成/取消/失败历史，policy=周期检查策略，all=同时返回任务摘要与周期检查策略。默认 active。",
-          "enum": ["active", "history", "policy", "all"]
-        },
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 50
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentNotificationSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentFilesSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "description": "文件类别。该工具只直接查询已授权媒体；Android 13 及以上不提供 documents/downloads/others 的可执行直接读取路径，非媒体文件应由用户通过系统文件选择器或分享入口主动提供。",
-          "enum": ["all", "screenshots", "images", "videos", "audio"]
-        },
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 50
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentScreenshotOcrSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentImageOcrSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "maxCount": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 3
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val currentScreenTextSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "maxChars": {
-          "type": "integer",
-          "description": "Maximum characters returned from the active-window Accessibility 可访问文本快照；不是截图、OCR、视觉/VLM 或语义屏幕理解。",
-          "minimum": 1,
-          "maximum": 4000
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val observeCurrentScreenSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "maxTextChars": {
-          "type": "integer",
-          "description": "Maximum characters returned from the active-window Accessibility text summary.",
-          "minimum": 1,
-          "maximum": 4000
-        },
-        "maxNodes": {
-          "type": "integer",
-          "description": "Maximum visible Accessibility nodes returned with transient node ids and bounds.",
-          "minimum": 1,
-          "maximum": 120
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Post-launch continuation only: the launched target package the observe should wait to reach the foreground before reading, so it does not read a cross-app transition window."
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiTapSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "target": {
-          "type": "string",
-          "description": "Transient node id from observe_current_screen, or visible text/contentDescription to match. Provide this OR both targetX and targetY.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetX": {
-          "type": "integer",
-          "description": "Normalized 0-1000 horizontal coordinate (left=0, right=1000). Requires targetY. Used by the remote vision planner for coordinate taps; resolution-agnostic.",
-          "minimum": 0,
-          "maximum": 1000
-        },
-        "targetY": {
-          "type": "integer",
-          "description": "Normalized 0-1000 vertical coordinate (top=0, bottom=1000). Requires targetX.",
-          "minimum": 0,
-          "maximum": 1000
-        },
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiTypeTextSchemaJson = """
-    {
-      "type": "object",
-      "required": ["text"],
-      "properties": {
-        "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "target": {
-          "type": "string",
-          "description": "Optional transient node id or visible label for the editable field.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        },
-        "allowClipboardPasteFallback": {
-          "type": "boolean",
-          "description": "When true, allows falling back to temporary clipboard paste if direct Accessibility text setting fails. Defaults to false."
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiSubmitSearchSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiScrollSchemaJson = """
-    {
-      "type": "object",
-      "required": ["direction"],
-      "properties": {
-        "direction": {
-          "type": "string",
-          "enum": ["up", "down", "left", "right", "forward", "backward"]
-        },
-        "target": {
-          "type": "string",
-          "description": "Optional transient node id or visible label for the scroll container.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiBackOrWaitSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiSwipeSchemaJson = """
-    {
-      "type": "object",
-      "required": ["startXNorm", "startYNorm", "endXNorm", "endYNorm"],
-      "properties": {
-        "startXNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "startYNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "endXNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "endYNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "durationMillis": {
-          "type": "integer",
-          "minimum": 20,
-          "maximum": 3000,
-          "description": "Swipe duration in ms; longer is slower/more deliberate."
-        },
-        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiLongPressSchemaJson = """
-    {
-      "type": "object",
-      "required": ["xNorm", "yNorm"],
-      "properties": {
-        "xNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "yNorm": { "type": "integer", "minimum": 0, "maximum": 1000 },
-        "holdMillis": {
-          "type": "integer",
-          "minimum": 300,
-          "maximum": 3000,
-          "description": "Long-press hold duration in ms."
-        },
-        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiPressKeySchemaJson = """
-    {
-      "type": "object",
-      "required": ["key"],
-      "properties": {
-        "key": {
-          "type": "string",
-          "enum": ["home", "recents", "enter", "delete"],
-          "description": "Whitelisted system key. No arbitrary keycodes are accepted."
-        },
-        "timeoutMillis": { "type": "integer", "minimum": 100, "maximum": 10000 },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must still be active before executing this UI action.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiWaitSchemaJson = """
-    {
-      "type": "object",
-      "properties": {
-        "timeoutMillis": {
-          "type": "integer",
-          "minimum": 100,
-          "maximum": 10000
-        },
-        "verifySearchQuery": {
-          "type": "string",
-          "description": "Optional low-risk search query that must be visible or produce recognizable result evidence after waiting.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "expectedPackageName": {
-          "type": "string",
-          "description": "Optional foreground package that must be active after waiting and while verifying search results.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "targetPackageName": {
-          "type": "string",
-          "description": "Optional alias for expectedPackageName, used by external planners to bind the foreground app.",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "expectedAppName": {
-          "type": "string",
-          "description": "Optional app name alias used only for local profile-based result verification.",
-          "minLength": 1,
-          "maxLength": 80
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val cancelReminderSchemaJson = """
-    {
-      "type": "object",
-      "required": ["taskId"],
-      "properties": {
-        "taskId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^task-[A-Za-z0-9_-]+$"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val askUserInputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["prompt"],
-      "properties": {
-        "prompt": {
-          "type": "string",
-          "description": "The clarification question to present to the user.",
-          "minLength": 1,
-          "maxLength": 1000
-        },
-        "choices": {
-          "type": "array",
-          "description": "Optional list of short choice labels the user can tap to answer; omit for free-text reply.",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "maxItems": 8
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
-
-private val askUserOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "answer", "privacy", "requiresLocalModel"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "questionId": {"type": "string", "minLength": 1},
-        "answer": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean", "const": true}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
 // ── Open-AutoGLM-inspired expanded action vocabulary schemas ──
 
-private val noteInputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["content"],
-      "properties": {
-        "content": {
-          "type": "string",
-          "description": "要记录到本次运行暂存笔记中的内容。建议简洁：页面标题、搜索结果摘要、验证证据等。后续步骤可引用这些笔记。",
-          "minLength": 1,
-          "maxLength": 2000
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val noteOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "noteIndex", "content"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "noteIndex": {"type": "integer", "minimum": 1},
-        "content": {"type": "string", "minLength": 1},
-        "totalNotes": {"type": "integer", "minimum": 1}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val finishInputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["message"],
-      "properties": {
-        "message": {
-          "type": "string",
-          "description": "完成总结，向用户说明本次操作的结果。",
-          "minLength": 1,
-          "maxLength": 2000
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val finishOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "shouldFinish", "finishMessage"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "shouldFinish": {"type": "string", "enum": ["true"]},
-        "finishMessage": {"type": "string", "minLength": 1}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val takeOverInputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["reason"],
-      "properties": {
-        "reason": {
-          "type": "string",
-          "description": "为什么需要人工接管的原因，例如：'需要登录'、'验证码'、'密码输入'、'身份验证'。",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "prompt": {
-          "type": "string",
-          "description": "向用户展示的提示文本，指导用户完成需要人工操作的步骤。",
-          "minLength": 1,
-          "maxLength": 1000
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val takeOverOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "shouldTakeOver", "takeOverReason", "privacy", "requiresLocalModel"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "shouldTakeOver": {"type": "string", "enum": ["true"]},
-        "takeOverReason": {"type": "string", "minLength": 1},
-        "takeOverPrompt": {"type": "string"},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean", "const": true}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val shareTextSchemaJson = """
-    {
-      "type": "object",
-      "required": ["text"],
-      "properties": {
-        "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": $MAX_SHARE_TEXT_CHARS
-        },
-        "title": {
-          "type": "string",
-          "maxLength": $MAX_SHARE_TITLE_CHARS
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val openDeepLinkSchemaJson = """
-    {
-      "type": "object",
-      "required": ["uri"],
-      "properties": {
-        "uri": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2048,
-          "pattern": "^https://[^\\s/@]+(?:[:/].*)?$"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val openAppIntentSchemaJson = """
-    {
-      "type": "object",
-      "required": ["packageName"],
-      "properties": {
-        "packageName": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 255,
-          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z0-9_]+)+$"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val openAppByNameSchemaJson = """
-    {
-      "type": "object",
-      "required": ["appName"],
-      "properties": {
-        "appName": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80,
-          "description": "用户可见的应用名，例如淘宝、拼多多、Chrome 或系统桌面显示的 App label；不能是 URI、Intent action、Activity 名或任意 extras。"
-        },
-        "followUpIntent": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200,
-          "description": "可选。打开该应用后要在应用内完成的本地意图文本（如“搜索跑鞋”），仅用于在本机引导本地动作规划模型；不是 URI、Intent action、Activity 名或 extras。"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val openAppDeepTargetSchemaJson = """
-    {
-      "type": "object",
-      "required": ["targetId", "packageName"],
-      "properties": {
-        "targetId": {
-          "type": "string",
-          "enum": ["${AppDeepTargets.APP_DETAILS_SETTINGS_ID}"]
-        },
-        "packageName": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 255,
-          "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z0-9_]+)+$"
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val calendarAvailabilitySchemaJson = """
-    {
-      "type": "object",
-      "required": ["start", "end"],
-      "properties": {
-        "start": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Inclusive ISO-8601 start time with timezone."
-        },
-        "end": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Exclusive ISO-8601 end time with timezone. Window must be at most 31 days."
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val externalActivityOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "completionState",
-        "completionVerified",
-        "externalOutcome",
-        "externalOutcomeSource",
-        "targetKind",
-        "intentAction",
-        "metadataPolicy",
-        "rawPayloadIncluded"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "completionState": {"type": "string", "enum": ["ExternalActivityOpened"]},
-        "completionVerified": {"type": "boolean"},
-        "externalOutcome": {"type": "string", "enum": ["Unknown", "Completed", "NotCompleted", "OpenedOnly"]},
-        "externalOutcomeSource": {"type": "string", "enum": ["Unknown", "UserConfirmed"]},
-        "targetKind": {"type": "string", "minLength": 1},
-        "intentAction": {"type": "string", "minLength": 1},
-        "metadataPolicy": {"type": "string", "minLength": 1},
-        "rawPayloadIncluded": {"type": "boolean"},
-        "settingsAction": {"type": "string"},
-        "specialAccess": {"type": "string"},
-        "targetId": {"type": "string"},
-        "targetPackage": {"type": "string"},
-        "targetUriScheme": {"type": "string"},
-        "targetUriHost": {"type": "string"},
-        "targetUriPort": {"type": "integer"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val reminderOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "taskId", "taskStatus", "triggerAtMillis", "recoveryToolName", "recoveryTaskId"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "taskId": {"type": "string", "minLength": 1, "pattern": "^task-[A-Za-z0-9_-]+$"},
-        "taskStatus": {"type": "string", "enum": ["Scheduled"]},
-        "triggerAtMillis": {"type": "integer", "minimum": 0},
-        "recoveryToolName": {"type": "string", "enum": ["cancel_reminder"]},
-        "recoveryTaskId": {"type": "string", "minLength": 1, "pattern": "^task-[A-Za-z0-9_-]+$"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val periodicCheckOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "enabled",
-        "taskStatus",
-        "intervalMinutes",
-        "minNotificationSpacingMinutes",
-        "overdueGraceMinutes",
-        "requiresBatteryNotLow",
-        "requiresCharging"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "enabled": {"type": "boolean"},
-        "taskStatus": {"type": "string", "enum": ["Scheduled", "Cancelled", "Failed"]},
-        "intervalMinutes": {"type": "integer", "minimum": 60, "maximum": 1440},
-        "minNotificationSpacingMinutes": {"type": "integer", "minimum": 60, "maximum": 1440},
-        "overdueGraceMinutes": {"type": "integer", "minimum": 5, "maximum": 10080},
-        "requiresBatteryNotLow": {"type": "boolean"},
-        "requiresCharging": {"type": "boolean"},
-        "nextAllowedRunAtMillis": {"type": "integer", "minimum": 0},
-        "updatedAtMillis": {"type": "integer", "minimum": 0},
-        "recoveryToolName": {"type": "string", "enum": ["configure_periodic_check"]},
-        "recoveryEnabled": {"type": "boolean"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val backgroundTasksOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "scope",
-        "source",
-        "metadataPolicy",
-        "rawPayloadIncluded"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "scope": {"type": "string", "enum": ["active", "history", "policy", "all"]},
-        "source": {"type": "string", "enum": ["local_store"]},
-        "maxCount": {"type": "integer", "minimum": 1, "maximum": 50},
-        "activeTaskCount": {"type": "integer", "minimum": 0},
-        "historyTaskCount": {"type": "integer", "minimum": 0},
-        "tasksJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "policyJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "metadataPolicy": {"type": "string", "enum": ["background_tasks_local_only_no_reminder_body"]},
-        "rawPayloadIncluded": {"type": "boolean"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val cancelReminderOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "taskId", "taskStatus"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "taskId": {"type": "string", "minLength": 1, "pattern": "^task-[A-Za-z0-9_-]+$"},
-        "taskStatus": {"type": "string", "enum": ["Cancelled"]}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val clipboardOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "privacy", "requiresLocalModel", "text", "truncated"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "text": {"type": "string", "minLength": 1},
-        "truncated": {"type": "boolean"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val foregroundAppOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "source",
-        "confidence",
-        "packageName",
-        "appLabel",
-        "lastTimeUsedMillis"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "source": {
-          "type": "string",
-          "description": "How the current app estimate was derived.",
-          "enum": ["usage_stats_estimate"]
-        },
-        "confidence": {
-          "type": "string",
-          "description": "UsageStats can only approximate the current foreground app.",
-          "enum": ["estimate"]
-        },
-        "packageName": {"type": "string", "minLength": 1},
-        "appLabel": {"type": "string", "minLength": 1},
-        "lastTimeUsedMillis": {"type": "integer"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val contactsOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "privacy", "requiresLocalModel", "query", "maxCount", "contactCount", "contactsJson"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "query": {"type": "string"},
-        "maxCount": {"type": "integer", "minimum": 1, "maximum": 20},
-        "contactCount": {"type": "integer", "minimum": 0},
-        "contactsJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val notificationsOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": ["toolName", "privacy", "requiresLocalModel", "maxCount", "notificationCount", "notificationsJson"],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "maxCount": {"type": "integer", "minimum": 1, "maximum": 20},
-        "notificationCount": {"type": "integer", "minimum": 0},
-        "notificationsJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentFilesOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "kind",
-        "maxCount",
-        "mediaAccessScope",
-        "fileCount",
-        "filesJson"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "kind": {"type": "string", "minLength": 1},
-        "maxCount": {"type": "integer", "minimum": 1, "maximum": 50},
-        "mediaAccessScope": {
-          "type": "string",
-          "description": "Whether MediaStore was queried through legacy storage, full visual media, user-selected visual media, or currently granted media-only access.",
-          "enum": ["legacy_storage", "full_visual_media", "user_selected_visual_media", "granted_media_only"]
-        },
-        "fileCount": {"type": "integer", "minimum": 0},
-        "filesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val recentScreenshotOcrOutputSchemaJson =
-    recentOcrOutputSchemaJson(maxCountMaximum = 1)
 
-private val recentImageOcrOutputSchemaJson =
-    recentOcrOutputSchemaJson(maxCountMaximum = 3)
 
-private fun recentOcrOutputSchemaJson(maxCountMaximum: Int): String = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "source",
-        "maxCount",
-        "scannedCount",
-        "mediaAccessScope",
-        "ocrTextIncluded",
-        "rawPayloadIncluded",
-        "metadataPolicy"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "source": {"type": "string", "minLength": 1},
-        "maxCount": {"type": "integer", "minimum": 1, "maximum": $maxCountMaximum},
-        "scannedCount": {"type": "integer", "minimum": 0},
-        "mediaAccessScope": {
-          "type": "string",
-          "description": "Whether OCR image candidates came from legacy storage, full visual media, user-selected visual media, or currently granted media-only access.",
-          "enum": ["legacy_storage", "full_visual_media", "user_selected_visual_media", "granted_media_only"]
-        },
-        "ocrText": {"type": "string", "minLength": 1},
-        "truncated": {"type": "boolean"},
-        "ocrTextIncluded": {"type": "boolean"},
-        "rawPayloadIncluded": {"type": "boolean"},
-        "metadataPolicy": {"type": "string", "minLength": 1}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
 private val recentImageOcrPrivateOutputKeys = setOf("ocrText")
 
-private val currentScreenTextOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "source",
-        "maxChars",
-        "capturedAtMillis",
-        "nodeCount",
-        "truncated",
-        "screenTextIncluded",
-        "structureSummaryIncluded",
-        "rawTreeIncluded",
-        "metadataPolicy"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "source": {
-          "type": "string",
-          "description": "Fixed source for current active-window Accessibility 可访问文本快照；never screenshot, OCR, visual/VLM, or semantic screen understanding.",
-          "enum": ["$CURRENT_SCREEN_TEXT_SOURCE"]
-        },
-        "maxChars": {"type": "integer", "minimum": 1, "maximum": 4000},
-        "capturedAtMillis": {"type": "integer"},
-        "nodeCount": {"type": "integer", "minimum": 0},
-        "screenText": {
-          "type": "string",
-          "description": "Text exposed by Accessibility from the active window; not screenshot pixels, OCR output, visual/VLM output, or inferred screen semantics.",
-          "minLength": 1
-        },
-        "packageName": {"type": "string"},
-        "truncated": {"type": "boolean"},
-        "screenTextIncluded": {"type": "boolean"},
-        "structureSummary": {
-          "type": "string",
-          "description": "Coarse Accessibility node/text-item metadata only; no node ids, bounds, hierarchy, screenshots, OCR, or inferred visual semantics.",
-          "minLength": 1
-        },
-        "structureSummaryIncluded": {"type": "boolean"},
-        "rawTreeIncluded": {"type": "boolean"},
-        "metadataPolicy": {
-          "type": "string",
-          "enum": ["$CURRENT_SCREEN_TEXT_METADATA_POLICY"]
-        }
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val currentScreenshotOcrOutputSchemaJson = CurrentScreenshotOcrContract.OUTPUT_SCHEMA_JSON.trimIndent()
 
-private val observeCurrentScreenOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "source",
-        "metadataPolicy",
-        "observationId",
-        "capturedAtMillis",
-        "nodeCount",
-        "actionableNodeCount",
-        "textSummary",
-        "truncated",
-        "nodesJson",
-        "screenObservationJson",
-        "maxTextChars",
-        "maxNodes"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "source": {"type": "string", "enum": ["$DEVICE_CONTROL_SOURCE"]},
-        "metadataPolicy": {"type": "string", "enum": ["$DEVICE_CONTROL_METADATA_POLICY"]},
-        "observationId": {"type": "string", "minLength": 1},
-        "packageName": {"type": "string"},
-        "capturedAtMillis": {"type": "integer", "minimum": 0},
-        "nodeCount": {"type": "integer", "minimum": 0},
-        "actionableNodeCount": {"type": "integer", "minimum": 0},
-        "textSummary": {"type": "string"},
-        "truncated": {"type": "boolean"},
-        "nodesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "screenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "maxTextChars": {"type": "integer", "minimum": 1, "maximum": 4000},
-        "maxNodes": {"type": "integer", "minimum": 1, "maximum": 120},
-        "screenWidthPx": {"type": "integer", "minimum": 0},
-        "screenHeightPx": {"type": "integer", "minimum": 0},
-        "screenshotPerception": {"type": "string"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val uiActionOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "source",
-        "metadataPolicy",
-        "actionType",
-        "status",
-        "retryable",
-        "summary",
-        "beforeObservationId",
-        "afterObservationId",
-        "verificationSummary"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "source": {"type": "string", "enum": ["$DEVICE_CONTROL_SOURCE"]},
-        "metadataPolicy": {"type": "string", "enum": ["$DEVICE_CONTROL_METADATA_POLICY"]},
-        "actionType": {"type": "string", "enum": ["tap", "tap_normalized", "type_text", "submit_search", "scroll", "swipe", "long_press", "press_key", "press_back", "wait"]},
-        "target": {"type": "string"},
-        "direction": {"type": "string", "enum": ["up", "down", "left", "right", "forward", "backward"]},
-        "status": {"type": "string", "enum": ["succeeded", "failed"]},
-        "retryable": {"type": "boolean"},
-        "summary": {"type": "string", "minLength": 1},
-        "failureKind": {
-          "type": "string",
-          "enum": [
-            "node_not_found",
-            "page_changed",
-            "permission_missing",
-            "keyboard_obscured",
-            "timeout",
-            "app_not_foreground",
-            "search_entry_not_found",
-            "editable_not_found",
-            "submit_not_found",
-            "result_not_verified",
-            "dangerous_action",
-            "unknown"
-          ]
-        },
-        "beforeObservationId": {"type": "string"},
-        "afterObservationId": {"type": "string"},
-        "verificationSummary": {"type": "string", "minLength": 1},
-        "screenObservationDiffSummary": {
-          "type": "string",
-          "description": "Bounded LocalOnly before/after Accessibility observation diff summary for local action replanning.",
-          "minLength": 1
-        },
-        "searchVerificationStatus": {"type": "string", "enum": ["verified", "not_verified"]},
-        "searchVerificationEvidence": {"type": "string", "maxLength": 80},
-        "uiActionOutcome": {
-          "type": "string",
-          "enum": ["advanced", "no_change", "wrong_surface", "blocked", "verified", "unknown"]
-        },
-        "uiActionOutcomeReason": {
-          "type": "string",
-          "enum": [
-            "screen_changed",
-            "changed_false",
-            "app_not_foreground",
-            "permission_missing",
-            "dangerous_action",
-            "search_verified",
-            "type_text_succeeded",
-            "submit_search_succeeded",
-            "status_succeeded",
-            "unknown"
-          ]
-        },
-        "appSearchProgressStage": {
-          "type": "string",
-          "enum": [
-            "opened",
-            "observed_entry",
-            "entry_tapped",
-            "input_ready",
-            "query_typed",
-            "submitted",
-            "verified",
-            "blocked",
-            "unknown"
-          ]
-        },
-        "beforePackageName": {"type": "string"},
-        "beforeCapturedAtMillis": {"type": "integer", "minimum": 0},
-        "beforeNodeCount": {"type": "integer", "minimum": 0},
-        "beforeActionableNodeCount": {"type": "integer", "minimum": 0},
-        "beforeTextSummary": {"type": "string"},
-        "beforeTruncated": {"type": "boolean"},
-        "beforeNodesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "beforeScreenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "afterPackageName": {"type": "string"},
-        "afterCapturedAtMillis": {"type": "integer", "minimum": 0},
-        "afterNodeCount": {"type": "integer", "minimum": 0},
-        "afterActionableNodeCount": {"type": "integer", "minimum": 0},
-        "afterTextSummary": {"type": "string"},
-        "afterTruncated": {"type": "boolean"},
-        "afterNodesJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "afterScreenObservationJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"},
-        "key": {"type": "string", "enum": ["home", "recents", "enter", "delete"]},
-        "screenWidthPx": {"type": "integer", "minimum": 0},
-        "screenHeightPx": {"type": "integer", "minimum": 0},
-        "beforeScreenWidthPx": {"type": "integer", "minimum": 0},
-        "beforeScreenHeightPx": {"type": "integer", "minimum": 0},
-        "beforeScreenshotPerception": {"type": "string"},
-        "afterScreenWidthPx": {"type": "integer", "minimum": 0},
-        "afterScreenHeightPx": {"type": "integer", "minimum": 0},
-        "afterScreenshotPerception": {"type": "string"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
-private val calendarAvailabilityOutputSchemaJson = """
-    {
-      "type": "object",
-      "required": [
-        "toolName",
-        "privacy",
-        "requiresLocalModel",
-        "start",
-        "end",
-        "busyBlockCount",
-        "freeBlockCount",
-        "blocksJson"
-      ],
-      "properties": {
-        "toolName": {"type": "string", "minLength": 1},
-        "privacy": {"type": "string", "enum": ["LocalOnly"]},
-        "requiresLocalModel": {"type": "boolean"},
-        "start": {"type": "string", "minLength": 1},
-        "end": {"type": "string", "minLength": 1},
-        "busyBlockCount": {"type": "integer", "minimum": 0},
-        "freeBlockCount": {"type": "integer", "minimum": 0},
-        "blocksJson": {"type": "string", "minLength": 1, "contentMediaType": "application/json"}
-      },
-      "additionalProperties": false
-    }
-""".trimIndent()
 
 private val observeCurrentScreenPrivateOutputKeys = setOf(
     "observationId",
@@ -2408,6 +1028,10 @@ private val builtInToolSpecs: List<ToolSpec> = listOf(
         androidRuntimePermissions = listOf(
             AndroidRuntimePermissionSpec(AndroidRuntimePermissionKind.PostNotifications),
         ),
+        // Relative delay vs. absolute trigger time are mutually exclusive and one is mandatory.
+        // Neither can be schema-`required` (each is individually optional) and the closed schema
+        // dialect has no `oneOf`, so the XOR is declared here and enforced by ToolRegistry.validate.
+        exactlyOneOf = setOf(setOf("delayMinutes", "triggerAtMillis")),
     ),
     ToolSpec(
         name = MobileActionFunctions.SET_SYSTEM_ALARM,

@@ -22,6 +22,7 @@ import com.bytedance.zgx.solin.device.ContactSummaryReadResult
 import com.bytedance.zgx.solin.device.CurrentScreenControlProvider
 import com.bytedance.zgx.solin.device.CurrentScreenTextProvider
 import com.bytedance.zgx.solin.device.CurrentScreenTextReadResult
+import com.bytedance.zgx.solin.device.CURRENT_SCREEN_TEXT_LOCAL_ONLY_POLICY
 import com.bytedance.zgx.solin.device.DEVICE_CONTROL_METADATA_POLICY
 import com.bytedance.zgx.solin.device.DEVICE_CONTROL_SOURCE_ACCESSIBILITY
 import com.bytedance.zgx.solin.device.NotificationSummaryItem
@@ -71,10 +72,12 @@ import com.bytedance.zgx.solin.multimodal.toOcrBlocksJsonString
 import com.bytedance.zgx.solin.module.ToolHandler
 import com.bytedance.zgx.solin.orchestration.NoOpToolProgressPublisher
 import com.bytedance.zgx.solin.orchestration.ToolProgressPublisher
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
@@ -147,12 +150,29 @@ class RoutingToolExecutor(
     private val currentScreenTextProvider: CurrentScreenTextProvider? = null,
     private val currentScreenshotOcrProvider: CurrentScreenshotOcrProvider? = null,
     private val currentScreenControlProvider: CurrentScreenControlProvider? = null,
-    private val toolRegistry: ToolRegistry = ToolRegistry(),
+    // Built-in-only fallback. Production MUST pass the module-aware registry (see
+    // SolinAppContainer): this executor uses the registry to classify DeviceControl tools and
+    // to decide sequential-vs-concurrent batching, and an unrecognized tool would be routed
+    // by the `else` branch and mis-partitioned. See [defaultBuiltInToolRegistry].
+    private val toolRegistry: ToolRegistry = defaultBuiltInToolRegistry,
     private val toolHandlers: Map<String, ToolHandler> = emptyMap(),
     private val clockMillis: () -> Long = { System.currentTimeMillis() },
     private val evidenceBlobStore: EvidenceBlobStore = NoOpEvidenceBlobStore,
     private val maxSummaryChars: Int = EvidenceBlobStore.MAX_INLINE_CHARS,
     private val maxDataValueChars: Int = EvidenceBlobStore.MAX_INLINE_CHARS,
+    /**
+     * Privacy label stamped on evidence blobs spilled by [bound].
+     *
+     * WHY a parameter and not a literal: privacy classification is a policy decision and
+     * used to be hardcoded inside the routing layer, where it was invisible to reviewers of
+     * the privacy boundary. Hoisting it makes the decision explicit at the composition root.
+     *
+     * The default MUST stay [MessagePrivacy.LocalOnly] and callers MUST NOT widen it: tool
+     * evidence includes screen text, OCR, and private tool output, which the project's
+     * fail-closed rule keeps on-device. This exists to make the label reviewable and
+     * overridable in tests, NOT to allow remote-capable evidence spill.
+     */
+    private val evidencePrivacy: MessagePrivacy = MessagePrivacy.LocalOnly,
 ) : ToolExecutor {
     private val currentScreenOcrGroundingCache = CurrentScreenOcrGroundingCache(clockMillis)
     private val currentScreenControlProviderWithOcrGrounding =
@@ -305,9 +325,22 @@ class RoutingToolExecutor(
         return spec.executionMode != ToolExecutionMode.ConcurrentWhenIndependent
     }
 
+    /**
+     * Evidence bounding: truncate an oversized summary / data value and spill the overflow
+     * into the content-addressed [evidenceBlobStore].
+     *
+     * ARCHITECTURE NOTE (deliberate debt): this is evidence-bounding policy living inside the
+     * router, so [RoutingToolExecutor] currently mixes routing with evidence truncation. It
+     * belongs in its own decorator sitting between validation and routing
+     * (Timeout → Validating → Bounding → Routing) so each link has one responsibility.
+     * Extracting it is behavior-preserving but touches the decorator-chain assembly in
+     * SolinAppContainer plus every executor construction in tests, so it is deferred to a
+     * follow-up batch; the privacy label is already hoisted to [evidencePrivacy] so the
+     * policy decision is at least explicit at the composition root.
+     */
     private fun bound(result: ToolResult): ToolResult {
         val sourceType = EvidenceSourceType.ToolResult
-        val privacy = MessagePrivacy.LocalOnly
+        val privacy = evidencePrivacy
 
         // Bound summary
         val boundedSummaryResult = EvidenceBounds.headTail(
@@ -642,17 +675,37 @@ private class OcrGroundingCurrentScreenControlProvider(
         }
 }
 
+/**
+ * Single-slot cache handing OCR grounding evidence from `capture_current_screenshot_ocr`
+ * to the very next UI action, with "consume means invalidate" semantics.
+ *
+ * WHY [AtomicReference] and not a plain `var`: writers and readers do not share a thread.
+ * [RoutingToolExecutor.dispatchAsBuiltIn] writes (updateFrom / clear) and
+ * [OcrGroundingCurrentScreenControlProvider] reads (consumeFor*), and the batch path runs
+ * requests on `Dispatchers.IO` worker threads (see [RoutingToolExecutor.executeBatch]). A
+ * plain `var` has no happens-before edge under the JMM, so a reader could observe a stale
+ * or half-published hint; worse, the `read` then `null` pair in each consumeFor* was not
+ * atomic, so two concurrent actions could both consume the SAME hint. That hint decides
+ * where a tap lands, so a stale/duplicated read is a safety problem, not just a cache miss.
+ * Today [RoutingToolExecutor.shouldRunSequentially] happens to route every DeviceControl
+ * tool into the sequential segment, which hides the race — one ToolSpec executionMode edit
+ * would expose it. `getAndSet(null)` makes "consume invalidates" atomic and unconditional.
+ */
 private class CurrentScreenOcrGroundingCache(
     private val clockMillis: () -> Long,
 ) {
-    private var cachedHint: CachedOcrGroundingHint? = null
+    private val cachedHint = AtomicReference<CachedOcrGroundingHint?>(null)
 
     fun updateFrom(result: ToolResult) {
         if (result.status != ToolStatus.Succeeded) {
             clear()
             return
         }
-        cachedHint = runCatching {
+        cachedHint.set(parseGroundingHint(result))
+    }
+
+    private fun parseGroundingHint(result: ToolResult): CachedOcrGroundingHint? =
+        runCatching {
             val observationJson = result.data["screenObservationJson"]?.takeIf { value -> value.isNotBlank() }
                 ?: return@runCatching null
             val observation = JSONObject(observationJson)
@@ -667,33 +720,26 @@ private class CurrentScreenOcrGroundingCache(
                 hints = ocrElements,
             )
         }.getOrNull()
-    }
 
     fun consumeFor(target: String, currentSnapshot: ScreenStateSnapshot?): UiOcrGroundingHint? {
-        val cache = cachedHint ?: return null
-        cachedHint = null
-        if (clockMillis() - cache.capturedAtMillis > CURRENT_SCREEN_OCR_GROUNDING_TTL_MILLIS) return null
-        if (!cache.screenSignature.matches(currentSnapshot)) return null
+        val cache = consume() ?: return null
+        if (isExpiredOrMismatched(cache, currentSnapshot)) return null
         val normalizedTarget = target.normalizedLookupKey()
         if (normalizedTarget.isBlank()) return null
         return cache.hints.bestForTarget(normalizedTarget)
     }
 
     fun consumeForSearchEntry(currentSnapshot: ScreenStateSnapshot?): UiOcrGroundingHint? {
-        val cache = cachedHint ?: return null
-        cachedHint = null
-        if (clockMillis() - cache.capturedAtMillis > CURRENT_SCREEN_OCR_GROUNDING_TTL_MILLIS) return null
-        if (!cache.screenSignature.matches(currentSnapshot)) return null
+        val cache = consume() ?: return null
+        if (isExpiredOrMismatched(cache, currentSnapshot)) return null
         return cache.hints
             .filter { hint -> hint.hasSearchContextText() }
             .maxByOrNull { hint -> hint.scoreForSearchEntryTarget() }
     }
 
     fun consumeForSubmitSearch(currentSnapshot: ScreenStateSnapshot?): UiOcrGroundingHint? {
-        val cache = cachedHint ?: return null
-        cachedHint = null
-        if (clockMillis() - cache.capturedAtMillis > CURRENT_SCREEN_OCR_GROUNDING_TTL_MILLIS) return null
-        if (!cache.screenSignature.matches(currentSnapshot)) return null
+        val cache = consume() ?: return null
+        if (isExpiredOrMismatched(cache, currentSnapshot)) return null
         if (!cache.hints.hasOcrSearchSubmitContext()) return null
         return cache.hints
             .filter { hint -> hint.matchesSubmitSearchTarget() }
@@ -701,8 +747,21 @@ private class CurrentScreenOcrGroundingCache(
     }
 
     fun clear() {
-        cachedHint = null
+        cachedHint.set(null)
     }
+
+    /**
+     * Atomically take the cached hint and invalidate the slot, so a hint is handed to at
+     * most one action even under concurrent consumers.
+     */
+    private fun consume(): CachedOcrGroundingHint? = cachedHint.getAndSet(null)
+
+    private fun isExpiredOrMismatched(
+        cache: CachedOcrGroundingHint,
+        currentSnapshot: ScreenStateSnapshot?,
+    ): Boolean =
+        clockMillis() - cache.capturedAtMillis > CURRENT_SCREEN_OCR_GROUNDING_TTL_MILLIS ||
+            !cache.screenSignature.matches(currentSnapshot)
 }
 
 private data class CachedOcrGroundingHint(
@@ -1015,7 +1074,10 @@ class WebSearchToolExecutor(
 
 class ValidatingToolExecutor(
     private val delegate: ToolExecutor,
-    private val registry: ToolRegistry = ToolRegistry(),
+    // Built-in-only fallback. Production MUST pass the module-aware registry (see
+    // SolinAppContainer): a tool this registry does not know is rejected as UnknownTool,
+    // so a module tool would be blocked outright. See [defaultBuiltInToolRegistry].
+    private val registry: ToolRegistry = defaultBuiltInToolRegistry,
     private val progressPublisher: ToolProgressPublisher = NoOpToolProgressPublisher,
 ) : ToolExecutor {
     override fun execute(request: ToolRequest): ToolResult {
@@ -1600,7 +1662,7 @@ class CurrentScreenTextToolExecutor(
                             "truncated" to snapshot.truncated.toString(),
                             "screenTextIncluded" to false.toString(),
                             "rawTreeIncluded" to false.toString(),
-                            "metadataPolicy" to "accessibility_text_local_only_no_node_ids_bounds_or_hierarchy_persisted",
+                            "metadataPolicy" to CURRENT_SCREEN_TEXT_LOCAL_ONLY_POLICY,
                         ) + snapshot.packageNameData() + snapshot.structureSummaryData(),
                     )
                 } else {
@@ -1615,7 +1677,7 @@ class CurrentScreenTextToolExecutor(
                             "truncated" to snapshot.truncated.toString(),
                             "screenTextIncluded" to true.toString(),
                             "rawTreeIncluded" to false.toString(),
-                            "metadataPolicy" to "accessibility_text_local_only_no_node_ids_bounds_or_hierarchy_persisted",
+                            "metadataPolicy" to CURRENT_SCREEN_TEXT_LOCAL_ONLY_POLICY,
                         ) + snapshot.packageNameData() + snapshot.structureSummaryData(),
                     )
                 }
@@ -1702,48 +1764,31 @@ class DeviceControlToolExecutor(
         // matches the expected target, then map as usual. No added latency when expectedPackageName is
         // absent or the target is already foreground.
         val expectedPackage = request.expectedForegroundPackageName()
-        var result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
-        if (expectedPackage != null) {
-            var attempt = 0
-            while (attempt < FOREGROUND_READINESS_POLL_MAX_ATTEMPTS &&
-                (result as? ScreenStateReadResult.Available)?.snapshot?.packageName != expectedPackage
-            ) {
-                Thread.sleep(FOREGROUND_READINESS_POLL_INTERVAL_MILLIS)
-                result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
-                attempt++
-            }
-            val settledPackage = (result as? ScreenStateReadResult.Available)?.snapshot?.packageName
-            if (settledPackage != expectedPackage) {
-                // Report Timeout (NOT app_not_foreground) so the observation coordinator keeps this
-                // eligible for bounded settle-recovery rounds before falling back to open-then-stop.
-                return request.failed(
-                    code = ToolErrorCode.ExecutionFailed,
-                    summary = "目标应用尚未进入前台，稍后重试观察。",
-                    retryable = true,
-                    data = request.deviceControlBaseData() + mapOf(
-                        "failureKind" to UiActionFailureKind.Timeout.schemaValue,
-                        "expectedPackageName" to expectedPackage,
-                    ),
-                )
-            }
-        } else {
-            // Foreground-stability poll (no expected package threaded): a REMOTE-planned launch emits
-            // open_app_by_name with only appName (no followUpIntent), so the continuation observe is
-            // synthesized by the replanner/recovery and never inherits an expectedPackageName. A bare
-            // observe fired the instant open_app's startActivity() returns then reads the cross-app
-            // transition window (activeWindowRoot() momentarily null) and Fails in ~46ms. Retry a
-            // bounded number of times on a transient (retryable) Failed read until the window settles.
-            // No effect on the happy path (first read Available) or the PermissionDenied path (a
-            // distinct ScreenStateReadResult subtype, not matched here).
-            var attempt = 0
-            while (attempt < FOREGROUND_READINESS_POLL_MAX_ATTEMPTS &&
-                (result as? ScreenStateReadResult.Failed)?.failureKind
-                    ?.let { it != UiActionFailureKind.PermissionMissing } == true
-            ) {
-                Thread.sleep(FOREGROUND_READINESS_POLL_INTERVAL_MILLIS)
-                result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
-                attempt++
-            }
+        // runBlocking WITHOUT a dispatcher on purpose: the coroutine runs on this thread's own
+        // event loop, so the settle wait consumes no additional pooled thread. Passing
+        // Dispatchers.IO here would take a SECOND IO thread while this call is often already
+        // nested inside RoutingToolExecutor.executeBatch's own runBlocking(Dispatchers.IO),
+        // which risks IO-pool starvation on a batch of device-control observes.
+        val result = runBlocking {
+            awaitSettledScreenObservation(
+                provider = provider,
+                maxTextChars = maxTextChars,
+                maxNodes = maxNodes,
+                expectedPackage = expectedPackage,
+            )
+        }
+        if (expectedPackage != null && (result as? ScreenStateReadResult.Available)?.snapshot?.packageName != expectedPackage) {
+            // Report Timeout (NOT app_not_foreground) so the observation coordinator keeps this
+            // eligible for bounded settle-recovery rounds before falling back to open-then-stop.
+            return request.failed(
+                code = ToolErrorCode.ExecutionFailed,
+                summary = "目标应用尚未进入前台，稍后重试观察。",
+                retryable = true,
+                data = request.deviceControlBaseData() + mapOf(
+                    "failureKind" to UiActionFailureKind.Timeout.schemaValue,
+                    "expectedPackageName" to expectedPackage,
+                ),
+            )
         }
         return when (result) {
             is ScreenStateReadResult.Available ->
@@ -1769,6 +1814,62 @@ class DeviceControlToolExecutor(
                 )
         }
     }
+
+    /**
+     * Bounded, COOPERATIVELY CANCELLABLE foreground-settle poll.
+     *
+     * WHY suspend + [delay] instead of `Thread.sleep`: this executor runs on a coroutine
+     * dispatcher thread (the batch path uses `Dispatchers.IO`, and
+     * [TimeoutToolExecutionBoundary] wraps every call in `withTimeoutOrNull` + `withContext`).
+     * `Thread.sleep` parked that pooled thread for up to
+     * FOREGROUND_READINESS_POLL_MAX_ATTEMPTS * FOREGROUND_READINESS_POLL_INTERVAL_MILLIS
+     * (1.5s) and — being uninterruptible by coroutine cancellation — kept it parked even
+     * after the caller had already given up. `delay` suspends instead of blocking, so the
+     * wait releases the thread and aborts as soon as its scope is cancelled (including
+     * thread interruption, which [runBlocking] converts into job cancellation).
+     *
+     * Scope caveat, deliberately left for a later batch: [ToolExecutor.execute] is a
+     * synchronous interface, so the [runBlocking] in [executeObserve] still starts a fresh
+     * root job rather than a child of the boundary's job — an outer `withTimeoutOrNull`
+     * therefore does not yet pre-empt this wait. Making the boundary's timeout fully
+     * pre-emptive requires threading a suspend execution path through [ToolExecutor], a
+     * larger change than this fix. Only the wait is made interruptible here; the provider
+     * read itself stays blocking.
+     *
+     * Two poll conditions, unchanged from the previous loops:
+     *  - [expectedPackage] non-null: the post-launch in-app continuation threads an
+     *    expectedPackageName, so retry until the observed foreground package matches.
+     *  - [expectedPackage] null: a REMOTE-planned launch emits open_app_by_name with only
+     *    appName, so no expectedPackageName is ever threaded. Retry while the read is a
+     *    transient Failed. PermissionMissing is NOT transient and stops the poll at once,
+     *    and PermissionDenied is a distinct subtype that never matches here.
+     */
+    private suspend fun awaitSettledScreenObservation(
+        provider: CurrentScreenControlProvider,
+        maxTextChars: Int,
+        maxNodes: Int,
+        expectedPackage: String?,
+    ): ScreenStateReadResult {
+        var result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
+        var attempt = 0
+        while (attempt < FOREGROUND_READINESS_POLL_MAX_ATTEMPTS &&
+            result.needsForegroundSettleRetry(expectedPackage)
+        ) {
+            delay(FOREGROUND_READINESS_POLL_INTERVAL_MILLIS)
+            result = provider.observeCurrentScreen(maxTextChars = maxTextChars, maxNodes = maxNodes)
+            attempt++
+        }
+        return result
+    }
+
+    private fun ScreenStateReadResult.needsForegroundSettleRetry(expectedPackage: String?): Boolean =
+        if (expectedPackage != null) {
+            (this as? ScreenStateReadResult.Available)?.snapshot?.packageName != expectedPackage
+        } else {
+            (this as? ScreenStateReadResult.Failed)
+                ?.failureKind
+                ?.let { it != UiActionFailureKind.PermissionMissing } == true
+        }
 
     private fun executeTap(
         request: ToolRequest,
@@ -2578,7 +2679,7 @@ class DeviceControlToolExecutor(
             UiActionStatus.Failed -> "failed"
         }
 
-    private companion object {
+    internal companion object {
         const val DEFAULT_MAX_SCREEN_STATE_TEXT_CHARS = 2_000
         const val DEFAULT_MAX_SCREEN_STATE_NODES = 50
         const val DEFAULT_UI_ACTION_TIMEOUT_MILLIS = 1_000L
@@ -2586,6 +2687,8 @@ class DeviceControlToolExecutor(
         // Bounded foreground-readiness poll for the post-launch continuation observe: up to
         // 6 * 250ms = 1.5s waiting for the launched target app to become the foreground package
         // before observing, covering a typical cold start without stalling the checkpoint budget.
+        // internal (not private) so the cancellation regression test can assert against the real
+        // budget instead of hardcoding the numbers.
         const val FOREGROUND_READINESS_POLL_MAX_ATTEMPTS = 6
         const val FOREGROUND_READINESS_POLL_INTERVAL_MILLIS = 250L
     }

@@ -139,10 +139,21 @@ class AndroidCurrentScreenshotOcrProvider(
             val ocrBitmap = bitmap.scaledForOcr()
             try {
                 val preview = imageTextExtractor.extract(ocrBitmap)
+                // ML Kit reports bounds in the coordinate space of the bitmap it was handed, which
+                // is the (possibly downscaled) [scaledForOcr] bitmap. Downstream consumers
+                // (ScreenObservation elements -> ToolExecutor OCR grounding -> dispatchTapGesture)
+                // treat these bounds as real screen pixels, so the un-scaling has to happen here,
+                // inside the provider: `ocrBlocks` leaving this method are always source-screenshot
+                // (real screen) pixels. Identity when no downscale happened.
                 CurrentScreenshotOcrReadResult.Available(
                     text = preview?.text?.takeIf { it.isNotBlank() },
                     truncated = preview?.truncated ?: false,
-                    ocrBlocks = preview?.ocrBlocks.orEmpty(),
+                    ocrBlocks = preview?.ocrBlocks.orEmpty().mappedToSourcePixels(
+                        sourceWidth = bitmap.width,
+                        sourceHeight = bitmap.height,
+                        ocrWidth = ocrBitmap.width,
+                        ocrHeight = ocrBitmap.height,
+                    ),
                 )
             } finally {
                 if (ocrBitmap !== bitmap) ocrBitmap.recycle()
@@ -162,6 +173,12 @@ class AndroidCurrentScreenshotOcrProvider(
             onFailed = { reason -> RawScreenshotReadResult.Failed(reason) },
             serviceUnavailableReason = "当前屏幕截图服务不可用",
         ) { bitmap ->
+            // No coordinate un-scaling counterpart is needed here (unlike the OCR path above):
+            // [compactedForVision] only shrinks the pixels that are sent to the remote vision
+            // model, and nothing derived from this bitmap's coordinate space is ever used for a
+            // tap. The model answers in resolution-agnostic 0-1000 normalized coordinates
+            // (see RemoteVisionDecision.Tap / AndroidRemoteVisionDecider), which are mapped back
+            // onto the live screen dimensions locally, so the compacted size is metadata only.
             val visionBitmap = bitmap.compactedForVision()
             try {
                 val output = ByteArrayOutputStream()
@@ -355,3 +372,59 @@ private fun Bitmap.scaledForOcr(): Bitmap {
     val scaledHeight = (height * scale).roundToInt().coerceAtLeast(1)
     return Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
 }
+
+/**
+ * Maps OCR bounds recognized on the downscaled [scaledForOcr] bitmap back into source-screenshot
+ * (real screen) pixel coordinates, for every nesting level (block -> line -> element).
+ *
+ * This is the provider-internal half of the OCR coordinate contract: `ocrBlocks` handed to
+ * [CurrentScreenshotOcrReadResult.Available] are always source-screenshot pixels, so downstream
+ * grounding and `dispatchTapGesture` need no scaling awareness. Pure function; no bitmap access.
+ *
+ * X and Y are un-scaled independently because [scaledForOcr] rounds width and height separately,
+ * so the two axes can carry slightly different effective scale factors.
+ *
+ * Returns the receiver unchanged when no scaling happened (dimensions already equal) or when the
+ * OCR dimensions are non-positive (nothing trustworthy to invert — fail closed to the raw values).
+ */
+internal fun List<OcrTextBlock>.mappedToSourcePixels(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    ocrWidth: Int,
+    ocrHeight: Int,
+): List<OcrTextBlock> {
+    if (isEmpty()) return this
+    if (ocrWidth <= 0 || ocrHeight <= 0 || sourceWidth <= 0 || sourceHeight <= 0) return this
+    if (ocrWidth == sourceWidth && ocrHeight == sourceHeight) return this
+    val scaleX = sourceWidth.toFloat() / ocrWidth.toFloat()
+    val scaleY = sourceHeight.toFloat() / ocrHeight.toFloat()
+    return map { block ->
+        block.copy(
+            bounds = block.bounds?.mappedToSourcePixels(scaleX, scaleY, sourceWidth, sourceHeight),
+            lines = block.lines.map { line ->
+                line.copy(
+                    bounds = line.bounds?.mappedToSourcePixels(scaleX, scaleY, sourceWidth, sourceHeight),
+                    elements = line.elements.map { element ->
+                        element.copy(
+                            bounds = element.bounds
+                                ?.mappedToSourcePixels(scaleX, scaleY, sourceWidth, sourceHeight),
+                        )
+                    },
+                )
+            },
+        )
+    }
+}
+
+private fun OcrTextBounds.mappedToSourcePixels(
+    scaleX: Float,
+    scaleY: Float,
+    sourceWidth: Int,
+    sourceHeight: Int,
+): OcrTextBounds =
+    OcrTextBounds(
+        left = (left * scaleX).roundToInt().coerceIn(0, sourceWidth),
+        top = (top * scaleY).roundToInt().coerceIn(0, sourceHeight),
+        right = (right * scaleX).roundToInt().coerceIn(0, sourceWidth),
+        bottom = (bottom * scaleY).roundToInt().coerceIn(0, sourceHeight),
+    )
