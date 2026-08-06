@@ -13,11 +13,10 @@
   <img src="docs/assets/solin_brand_lockup.png" alt="Solin brand lockup" width="280">
 </p>
 
-Solin Android, shown in the app as `栖知 Solin`, is an experimental
-privacy-first Android assistant. It can answer with local LiteRT-LM
-Text+Vision models, use an optional OpenAI-compatible remote endpoint, and run
-confirmed phone-side tools such as reminders, sharing, app navigation, screen
-text reads, OCR, contacts, calendar, and low-risk app search.
+Solin Android (app name `栖知 Solin`) is an experimental, privacy-first Android
+assistant. Local LiteRT-LM Text+Vision chat, an optional OpenAI-compatible remote
+endpoint, and confirmed phone-side tools (reminders, sharing, app navigation,
+screen text, OCR, contacts, calendar, low-risk app search).
 
 ## Table Of Contents
 
@@ -30,7 +29,6 @@ text reads, OCR, contacts, calendar, and low-risk app search.
 - [Configuration And Secrets](#configuration-and-secrets)
 - [Recommended Models](#recommended-models)
 - [Validation](#validation)
-- [Project Layout](#project-layout)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Security](#security)
@@ -38,20 +36,17 @@ text reads, OCR, contacts, calendar, and low-risk app search.
 
 ## Product Contract
 
-- Local by default: chat history, memory, private tool results, screen text,
-  OCR excerpts, local image inputs, and attachment excerpts stay on device as
-  `LocalOnly` unless the user chooses a remote path.
-- Remote is optional: remote chat works only after an endpoint is configured
-  and remote mode is selected. Images, suspected sensitive text, and configured
+- **Local by default**: chat history, memory, private tool results, screen
+  text, OCR, local images, and attachment excerpts stay on device as `LocalOnly`
+  unless the user chooses a remote path.
+- **Remote is optional**: remote chat works only after an endpoint is configured
+  and remote mode selected. Images, suspected sensitive text, and configured
   remote sends require preview or confirmation.
-- Actions are confirmed: device actions are validated locally and stay behind
+- **Actions are confirmed**: device actions are validated locally and stay behind
   permission, disclosure, confirmation, audit, and fail-closed boundaries;
   high-risk device actions still require confirmation.
-- Models explicit: local chat needs a downloaded, imported, or bundled
-  `.litertlm` chat model. Memory and action assets do not replace a chat
-  model.
-- Users stay in control: keys can be cleared, conversations and memories can
-  be deleted, and privacy-sensitive behavior is documented before release.
+- **Users stay in control**: keys can be cleared, conversations and memories
+  deleted, and privacy-sensitive behavior is documented before release.
 
 ```mermaid
 flowchart LR
@@ -72,26 +67,24 @@ flowchart LR
 ## Implementation Highlights
 
 - LiteRT-LM local chat with GPU/CPU fallback and explicit model loading.
-- Local memory indexing with runtime probes before semantic recall is treated
-  as available.
+- Local memory indexing; semantic recall is available only after a runtime probe.
 - Bounded local image input for verified local chat models; unsupported models
-  fail closed instead of silently OCRing or uploading images.
+  fail closed instead of silently OCRing or uploading.
 - OpenAI-compatible remote chat with local filtering of `LocalOnly` context.
 - Registry-driven tools, built-in Skills, local safety policy, redacted trace,
   and audit records.
-- Model-driven app search can bootstrap from a verified local Chat or
-  action-planning model, then falls back to the static Skill path when local
-  planning is unavailable.
-- **Remote-vision GUI automation (opt-in):** when the user enables the
-  Trust-Center toggle and is in Remote mode with a vision-capable model, Solin
-  can capture the current screen via `AccessibilityService.takeScreenshot` (no
-  MediaProjection, no new foreground service), send it to the remote vision
-  model, and apply the returned tap coordinate as a local `ui_tap` that still
-  passes every device-control preflight and confirmation. Screen-pixel egress is
-  gated by an in-app first-confirm-then-auto rule and a per-send audit; capture
-  or send failures fail closed and stop the loop.
-- The chat surface only shows a safe result summary; structured tool fields
-  stay available through the trace/audit surfaces, not a typed chat card.
+- Model-driven app search bootstraps from a verified local Chat/action-planning
+  model and falls back to the static Skill path when local planning is unavailable.
+- **Remote-vision GUI automation (opt-in)**: with the Trust-Center toggle on,
+  Remote mode, and a vision-capable model, Solin captures the screen via
+  `AccessibilityService.takeScreenshot` (no MediaProjection, no new foreground
+  service), sends it to the remote vision model, and applies the returned tap
+  coordinate as a local `ui_tap` that still passes every device-control preflight
+  and confirmation. Screen-pixel egress is gated by an in-app
+  first-confirm-then-auto rule and a per-send audit; capture or send failures
+  fail closed and stop the loop.
+- The chat surface only shows a safe result summary; structured tool fields stay
+  available through the trace/audit surfaces, not a typed chat card.
 
 ## First Screen And Trust Flow
 
@@ -107,59 +100,45 @@ acceptance.
 
 ## Phone Control Scope
 
-Phone control is limited to low-risk navigation and search. The supported
-continuation path is observe, tap, type, submit search, scroll, swipe,
-long-press, system keys (home/recents/enter/delete), back, and wait. Swipe,
-long-press, and system-key presses require confirmation and count toward the
-5-step checkpoint; system keys are a fixed whitelist, never an arbitrary
-keycode. Solin checkpoints low-risk app control, including a 5-step checkpoint,
-and keeps sending, deleting, paying, ordering, publishing, sensitive input, and
-permission changes on the confirmation path.
+Phone control is limited to low-risk navigation and search: observe, tap, type,
+submit search, scroll, swipe, long-press, system keys (home/recents/enter/delete),
+back, and wait. Swipe, long-press, and system-key presses require confirmation
+and count toward the 5-step checkpoint; system keys are a fixed whitelist, never
+an arbitrary keycode. Sending, deleting, paying, ordering, publishing, sensitive
+input, and permission changes stay on the confirmation path.
 
-After a confirmed app launch that carries a follow-up intent, Solin can
-continue inside the opened app under the same 5-step checkpoint, gated by a
-locally-installed mobile-action model and an expected-package foreground guard.
-It fails closed to open-then-stop if the model is absent or the target app is
-not foreground, and the continuation stays LocalOnly.
+After a confirmed app launch with a follow-up intent, Solin can continue inside
+the opened app under the same 5-step checkpoint, gated by a locally-installed
+mobile-action model and an expected-package foreground guard. It fails closed to
+open-then-stop if the model is absent or the target app is not foreground, and
+the continuation stays LocalOnly.
 
-The optional remote-vision path replaces the local action model for the
-in-app continuation: a vision-capable remote model sees the screen capture and
-returns a tap coordinate. The coordinate is executed as a local `ui_tap` under
-the same confirmation, preflight, and 5-step checkpoint rules. This path is
-off by default and requires the Trust-Center "Remote-vision GUI automation"
-toggle, Remote inference mode, and a model that supports image input. See
-`docs/privacy_notice.md` for the egress consent and audit model.
+The optional remote-vision path replaces the local action model for the in-app
+continuation: a vision-capable remote model sees the screen capture and returns a
+tap coordinate, executed as a local `ui_tap` under the same confirmation,
+preflight, and 5-step checkpoint rules. Off by default; requires the Trust-Center
+"Remote-vision GUI automation" toggle, Remote inference mode, and a model that
+supports image input. See `docs/privacy_notice.md` for the egress consent and
+audit model.
 
 ## Current Status
 
-Solin is suitable for local development, personal evaluation, and controlled
-tester builds. It is not ready for broad app-store or production distribution.
-
-Open-source boundaries:
+Suitable for local development, personal evaluation, and controlled tester
+builds. Not ready for broad app-store or production distribution.
 
 - The repository contains source code, tests, scripts, documentation, and small
   project assets.
 - The repository does not contain model weights, API keys, keystores, signing
   passwords, user data, or generated release artifacts.
-- Recommended model downloads are third-party artifacts. Their upstream
-  licenses, access rules, and redistribution terms must be reviewed separately.
+- Recommended model downloads are third-party artifacts; their upstream licenses,
+  access rules, and redistribution terms must be reviewed separately.
 - Bundled-model packages are internal lab artifacts until model license,
   redistribution, attribution, and notice approvals are complete.
-- New phone-control or private-context features must preserve confirmation,
-  audit, privacy classification, and fail-closed behavior.
 
 ## Quick Start
 
-Requirements:
-
-- JDK 17 or newer.
-- Android SDK 36. The app targets SDK 36 and supports API 28+.
-- A physical arm64-v8a Android device for realistic LiteRT-LM validation.
-  Model-driven app-search instrumentation is an optional device-level smoke
-  check and requires a device with a verified local planning model already
-  installed; it is not a normal CI prerequisite.
-
-Clone and build:
+Requirements: JDK 17+, Android SDK 36 (target SDK 36, min API 28), and a physical
+arm64-v8a Android device for realistic LiteRT-LM validation.
 
 ```bash
 git clone https://github.com/William-zgx/solin-android.git
@@ -167,19 +146,12 @@ cd solin-android
 export ANDROID_HOME=/path/to/android-sdk
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 ./gradlew :app:assembleDebug
-```
-
-Install on one connected device:
-
-```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-After launch, choose one start path:
-
-- Configure an OpenAI-compatible remote endpoint for the fastest first answer.
-- Download the recommended local E2B model for offline basic chat.
-- Import a trusted compatible `.litertlm` model.
+After launch, choose one start path: configure an OpenAI-compatible remote
+endpoint, download the recommended local E2B model, or import a trusted
+`.litertlm` model.
 
 ## Configuration And Secrets
 
@@ -224,81 +196,30 @@ exception for quick experience and lab validation; see
 
 ## Validation
 
-Local verification:
-
 ```bash
+# Local verification
 scripts/doctor.sh
 scripts/verify_local.sh
-```
 
-Device or emulator verification:
-
-```bash
+# Device or emulator verification
 scripts/doctor.sh --device
 ANDROID_SERIAL=<device-or-emulator> scripts/install_and_test_device.sh
-```
 
-Model-driven app-search evals are debug/device checks. Enable them explicitly
-with `RUN_MODEL_DRIVEN_APP_SEARCH_EVAL=1`; mock and real app modes validate
-results through `verifySearchQuery`, `expectedPackageName`, and
-`expectedAppName`, and require `searchVerificationStatus=verified`.
-
-Full emulator regression uses the stricter artifact gate:
-
-```bash
+# Full emulator regression (stricter artifact gate)
 AVD_NAME=focus_agent_api36_arm64 scripts/regression_emulator.sh
 ```
 
-Record emulator regression as passed only when
-`regression-emulator.properties` contains `status=passed`.
+Record emulator regression as passed only when `regression-emulator.properties`
+contains `status=passed`.
 
-README and documentation contract tests:
+Model-driven app-search evals are debug/device checks. Enable them with
+`RUN_MODEL_DRIVEN_APP_SEARCH_EVAL=1`; mock and real app modes validate results
+through `verifySearchQuery`, `expectedPackageName`, and `expectedAppName`, and
+require `searchVerificationStatus=verified`.
 
-```bash
-./gradlew --no-daemon :app:testDebugUnitTest \
-  --tests com.bytedance.zgx.solin.docs.AgentCoreDocumentationTest \
-  --tests com.bytedance.zgx.solin.docs.ReleaseBlockerDashboardScriptTest
-```
-
-Use `docs/phone_acceptance.md` for flows that need real device behavior or
-must preserve downloaded models, remote configuration, sessions, or manual
-acceptance state.
-
-## Project Layout
-
-```text
-app/src/main/java/com/bytedance/zgx/solin/
-  action/          Mobile action planning and Android execution boundary
-  audit/           Redacted tool audit storage
-  background/      Reminders and scheduled task state
-  capability/      Capability descriptors and product positioning matrix
-  credentials/     API key / OAuth credential resolution
-  data/            Model/session persistence and bundled model import
-  device/          Local device context snapshots
-  download/        DownloadManager boundary and model verification
-  eval/            AI behavior evaluation data models
-  evidence/        On-device evidence blob encryption storage
-  logging/         SolinLog structured logging facade
-  mcp/             Model Context Protocol server integration
-  memory/          Local memory indexing and semantic memory runtime
-  module/          SolinModule registry and freeze snapshot
-  multimodal/      Share/picker text, image payload, and OCR boundaries
-  orchestration/   Chat, memory, tool, and action routing
-  plan/            Multi-step plan persistence and tool bridging
-  presentation/    ViewModel facade, 8 named controllers, and 11 support files
-  rcperf/          Release candidate performance benchmarking
-  resource/        Device resource sampling
-  runtime/         LiteRT-LM and remote runtime boundaries
-  safety/          Tool risk, confirmation, and privacy decisions
-  skill/           Built-in skill manifests and execution
-  storage/         Local key-value / document / vector storage contracts
-  tool/            Tool registry, schemas, results, and providers
-  ui/              Compose surfaces and leaf components
-  undo/            Action undo policy
-
-docs/              Architecture, privacy, validation, model, and release docs
-scripts/           Local, device, release, and evidence helpers
-```
+Use `docs/phone_acceptance.md` for flows that need real device behavior or must
+preserve downloaded models, remote configuration, sessions, or manual acceptance
+state.
 
 ## Documentation
 
@@ -309,35 +230,22 @@ scripts/           Local, device, release, and evidence helpers
 - Bundled-model lab package: `docs/bundled_model_package.md`
 - Device/manual acceptance: `docs/phone_acceptance.md`
 - Release readiness: `docs/release_readiness.md`
-- Adaptive edge inference phase-one status:
-  [`status.md`](docs/specs/20260718-adaptive-edge-inference/status.md) —
-  implementation in progress; not released.
 - Documentation index: `docs/index.md`
 
 ## Contributing
 
-Contributions are welcome. Useful changes usually include a focused problem
-statement, scoped code or documentation updates, tests or validation notes, and
-safe logs or screenshots for device-specific issues.
+Contributions are welcome. Useful changes include a focused problem statement,
+scoped code or documentation updates, tests or validation notes, and safe logs
+or screenshots for device-specific issues.
 
-Before opening a pull request:
-
-```bash
-scripts/verify_local.sh
-```
-
-For changes that touch device flows, also follow `docs/phone_acceptance.md`.
-Please avoid unrelated rewrites. New tools, Skills, model paths, and
-phone-control behavior need schema validation, privacy classification,
+Before opening a pull request, run `scripts/verify_local.sh`. For device-flow
+changes, also follow `docs/phone_acceptance.md`. New tools, Skills, model paths,
+and phone-control behavior need schema validation, privacy classification,
 confirmation policy, audit coverage, and tests.
 
-Good first contribution areas:
-
-- Documentation corrections that keep owner docs focused.
-- Tests around tool schemas, safety policy, model capability profiles, and
-  validation scripts.
-- Replay fixtures for low-risk app search and screen-observation regressions.
-- UI accessibility fixes that preserve existing `testTag` values.
+Good first areas: documentation corrections, tests around tool schemas and
+safety policy, replay fixtures for low-risk app search and screen-observation
+regressions, and UI accessibility fixes that preserve existing `testTag` values.
 
 ## Security
 
