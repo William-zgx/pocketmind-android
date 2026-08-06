@@ -82,6 +82,14 @@ flowchart LR
 - Model-driven app search can bootstrap from a verified local Chat or
   action-planning model, then falls back to the static Skill path when local
   planning is unavailable.
+- **Remote-vision GUI automation (opt-in):** when the user enables the
+  Trust-Center toggle and is in Remote mode with a vision-capable model, Solin
+  can capture the current screen via `AccessibilityService.takeScreenshot` (no
+  MediaProjection, no new foreground service), send it to the remote vision
+  model, and apply the returned tap coordinate as a local `ui_tap` that still
+  passes every device-control preflight and confirmation. Screen-pixel egress is
+  gated by an in-app first-confirm-then-auto rule and a per-send audit; capture
+  or send failures fail closed and stop the loop.
 - The chat surface only shows a safe result summary; structured tool fields
   stay available through the trace/audit surfaces, not a typed chat card.
 
@@ -113,6 +121,14 @@ continue inside the opened app under the same 5-step checkpoint, gated by a
 locally-installed mobile-action model and an expected-package foreground guard.
 It fails closed to open-then-stop if the model is absent or the target app is
 not foreground, and the continuation stays LocalOnly.
+
+The optional remote-vision path replaces the local action model for the
+in-app continuation: a vision-capable remote model sees the screen capture and
+returns a tap coordinate. The coordinate is executed as a local `ui_tap` under
+the same confirmation, preflight, and 5-step checkpoint rules. This path is
+off by default and requires the Trust-Center "Remote-vision GUI automation"
+toggle, Remote inference mode, and a model that supports image input. See
+`docs/privacy_notice.md` for the egress consent and audit model.
 
 ## Current Status
 

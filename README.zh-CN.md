@@ -74,6 +74,12 @@ flowchart LR
 - 基于注册表的工具、内置 Skills、本地安全策略、脱敏 trace 和 audit 记录。
 - model-driven 应用搜索可以用已校验的本地 Chat 或动作规划模型做 bootstrap；
   本地规划不可用时回退到静态 Skill 路径。
+- **远程视觉 GUI 自动化（可选）**：用户在信任中心开启开关、且处于远程模式并使用支持
+  视觉的模型时，Solin 可通过 `AccessibilityService.takeScreenshot` 截取当前屏幕
+  （无需 MediaProjection、无需新增前台服务），发送给远程视觉模型，并将返回的点击
+  坐标作为本地 `ui_tap` 执行——仍需通过全部设备控制预检和确认。屏幕像素外发由
+  应用内"首次确认后自动"规则和每次外发审计把关；截图或发送失败时 fail-closed
+  并停止循环。
 - 聊天界面只展示安全结果摘要；结构化工具字段通过 trace/audit surface 查看，而
   不是直接插入 `typed chat card`。
 
@@ -100,6 +106,11 @@ submit search、scroll、swipe（滑动）、long-press（长按）、系统按�
 checkpoint 内于已打开的应用中继续操作，前提是已安装本地移动操作模型，并受
 expectedPackageName 前台守卫约束。若模型缺失或目标应用不在前台，则 fail-closed
 回退为"仅打开不继续"，且该延续保持 LocalOnly。
+
+可选的远程视觉路径用支持视觉的远程模型替代本地动作模型来完成应用内延续：远程模型
+看到屏幕截图后返回点击坐标，该坐标作为本地 `ui_tap` 在相同的确认、预检和 5-step
+checkpoint 规则下执行。此路径默认关闭，需要信任中心"远程视觉 GUI 自动化"开关、
+远程推理模式以及支持图片输入的模型。外发同意与审计模型见 `docs/privacy_notice.md`。
 
 ## 当前状态
 

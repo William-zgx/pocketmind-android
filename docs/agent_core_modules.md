@@ -172,6 +172,18 @@ Current status:
   if the model is absent or the target app is not foreground. It never sends
   remote or reads screenshot pixels. Otherwise follow-up planning waits for
   the user to record whether the target-side outcome completed.
+- **Remote-vision in-app continuation (opt-in):** when the Trust-Center
+  "Remote-vision GUI automation" toggle is on, inference mode is Remote, and
+  the configured remote model supports vision input, the in-app continuation
+  uses `RemoteVisionObservationReplanner` + `AndroidRemoteVisionDecider`
+  instead of the local action model. It captures the screen via
+  `AccessibilityService.takeScreenshot` (transient JPEG, never persisted),
+  sends it to the remote vision model, and applies the returned tap coordinate
+  as a local `ui_tap` under the same confirmation, preflight, and 5-step
+  checkpoint rules. Capture or send failures fail closed and stop the loop.
+  Owned by `orchestration/RemoteVisionObservationReplanner.kt`,
+  `orchestration/AndroidRemoteVisionDecider.kt`, and
+  `device/AccessibilityRawScreenshotProvider.kt`.
 - Run-level step and observation budgets fail closed before another pending
   confirmation, retry, replan, or model continuation is saved.
 - **Concurrency safety**: All 8 internal `mutableMapOf` fields in `AgentLoopRuntime` are now `ConcurrentHashMap` for safe multi-coroutine access.

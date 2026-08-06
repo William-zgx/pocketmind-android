@@ -88,6 +88,7 @@ logging/        SolinLog 结构化日志门面
 - **远程审计不落 raw prompt**
 - **密钥 / 模型权重 / 用户数据不进 Git**
 - 低风险手机控制限：observe / tap / type / submit search / scroll / swipe / long-press / 系统按键(home/recents/enter/delete) / back / wait
+- 远程视觉 GUI 自动化（可选）：信任中心开关 + 远程模式 + 支持视觉的模型；`AccessibilityService.takeScreenshot` 截图，远程模型返回坐标，作为本地 `ui_tap` 执行，仍受确认/预检/5-step checkpoint 约束；截图外发 fail-closed
 
 详细产品表述以 README 与 `docs/privacy_notice.md` 为准。
 
