@@ -1472,6 +1472,7 @@ private fun SkillStep.toJsonObject(): JSONObject =
             .put("request", request.toJsonObject())
             .put("draft", draft.toJsonObject())
             .put("argumentBindings", argumentBindings.toJsonObject())
+            .put("optional", optional)
 
         is SkillStep.ModelStep -> JSONObject()
             .put("type", "model")
@@ -1508,6 +1509,9 @@ private fun JSONObject.toSkillStep(): SkillStep =
             request = getJSONObject("request").toToolRequest(),
             draft = getJSONObject("draft").toActionDraft(),
             argumentBindings = getJSONObject("argumentBindings").toStringMap(),
+            // Absent in checkpoints written before optional steps existed; those steps were
+            // required, so the false default restores them unchanged.
+            optional = optBoolean("optional", false),
         )
 
         "model" -> SkillStep.ModelStep(

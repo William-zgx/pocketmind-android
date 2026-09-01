@@ -898,6 +898,10 @@ class BuiltInSkillRuntime(
                 reason = summary,
             ),
             draft = draft,
+            // A plain settling wait is advisory: the screen may already be stable, and failing the
+            // whole run over it discards the completed steps before it. A wait that verifies a
+            // search result is not optional — that failure is the signal the step exists to report.
+            optional = verifySearchQuery.isNullOrBlank(),
         )
     }
 

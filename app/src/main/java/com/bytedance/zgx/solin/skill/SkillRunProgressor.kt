@@ -99,7 +99,18 @@ class SkillRunProgressor(
         result: ToolResult,
         satisfiedStepIds: Set<String> = emptySet(),
     ): SkillToolResultProgression {
-        if (result.status != ToolStatus.Succeeded) return SkillToolResultProgression.None
+        val failedStep = if (result.status == ToolStatus.Succeeded) {
+            null
+        } else {
+            // A non-succeeded result ends the run unless the step that produced it was declared
+            // optional, in which case progression continues from the following step. Resolved
+            // before the requestId check so an unmatched failure still fails closed.
+            skillPlan.steps
+                .filterIsInstance<SkillStep.ToolStep>()
+                .firstOrNull { step -> step.request.id == result.requestId }
+                ?.takeIf { step -> step.optional && result.requestId in requestedRequestIds }
+                ?: return SkillToolResultProgression.None
+        }
         if (result.requestId !in requestedRequestIds) {
             return SkillToolResultProgression.Rejected("tool result does not match requested skill step")
         }
@@ -115,11 +126,21 @@ class SkillRunProgressor(
             .filterIsInstance<SkillStep.ToolStep>()
             .filter { step -> step.request.id in requestedRequestIds }
             .mapTo(mutableSetOf()) { step -> step.id }
+        // A skipped optional step still satisfies dependsOn: that edge means "this step has
+        // reached a terminal state", which a skip does. Declaring a step optional is the author
+        // asserting its effect is advisory, so successors must not be blocked by skipping it.
+        // Value dependencies are handled separately — validateStructure rejects any plan that
+        // binds an optional step's output.
         val satisfiedDependencyStepIds = requestedToolStepIds + satisfiedStepIds
 
         val privateOutputRefs = privateOutputRefsForRequestedTools(skillPlan, requestedRequestIds)
         val outputs = initialOutputs(skillPlan).apply {
-            put(currentStep.id, outputForToolResult(result, currentStep.draft))
+            // A skipped optional step publishes no output: validateStructure already rejects plans
+            // that bind one, and a BranchStep reading it fails closed on the missing entry rather
+            // than branching on a value the step never produced.
+            if (failedStep == null) {
+                put(currentStep.id, outputForToolResult(result, currentStep.draft))
+            }
         }
 
         // Walk forward from the completed step, resolving any BranchStep against the just-completed

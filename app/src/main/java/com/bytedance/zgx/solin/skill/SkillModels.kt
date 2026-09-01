@@ -145,6 +145,15 @@ sealed class SkillStep {
         override val id: String = "tool:${request.id}",
         override val dependsOn: List<String> = emptyList(),
         val argumentBindings: Map<String, String> = emptyMap(),
+        /**
+         * When true, a non-succeeded result for this step does not end the run: progression
+         * continues from the following step. Only for steps whose effect is advisory (settling
+         * waits, best-effort observations) — never for one that produces a value a later step
+         * binds, since skipping it would leave that binding unresolvable.
+         *
+         * [validateStructure] rejects a plan where an optional step is a binding source.
+         */
+        val optional: Boolean = false,
     ) : SkillStep()
 
     data class ModelStep(
@@ -225,6 +234,13 @@ fun SkillPlan.validateStructure(
         .mapIndexedNotNull { index, step -> step.id.takeIf { it.isNotBlank() }?.let { it to index } }
         .toMap()
 
+    // Optional steps may be skipped on failure, so their outputs are not guaranteed to exist.
+    // Collected up front (not as the walk proceeds) so the check does not depend on step order.
+    val optionalStepIds: Set<String> = steps
+        .filterIsInstance<SkillStep.ToolStep>()
+        .filter { step -> step.optional }
+        .mapTo(mutableSetOf()) { step -> step.id }
+
     steps.forEachIndexed { index, step ->
         val priorStepIds = seenStepIds.toSet()
         if (step.id.isBlank()) {
@@ -298,6 +314,7 @@ fun SkillPlan.validateStructure(
                     outputKeysByStepId = outputKeysByStepId,
                     privateOutputRefs = privateOutputRefs,
                     rejectPrivateOutputRefs = true,
+                    optionalStepIds = optionalStepIds,
                     errors = errors,
                 )
                 outputKeysByStepId[step.id] = step.availableOutputKeys(toolRegistry)
@@ -319,6 +336,7 @@ fun SkillPlan.validateStructure(
                     outputKeysByStepId = outputKeysByStepId,
                     privateOutputRefs = privateOutputRefs,
                     rejectPrivateOutputRefs = false,
+                    optionalStepIds = optionalStepIds,
                     errors = errors,
                 )
                 outputKeysByStepId[step.id] = setOf(step.outputKey)
@@ -539,6 +557,7 @@ private fun Collection<String>.validateSourceRefs(
     outputKeysByStepId: Map<String, Set<String>>,
     privateOutputRefs: Set<String>,
     rejectPrivateOutputRefs: Boolean,
+    optionalStepIds: Set<String>,
     errors: MutableList<String>,
 ) {
     forEach { sourceRef ->
@@ -558,6 +577,9 @@ private fun Collection<String>.validateSourceRefs(
 
             sourceStepId != "input" && sourceKey !in outputKeysByStepId.getValue(sourceStepId) ->
                 errors += "step $currentStepId reads from missing output key: $sourceRef"
+
+            sourceStepId in optionalStepIds ->
+                errors += "step $currentStepId reads from optional step that may be skipped: $sourceRef"
 
             rejectPrivateOutputRefs && sourceRef in privateOutputRefs ->
                 errors += "step $currentStepId private tool output cannot be bound directly to tool argument: $sourceRef"
