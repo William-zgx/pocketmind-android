@@ -1226,6 +1226,67 @@ class SolinViewModelTest {
     }
 
     @Test
+    fun loadModelPreservesAutoPreference() = runTest(dispatcher) {
+        val active = installedModelSummary(
+            id = "active-chat",
+            displayName = "当前对话",
+            path = "/tmp/active.litertlm",
+            recommendedModelId = DEFAULT_CHAT_MODEL_ID,
+            verificationStatus = ModelVerificationStatus.VerifiedRecommended,
+        )
+        val modelRepository = FakeModelRepository(
+            activeInstalledModelId = active.id,
+            initialInstalledModels = listOf(active),
+        )
+        val remoteStore = FakeRemoteModelStore(
+            mode = InferenceMode.Auto,
+            config = configuredRemoteModel(),
+        )
+        val viewModel = createViewModel(
+            modelRepository = modelRepository,
+            remoteStore = remoteStore,
+            runtime = FakeLiteRtRuntime(),
+            adaptiveInferenceRollout = AdaptiveInferenceRollout.OptIn,
+        )
+
+        viewModel.loadModel()
+        advanceUntilIdle()
+
+        assertEquals(InferenceMode.Auto, remoteStore.loadMode())
+        assertEquals(InferenceMode.Auto, viewModel.uiState.value.inferenceMode)
+    }
+
+    @Test
+    fun loadModelCollapsesRemotePreferenceToLocal() = runTest(dispatcher) {
+        val active = installedModelSummary(
+            id = "active-chat",
+            displayName = "当前对话",
+            path = "/tmp/active.litertlm",
+            recommendedModelId = DEFAULT_CHAT_MODEL_ID,
+            verificationStatus = ModelVerificationStatus.VerifiedRecommended,
+        )
+        val modelRepository = FakeModelRepository(
+            activeInstalledModelId = active.id,
+            initialInstalledModels = listOf(active),
+        )
+        val remoteStore = FakeRemoteModelStore(
+            mode = InferenceMode.Remote,
+            config = configuredRemoteModel(),
+        )
+        val viewModel = createViewModel(
+            modelRepository = modelRepository,
+            remoteStore = remoteStore,
+            runtime = FakeLiteRtRuntime(),
+        )
+
+        viewModel.loadModel()
+        advanceUntilIdle()
+
+        assertEquals(InferenceMode.Local, remoteStore.loadMode())
+        assertEquals(InferenceMode.Local, viewModel.uiState.value.inferenceMode)
+    }
+
+    @Test
     fun loadModelFailsClosedWhenActiveModelVerificationFails() = runTest(dispatcher) {
         val active = installedModelSummary(
             id = "active-chat",

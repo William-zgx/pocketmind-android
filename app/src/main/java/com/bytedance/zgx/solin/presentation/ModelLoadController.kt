@@ -577,13 +577,14 @@ internal class ModelLoadController(
     fun selectInstalledModel(modelId: String) {
         if (uiState.value.isBusy || uiState.value.activeInstalledModelId == modelId) return
         val installed = modelRepository.selectInstalledModel(modelId) ?: return
-        remoteModelRepository.saveMode(InferenceMode.Local)
+        val mode = localWorkModePreserving(uiState.value.inferenceMode)
+        remoteModelRepository.saveMode(mode)
         clearPendingRemoteState()
         resetRemoteSendDisclosureSuppression()
         updateModelState(modelRepository.currentState())
         uiState.update {
             it.copy(
-                inferenceMode = InferenceMode.Local,
+                inferenceMode = mode,
                 pendingRemoteModeDisclosure = null,
                 pendingRemoteSendDisclosure = null,
                 isReady = false,
@@ -651,7 +652,8 @@ internal class ModelLoadController(
         if (uiState.value.isBusy) return
         val backendChoice = preferredBackendForActiveModel(uiState.value, uiState.value.backend)
         solinI(TAG_MODEL, "loadModel: path=$path backend=${backendChoice.name}")
-        remoteModelRepository.saveMode(InferenceMode.Local)
+        val mode = localWorkModePreserving(uiState.value.inferenceMode)
+        remoteModelRepository.saveMode(mode)
         clearPendingRemoteState()
         if (backendChoice != uiState.value.backend) {
             generationParametersRepository.saveBackend(backendChoice)
@@ -659,7 +661,7 @@ internal class ModelLoadController(
 
         uiState.update {
             it.copy(
-                inferenceMode = InferenceMode.Local,
+                inferenceMode = mode,
                 isBusy = true,
                 isDownloading = false,
                 isReady = false,
@@ -694,7 +696,7 @@ internal class ModelLoadController(
 
         uiState.update {
             it.copy(
-                inferenceMode = InferenceMode.Local,
+                inferenceMode = localWorkModePreserving(it.inferenceMode),
                 backend = backendChoice,
                 isBusy = true,
                 isDownloading = false,
@@ -1288,6 +1290,14 @@ internal class ModelLoadController(
             )
         }
     }
+
+    /**
+     * Loading or switching a local model is a precondition of [InferenceMode.Auto], not a
+     * contradiction of it: Auto still needs an eligible local candidate to route to. Only an
+     * explicit remote-facing preference is collapsed to [InferenceMode.Local] here.
+     */
+    private fun localWorkModePreserving(current: InferenceMode): InferenceMode =
+        if (current == InferenceMode.Auto) InferenceMode.Auto else InferenceMode.Local
 
     private fun Throwable.cleanMessage(): String =
         message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName
