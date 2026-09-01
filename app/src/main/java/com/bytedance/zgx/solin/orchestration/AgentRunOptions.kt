@@ -13,7 +13,17 @@ data class AgentRunOptions(
      */
     val remoteGuiDrivingEnabled: Boolean = false,
     val profile: AgentProfile = AgentProfile.DEFAULT,
-)
+) {
+    /**
+     * Whether this run is set up to plan and call tools rather than answer in one shot. Used to
+     * size the request before a placement is chosen, so it must be answerable up front — it
+     * reports intent, not whether a tool actually ran.
+     */
+    fun expectsToolLoop(): Boolean =
+        initialPlanningMode == InitialPlanningMode.ModelFirstRemoteTools ||
+            remoteToolScope == RemoteToolScope.ModelPlanning ||
+            remoteGuiDrivingEnabled
+}
 
 enum class InitialPlanningMode {
     RuleFirst,

@@ -1462,6 +1462,10 @@ class ChatController internal constructor(
             nowElapsedRealtimeMillis = elapsedRealtimeMillis(),
             autoRemoteAuthorized = adaptiveInferenceRollout.autoSelectable &&
                 stateBeforeSend.inferenceMode == InferenceMode.Auto,
+            // A continuation run only exists because a tool step already ran, so this request is
+            // part of a multi-step tool loop by construction.
+            requiresToolLoop = true,
+            requiresMultiStepPlan = true,
         )
         val privacy = initialChatPrivacyPlan(
             promptPrivacy = promptPrivacy,
@@ -1608,6 +1612,8 @@ class ChatController internal constructor(
             nowElapsedRealtimeMillis = elapsedRealtimeMillis(),
             autoRemoteAuthorized = adaptiveInferenceRollout.autoSelectable &&
                 stateBeforeSend.inferenceMode == InferenceMode.Auto,
+            requiresToolLoop = agentRunOptions.expectsToolLoop(),
+            requiresMultiStepPlan = agentRunOptions.expectsToolLoop(),
         )
         val sensitive = remoteSendSupport.containsSensitivePersonalOrSecretContent(userPrompt)
         val imageAttachmentCount = maxOf(imageAttachments.size, localImageAttachments.size)

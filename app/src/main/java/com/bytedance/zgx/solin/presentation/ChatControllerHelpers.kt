@@ -214,6 +214,13 @@ internal data class ChatPlacementInputs(
     val remoteCandidate: ModelCandidateSnapshot,
 )
 
+/**
+ * Output budget assumed when sizing a request, since callers do not cap generation length. It
+ * feeds the context-fit check and the complexity classifier, so it must stay a deliberate
+ * estimate rather than an optimistic floor.
+ */
+internal const val ASSUMED_REQUESTED_OUTPUT_TOKENS = 2_048
+
 internal fun chatPlacementInputs(
     state: ChatUiState,
     promptForModel: String,
@@ -224,14 +231,20 @@ internal fun chatPlacementInputs(
     connectivity: RemoteConnectivitySnapshot?,
     nowElapsedRealtimeMillis: Long,
     autoRemoteAuthorized: Boolean,
+    requiresToolLoop: Boolean = false,
+    requiresMultiStepPlan: Boolean = false,
 ): ChatPlacementInputs {
     val estimatedInputTokens = estimateTokensApproximate(
         history + ChatMessage(MessageRole.User, promptForModel),
     )
-    val requestedOutputTokens = 1_024
+    val requestedOutputTokens = ASSUMED_REQUESTED_OUTPUT_TOKENS
     val requirements = ModelRequirements(
         requiresText = true,
         requiresVision = remoteImageCount + localImageCount > 0,
+        // Not derived from requiresToolLoop: requiresTools is a hard eligibility filter in
+        // ModelPlacementPolicy, and the local candidate always reports supportsTools = false, so
+        // setting it here would make every tool-loop turn ineligible for local execution. Tool
+        // intent only informs the complexity signal below.
         requiresTools = false,
         estimatedInputTokens = estimatedInputTokens,
         requestedOutputTokens = requestedOutputTokens,
@@ -242,8 +255,8 @@ internal fun chatPlacementInputs(
             estimatedInputTokens = estimatedInputTokens,
             localContextWindowTokens = localContextWindow,
             reasoningEffort = state.generationParameters.reasoningEffort,
-            requiresMultiStepPlan = false,
-            requiresToolLoop = false,
+            requiresMultiStepPlan = requiresMultiStepPlan,
+            requiresToolLoop = requiresToolLoop,
             requestedOutputTokens = requestedOutputTokens,
         ),
     )
