@@ -19,8 +19,14 @@ class TimeoutToolExecutionBoundary(
     private val publicEvidenceBatchRetryAttempts: Int =
         DEFAULT_PUBLIC_EVIDENCE_BATCH_RETRY_ATTEMPTS,
     private val publicEvidenceBatchRequestValidator: (ToolRequest) -> ToolResult? = { null },
+    private val executionAuthorizer: ToolExecutionAuthorizer? = null,
 ) {
-    suspend fun execute(request: ToolRequest): ToolResult =
+    suspend fun execute(request: ToolRequest): ToolResult {
+        executionAuthorizer?.authorize(request)?.let { return it }
+        return executeAuthorized(request)
+    }
+
+    private suspend fun executeAuthorized(request: ToolRequest): ToolResult =
         withTimeoutOrNull(timeoutMillis) {
             withContext(dispatcher) {
                 runCatching {
@@ -62,7 +68,9 @@ class TimeoutToolExecutionBoundary(
 
         // Step 1: pre-validate the whole batch. Any rejection short-circuits execution.
         val rejectedByRequestId = requests.mapNotNull { request ->
-            publicEvidenceBatchRequestValidator(request)?.let { rejection -> request.id to rejection }
+            val rejection = publicEvidenceBatchRequestValidator(request)
+                ?: executionAuthorizer?.authorize(request)
+            rejection?.let { request.id to it }
         }.toMap()
         if (rejectedByRequestId.isNotEmpty()) {
             return requests.map { request ->
@@ -85,6 +93,16 @@ class TimeoutToolExecutionBoundary(
                 } == true
             }
             if (retryRequests.isEmpty()) return@repeat
+            val retryRejectionsByRequestId = retryRequests.mapNotNull { request ->
+                executionAuthorizer?.authorize(request)?.let { rejection -> request.id to rejection }
+            }.toMap()
+            if (retryRejectionsByRequestId.isNotEmpty()) {
+                results = requests.map { request ->
+                    retryRejectionsByRequestId[request.id]
+                        ?: resultsByRequestId(results, requests).getValue(request.id)
+                }
+                return@repeat
+            }
             onRetry()
             val retryResults = executeBatchInternal(retryRequests)
             val retryById = resultsByRequestId(retryResults, retryRequests)
