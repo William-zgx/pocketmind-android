@@ -415,7 +415,8 @@ private fun List<AgentStepEntity>.haveConsistentPlacementTrace(binding: RunPlace
     val placements = filter { it.type == "PlacementSelected" }
     if (placements.size != 1 || !placements.single().matchesPlacement(binding)) return false
     val dispatchTrace = filter {
-        it.type == "RunDataReceiptRecorded" || it.type == "ModelRuntimeInvocationStarted"
+        (it.type == "RunDataReceiptRecorded" && !it.isOutputQualityGuardReceipt()) ||
+            it.type == "ModelRuntimeInvocationStarted"
     }
     if (dispatchTrace.size != binding.attempt * 2) return false
     if (dispatchTrace.isNotEmpty() && placements.single().position >= dispatchTrace.first().position) return false
@@ -425,6 +426,21 @@ private fun List<AgentStepEntity>.haveConsistentPlacementTrace(binding: RunPlace
             pair[1].matchesInvocation(binding, index + 1)
     }
 }
+
+/**
+ * Whether this receipt step was written by the output-quality guard rather than by a dispatch.
+ *
+ * The guard records its own [RunDataReceipt] so the user can see why generation was stopped, but
+ * that receipt is not part of a (receipt, invocation) dispatch pair. Counting it would make
+ * [haveConsistentPlacementTrace]'s dispatch trace odd — one receipt with no invocation — and the
+ * binding would stop being publishable or claimable the moment the guard fires.
+ *
+ * Fails closed: an unreadable payload is treated as a dispatch receipt, keeping the stricter
+ * pairing check rather than silently excluding a step from validation.
+ */
+private fun AgentStepEntity.isOutputQualityGuardReceipt(): Boolean = runCatching {
+    JSONObject(json).optBoolean("outputQualityGuardTriggered", false)
+}.getOrDefault(false)
 
 private fun RunPlacementRecoverySnapshotEntity.hasRestorablePlacementContinuationEvidence(
     runState: AgentRunState,

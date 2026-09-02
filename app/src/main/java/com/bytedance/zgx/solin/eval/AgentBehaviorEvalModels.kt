@@ -313,11 +313,18 @@ private fun AgentStep.toPlacementTraceEvent(index: Int): PlacementTraceEvent? = 
         reason = binding.primaryReason,
         remoteProfileRevision = binding.remoteProfileRevision,
     )
-    is AgentStep.RunDataReceiptRecorded -> PlacementTraceEvent.Receipt(
-        index = index,
-        destination = receipt.destination,
-        currentPromptPrivacy = receipt.currentPromptPrivacy,
-    )
+    is AgentStep.RunDataReceiptRecorded -> if (receipt.outputQualityGuardTriggered) {
+        // The output-quality guard records its own receipt so the stop reason is auditable, but it
+        // is not half of a (receipt, invocation) dispatch pair. Mapping it to Receipt would make
+        // dispatchEvents odd and fail the pairing require() below.
+        null
+    } else {
+        PlacementTraceEvent.Receipt(
+            index = index,
+            destination = receipt.destination,
+            currentPromptPrivacy = receipt.currentPromptPrivacy,
+        )
+    }
     is AgentStep.ModelRuntimeInvocationStarted -> PlacementTraceEvent.Invocation(
         index = index,
         runId = invocation.runId,
@@ -332,10 +339,23 @@ private fun AgentStep.toPlacementTraceEvent(index: Int): PlacementTraceEvent? = 
 private fun AgentStep.RestoredSummary.restoredPlacementTraceEvent(index: Int): PlacementTraceEvent? =
     when (persistedType) {
         "PlacementSelected" -> parsePersistedPlacementEvent(index, json)
-        "RunDataReceiptRecorded" -> parsePersistedReceiptEvent(index, json)
+        // Same exclusion as the live path: a restored quality-guard receipt is not a dispatch half.
+        "RunDataReceiptRecorded" -> if (json.isPersistedOutputQualityGuardReceipt()) {
+            null
+        } else {
+            parsePersistedReceiptEvent(index, json)
+        }
         "ModelRuntimeInvocationStarted" -> parsePersistedInvocationEvent(index, json)
         else -> null
     }
+
+/**
+ * Fails closed: an unreadable payload is treated as a dispatch receipt so the stricter pairing
+ * check still applies, rather than dropping a step from validation on a parse error.
+ */
+private fun String.isPersistedOutputQualityGuardReceipt(): Boolean = runCatching {
+    JSONObject(this).optBoolean("outputQualityGuardTriggered", false)
+}.getOrDefault(false)
 
 private fun parsePersistedPlacementEvent(index: Int, rawJson: String): PlacementTraceEvent.Selected =
     parsePlacementTraceJson("placement selection", rawJson) { json ->
